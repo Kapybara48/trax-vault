@@ -101,6 +101,8 @@ export interface Track {
 	bitrate_kbps?: number | null;
 	sample_rate?: number | null;
 	bits_per_sample?: number | null;
+	play_count?: number;
+	last_played_at?: string | null;
 	created_at: string;
 	updated_at: string;
 	// Joined album info
@@ -108,6 +110,18 @@ export interface Track {
 	album_artist?: string;
 	album_cover_url?: string | null;
 	album_year?: number | null;
+}
+
+export interface Playlist {
+	id: number;
+	user_id: number;
+	name: string;
+	comment?: string | null;
+	is_public: number;
+	created_at: string;
+	updated_at: string;
+	song_count?: number;
+	duration_ms?: number;
 }
 
 export interface CollectionStats {

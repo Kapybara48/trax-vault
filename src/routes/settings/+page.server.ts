@@ -1,6 +1,7 @@
 import { redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types.js';
-import { getUserById, changePassword } from '$lib/server/auth.js';
+import { getUserById, changePassword, verifyPassword } from '$lib/server/auth.js';
+import { persistUserSubsonicSecret } from '$lib/server/subsonic/crypto.js';
 import { db } from '$lib/server/db.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -13,13 +14,20 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		? (db.prepare('SELECT COUNT(*) as count FROM sessions WHERE user_id = ?').get(locals.user.id) as { count: number })?.count || 1
 		: 0;
 
+	const userRow = locals.user.id
+		? (db.prepare('SELECT subsonic_secret FROM users WHERE id = ?').get(locals.user.id) as { subsonic_secret?: string })
+		: null;
+
 	const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number })?.count || 0;
 	const defaultPicardUrl = `http://${url.hostname || 'localhost'}:5800`;
+	const subsonicUrl = `${url.protocol}//${url.host}/rest`;
 
 	return {
 		account: userDetails || locals.user,
 		activeSessionsCount,
 		totalUsers,
+		hasSubsonicSecret: !!userRow?.subsonic_secret,
+		subsonicUrl,
 		authDisabled: locals.authDisabled,
 		env: {
 			dataDir: process.env.DATA_DIR || './data',
@@ -63,5 +71,30 @@ export const actions: Actions = {
 		}
 
 		return { success: true, message: 'Password successfully updated!' };
+	},
+
+	syncSubsonicPassword: async ({ request, locals }) => {
+		if (!locals.user) {
+			throw redirect(303, '/login?redirect=/settings');
+		}
+
+		if (locals.authDisabled) {
+			return { success: true, message: 'Authentication is globally disabled. No Subsonic password required.' };
+		}
+
+		const data = await request.formData();
+		const password = data.get('password')?.toString() || '';
+
+		if (!password) {
+			return fail(400, { error: 'Password is required to initialize Subsonic client access' });
+		}
+
+		const userRow = db.prepare('SELECT password_hash, salt FROM users WHERE id = ?').get(locals.user.id) as any;
+		if (!userRow || !verifyPassword(password, userRow.password_hash, userRow.salt)) {
+			return fail(400, { error: 'Incorrect password entered' });
+		}
+
+		persistUserSubsonicSecret(locals.user.id, password);
+		return { success: true, message: 'Subsonic client authentication successfully activated!' };
 	}
 };

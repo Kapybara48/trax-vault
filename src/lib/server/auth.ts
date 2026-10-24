@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from '$lib/server/db.js';
+import { persistUserSubsonicSecret } from './subsonic/crypto.js';
 
 export interface User {
 	id: number;
@@ -120,11 +121,19 @@ export function createInitialAdmin(username: string, password: string): User {
 		VALUES (?, ?, ?, 'admin')
 	`).run(trimmedUser, hash, salt);
 
-	return {
+	const user: User = {
 		id: Number(result.lastInsertRowid),
 		username: trimmedUser,
 		role: 'admin'
 	};
+
+	try {
+		persistUserSubsonicSecret(user.id, password);
+	} catch (e) {
+		console.error('Failed to auto-persist Subsonic secret for admin:', e);
+	}
+
+	return user;
 }
 
 /**
@@ -133,7 +142,7 @@ export function createInitialAdmin(username: string, password: string): User {
 export function authenticateUser(username: string, password: string): User | null {
 	const trimmedUser = username.trim().toLowerCase();
 	const row = db.prepare(
-		'SELECT id, username, password_hash, salt, role FROM users WHERE username = ?'
+		'SELECT id, username, password_hash, salt, role, subsonic_secret FROM users WHERE username = ?'
 	).get(trimmedUser) as any;
 
 	if (!row) {
@@ -143,6 +152,15 @@ export function authenticateUser(username: string, password: string): User | nul
 	const isValid = verifyPassword(password, row.password_hash, row.salt);
 	if (!isValid) {
 		return null;
+	}
+
+	// Auto backfill subsonic secret if not already set
+	if (!row.subsonic_secret) {
+		try {
+			persistUserSubsonicSecret(row.id, password);
+		} catch (e) {
+			console.error('Failed to auto-persist Subsonic secret on login:', e);
+		}
 	}
 
 	return {
@@ -244,6 +262,12 @@ export function changePassword(
 	db.prepare(
 		"UPDATE users SET password_hash = ?, salt = ?, updated_at = datetime('now') WHERE id = ?"
 	).run(hash, salt, userId);
+
+	try {
+		persistUserSubsonicSecret(userId, newPassword);
+	} catch (e) {
+		console.error('Failed to update Subsonic secret on password change:', e);
+	}
 
 	return { success: true };
 }

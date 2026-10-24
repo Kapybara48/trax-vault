@@ -11,6 +11,7 @@ node_modules
 # Data and SQLite
 data/*.db
 data/*.db-*
+data/*.key
 data/covers/*
 data/picard-config/*
 data/picard-config/.*

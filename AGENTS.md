@@ -129,6 +129,20 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Audio Playback State Synchronization**: Updated `src/lib/services/player.svelte.ts` to strictly derive `isPlaying` from `HTMLAudioElement` events (`onplay`, `onplaying`, `onpause`, `onerror`, `onended`) and gracefully handle rejected `play()` promises.
     - **Format & Quality Classification Precision**: Refined `detectFormatAndQuality()` in `scanner.ts` to prevent false `MP3_V0` labels on arbitrary bitrates and avoid inferring Hi-Res without verified high bit depth and sample rate.
     - **Dynamic Picard URL**: Updated `+layout.server.ts` and `settings/+page.server.ts` to dynamically resolve the Picard Web GUI address from `url.hostname`, fixing broken links when accessing Track Vault across the LAN or mobile devices.
+21. **Subsonic & OpenSubsonic API Server (Navidrome Alternative)**:
+    - Implemented native Subsonic REST protocol routing at `/rest/[...endpoint]` (`src/routes/rest/[...endpoint]/+server.ts`) supporting both JSON (`f=json`, JSONP) and standard Subsonic XML serialization.
+    - Added Subsonic cryptographic module (`src/lib/server/subsonic/crypto.ts`) storing AES-256-GCM encrypted passwords (`subsonic_secret`) in the `users` SQLite table with automatic server key generation (`data/subsonic.key`).
+    - Implemented dual authentication: modern MD5 client token hashing (`token = MD5(password + salt)`) and legacy cleartext/hex-encoded password parameter decoding (`enc:hex`).
+    - Added database migrations with `PRAGMA table_info` checks for `users.subsonic_secret`, `tracks.play_count`, `tracks.last_played_at`, `starred_items`, `playlists`, and `playlist_tracks`.
+    - Added comprehensive Subsonic endpoints (`src/lib/server/subsonic/handlers.ts`):
+      - System: `ping.view`, `getLicense.view`, `getMusicFolders.view`.
+      - Browsing: `getArtists.view`, `getArtist.view`, `getArtistInfo.view`, `getAlbum.view`, `getSong.view`, `getAlbumList2.view`, `getRandomSongs.view`, `getGenres.view`.
+      - Search: `search3.view`, `search2.view`.
+      - Media: `stream.view` with HTTP 206 Partial Content byte-range seeking, `getCoverArt.view` with cached album/track covers.
+      - User Data & Playlists: `star.view`, `unstar.view`, `getStarred2.view`, `scrobble.view`, `getPlaylists.view`, `getPlaylist.view`, `createPlaylist.view`, `updatePlaylist.view`, `deletePlaylist.view`.
+    - Implemented OpenSubsonic extension `getLyricsBySongId.view` directly parsing Track Vault's synchronized companion `.lrc` lyrics into structured millisecond-timed karaoke lines for mobile apps like Symfonium.
+    - Updated `src/hooks.server.ts` to allow `/rest` requests to bypass browser session cookie redirects.
+    - Added Subsonic & OpenSubsonic integration card to `/settings` with one-click server URL copying, token authentication status, and instant activation form.
 
 ---
 

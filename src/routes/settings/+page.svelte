@@ -16,7 +16,11 @@
 		Folder,
 		Layers,
 		Tag,
-		ExternalLink
+		ExternalLink,
+		Radio,
+		Smartphone,
+		Copy,
+		Check
 	} from '@lucide/svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -32,6 +36,50 @@
 	let isSubmitting = $state(false);
 	let clientError = $state<string | null>(null);
 	let clientSuccess = $state<string | null>(null);
+
+	let copiedSubsonic = $state(false);
+	let syncPassword = $state('');
+	let isSyncingSubsonic = $state(false);
+	let subsonicMsg = $state<string | null>(null);
+	let subsonicErr = $state<string | null>(null);
+
+	function copySubsonicUrl() {
+		navigator.clipboard.writeText(data.subsonicUrl);
+		copiedSubsonic = true;
+		setTimeout(() => {
+			copiedSubsonic = false;
+		}, 2000);
+	}
+
+	async function handleSyncSubsonic(e: SubmitEvent) {
+		e.preventDefault();
+		subsonicMsg = null;
+		subsonicErr = null;
+		if (!syncPassword) {
+			subsonicErr = 'Please enter your current password';
+			return;
+		}
+		isSyncingSubsonic = true;
+		try {
+			const formData = new FormData();
+			formData.append('password', syncPassword);
+			const res = await fetch('?/syncSubsonicPassword', {
+				method: 'POST',
+				body: formData
+			});
+			if (res.ok) {
+				subsonicMsg = 'Subsonic client authentication activated successfully!';
+				syncPassword = '';
+				data.hasSubsonicSecret = true;
+			} else {
+				subsonicErr = 'Incorrect password entered';
+			}
+		} catch {
+			subsonicErr = 'Network error occurred while syncing';
+		} finally {
+			isSyncingSubsonic = false;
+		}
+	}
 
 	const passwordsMatch = $derived(
 		newPassword.length > 0 && confirmPassword.length > 0 && newPassword === confirmPassword
@@ -256,6 +304,97 @@
 							<span>Launch Picard GUI</span>
 							<ExternalLink class="h-3 w-3 text-indigo-200" />
 						</a>
+					</div>
+				</div>
+			</div>
+
+			<!-- Subsonic & OpenSubsonic API Card -->
+			<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-xl shadow-xl text-xs space-y-4">
+				<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-4 mb-2">
+					<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-950/80 border border-purple-500/40 text-purple-400">
+						<Radio class="h-5 w-5" />
+					</div>
+					<div>
+						<h2 class="text-sm font-bold text-white">Subsonic & OpenSubsonic</h2>
+						<p class="text-[11px] text-neutral-400">Navidrome & Symfonium Server</p>
+					</div>
+				</div>
+
+				<div class="space-y-3">
+					<p class="text-neutral-400 leading-relaxed text-[11px]">
+						Connect third-party music streaming clients like <strong class="text-neutral-200">Symfonium</strong> (Android), <strong class="text-neutral-200">Feishin</strong> (Desktop), or <strong class="text-neutral-200">Amperfy</strong> (iOS) directly to Track Vault.
+					</p>
+
+					<div>
+						<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-0.5">Subsonic Server URL</span>
+						<div class="flex items-center justify-between gap-1.5 font-mono text-[11px] text-neutral-300 bg-neutral-950 p-2 rounded-lg border border-neutral-800">
+							<span class="truncate">{data.subsonicUrl}</span>
+							<button
+								type="button"
+								onclick={copySubsonicUrl}
+								class="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+								title="Copy Subsonic Server URL"
+							>
+								{#if copiedSubsonic}
+									<Check class="h-3.5 w-3.5 text-emerald-400" />
+								{:else}
+									<Copy class="h-3.5 w-3.5" />
+								{/if}
+							</button>
+						</div>
+					</div>
+
+					<div class="pt-2 border-t border-neutral-800/60 space-y-2">
+						<div class="flex items-center justify-between">
+							<span class="text-neutral-400">Token Authentication:</span>
+							{#if data.authDisabled}
+								<span class="text-emerald-400 font-semibold flex items-center gap-1">
+									<CheckCircle2 class="h-3 w-3" /> Bypassed
+								</span>
+							{:else if data.hasSubsonicSecret}
+								<span class="text-emerald-400 font-semibold flex items-center gap-1">
+									<CheckCircle2 class="h-3 w-3" /> Active & Ready
+								</span>
+							{:else}
+								<span class="text-amber-400 font-semibold flex items-center gap-1">
+									<AlertCircle class="h-3 w-3" /> Needs Activation
+								</span>
+							{/if}
+						</div>
+
+						<div class="flex items-center justify-between">
+							<span class="text-neutral-400">Synced Lyrics (LRC):</span>
+							<span class="text-purple-300 font-semibold">Enabled</span>
+						</div>
+
+						{#if !data.hasSubsonicSecret && !data.authDisabled}
+							<form onsubmit={handleSyncSubsonic} class="mt-3 pt-3 border-t border-neutral-800/60 space-y-2">
+								<p class="text-[11px] text-neutral-400">
+									Enter your current password once to activate Subsonic token authentication for mobile clients:
+								</p>
+								<div class="flex gap-2">
+									<input
+										type="password"
+										bind:value={syncPassword}
+										placeholder="Current password"
+										class="flex-1 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-100 placeholder-neutral-500 focus:border-purple-500 focus:outline-none"
+									/>
+									<button
+										type="submit"
+										disabled={isSyncingSubsonic || !syncPassword}
+										class="px-3 py-1.5 rounded-lg bg-purple-600 text-white font-medium text-xs hover:bg-purple-500 disabled:opacity-50 transition cursor-pointer"
+									>
+										{#if isSyncingSubsonic}Syncing...{:else}Activate{/if}
+									</button>
+								</div>
+								{#if subsonicErr}
+									<p class="text-[11px] text-rose-400">{subsonicErr}</p>
+								{/if}
+								{#if subsonicMsg}
+									<p class="text-[11px] text-emerald-400">{subsonicMsg}</p>
+								{/if}
+							</form>
+						{/if}
 					</div>
 				</div>
 			</div>

@@ -22,6 +22,11 @@ export async function handle({
 		return resolve(event);
 	}
 
+	// Allow Subsonic REST API (authenticates via Subsonic protocol params u/t/s/p)
+	if (path.startsWith('/rest')) {
+		return resolve(event);
+	}
+
 	// If auth is globally disabled via environment variable
 	if (authDisabled) {
 		event.locals.user = { id: 1, username: 'admin', role: 'admin' };

@@ -10,7 +10,8 @@ import type {
 	CensorshipStatus,
 	LyricsStatus,
 	FixerRules,
-	SearchFilters
+	SearchFilters,
+	Playlist
 } from '$lib/types/index.js';
 import { parseSearchQuery } from '$lib/search.js';
 
@@ -65,6 +66,8 @@ db.exec(`
 		lyrics TEXT NOT NULL DEFAULT 'none',
 		needs_attention INTEGER NOT NULL DEFAULT 0,
 		manually_checked INTEGER NOT NULL DEFAULT 0,
+		play_count INTEGER NOT NULL DEFAULT 0,
+		last_played_at TEXT,
 		notes TEXT,
 		file_path TEXT,
 		lyrics_text TEXT,
@@ -77,6 +80,7 @@ db.exec(`
 		username TEXT UNIQUE NOT NULL,
 		password_hash TEXT NOT NULL,
 		salt TEXT NOT NULL,
+		subsonic_secret TEXT,
 		role TEXT NOT NULL DEFAULT 'admin',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -89,6 +93,33 @@ db.exec(`
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 
+	CREATE TABLE IF NOT EXISTS starred_items (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		item_type TEXT NOT NULL,
+		item_id INTEGER NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		UNIQUE(user_id, item_type, item_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS playlists (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		comment TEXT,
+		is_public INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS playlist_tracks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+		track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+		track_order INTEGER NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON tracks(album_id);
 	CREATE INDEX IF NOT EXISTS idx_tracks_format ON tracks(format);
 	CREATE INDEX IF NOT EXISTS idx_tracks_censorship ON tracks(censorship);
@@ -96,6 +127,10 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_tracks_needs_attention ON tracks(needs_attention);
 	CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist);
 	CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+	CREATE INDEX IF NOT EXISTS idx_starred_user ON starred_items(user_id);
+	CREATE INDEX IF NOT EXISTS idx_starred_item ON starred_items(item_type, item_id);
+	CREATE INDEX IF NOT EXISTS idx_playlists_user ON playlists(user_id);
+	CREATE INDEX IF NOT EXISTS idx_playlist_tracks ON playlist_tracks(playlist_id);
 `);
 
 // Idempotent column migrations for existing databases
@@ -130,6 +165,18 @@ if (!columnExists('tracks', 'sample_rate')) {
 
 if (!columnExists('tracks', 'bits_per_sample')) {
 	db.exec(`ALTER TABLE tracks ADD COLUMN bits_per_sample INTEGER;`);
+}
+
+if (!columnExists('tracks', 'play_count')) {
+	db.exec(`ALTER TABLE tracks ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0;`);
+}
+
+if (!columnExists('tracks', 'last_played_at')) {
+	db.exec(`ALTER TABLE tracks ADD COLUMN last_played_at TEXT;`);
+}
+
+if (!columnExists('users', 'subsonic_secret')) {
+	db.exec(`ALTER TABLE users ADD COLUMN subsonic_secret TEXT;`);
 }
 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_manually_checked ON tracks(manually_checked);`);
@@ -1119,4 +1166,293 @@ export function getIssuesTracks(params?: {
 
 	const tracks = db.prepare(sql).all(...queryParams) as Track[];
 	return { tracks, total };
+}
+
+/**
+ * Subsonic & Music Server Helpers
+ */
+
+export function recordTrackPlay(trackId: number): void {
+	db.prepare(`UPDATE tracks SET play_count = play_count + 1, last_played_at = datetime('now') WHERE id = ?`).run(trackId);
+}
+
+export function starItem(userId: number, itemType: 'album' | 'track' | 'artist', itemId: number): void {
+	db.prepare(`
+		INSERT INTO starred_items (user_id, item_type, item_id)
+		VALUES (?, ?, ?)
+		ON CONFLICT(user_id, item_type, item_id) DO NOTHING
+	`).run(userId, itemType, itemId);
+}
+
+export function unstarItem(userId: number, itemType: 'album' | 'track' | 'artist', itemId: number): void {
+	db.prepare(`DELETE FROM starred_items WHERE user_id = ? AND item_type = ? AND item_id = ?`).run(userId, itemType, itemId);
+}
+
+export function isItemStarred(userId: number, itemType: 'album' | 'track' | 'artist', itemId: number): boolean {
+	const row = db.prepare(`SELECT 1 FROM starred_items WHERE user_id = ? AND item_type = ? AND item_id = ?`).get(userId, itemType, itemId);
+	return !!row;
+}
+
+export function getStarredItems(userId: number): {
+	albums: Album[];
+	tracks: Track[];
+	artistNames: string[];
+} {
+	const albumRows = db.prepare(`
+		SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count
+		FROM starred_items s
+		JOIN albums a ON s.item_id = a.id
+		WHERE s.user_id = ? AND s.item_type = 'album'
+		ORDER BY s.created_at DESC
+	`).all(userId) as Album[];
+
+	const trackRows = db.prepare(`
+		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year
+		FROM starred_items s
+		JOIN tracks t ON s.item_id = t.id
+		JOIN albums a ON t.album_id = a.id
+		WHERE s.user_id = ? AND s.item_type = 'track'
+		ORDER BY s.created_at DESC
+	`).all(userId) as Track[];
+
+	const artistRows = db.prepare(`
+		SELECT DISTINCT a.artist
+		FROM starred_items s
+		JOIN albums a ON s.item_id = a.id
+		WHERE s.user_id = ? AND s.item_type = 'artist'
+	`).all(userId) as Array<{ artist: string }>;
+
+	return {
+		albums: albumRows,
+		tracks: trackRows,
+		artistNames: artistRows.map(r => r.artist)
+	};
+}
+
+export function getUserPlaylists(userId: number): Array<Playlist & { song_count: number; duration_ms: number }> {
+	return db.prepare(`
+		SELECT p.*,
+			COUNT(pt.id) as song_count,
+			COALESCE(SUM(t.duration_ms), 0) as duration_ms
+		FROM playlists p
+		LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
+		LEFT JOIN tracks t ON pt.track_id = t.id
+		WHERE p.user_id = ? OR p.is_public = 1
+		GROUP BY p.id
+		ORDER BY p.name COLLATE NOCASE ASC
+	`).all(userId) as any;
+}
+
+export function getPlaylistById(playlistId: number): (Playlist & { song_count: number; duration_ms: number }) | null {
+	const row = db.prepare(`
+		SELECT p.*,
+			COUNT(pt.id) as song_count,
+			COALESCE(SUM(t.duration_ms), 0) as duration_ms
+		FROM playlists p
+		LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
+		LEFT JOIN tracks t ON pt.track_id = t.id
+		WHERE p.id = ?
+		GROUP BY p.id
+	`).get(playlistId) as any;
+	return row || null;
+}
+
+export function getPlaylistTracks(playlistId: number): Track[] {
+	return db.prepare(`
+		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, pt.track_order
+		FROM playlist_tracks pt
+		JOIN tracks t ON pt.track_id = t.id
+		JOIN albums a ON t.album_id = a.id
+		WHERE pt.playlist_id = ?
+		ORDER BY pt.track_order ASC
+	`).all(playlistId) as Track[];
+}
+
+export function createPlaylist(userId: number, name: string, comment?: string, trackIds?: number[]): number {
+	const res = db.prepare(`
+		INSERT INTO playlists (user_id, name, comment)
+		VALUES (?, ?, ?)
+	`).run(userId, name, comment || null);
+
+	const playlistId = Number(res.lastInsertRowid);
+
+	if (trackIds && trackIds.length > 0) {
+		const insertStmt = db.prepare(`
+			INSERT INTO playlist_tracks (playlist_id, track_id, track_order)
+			VALUES (?, ?, ?)
+		`);
+		const tx = db.transaction(() => {
+			trackIds.forEach((tId, idx) => {
+				insertStmt.run(playlistId, tId, idx + 1);
+			});
+		});
+		tx();
+	}
+
+	return playlistId;
+}
+
+export function updatePlaylist(
+	playlistId: number,
+	name?: string,
+	comment?: string,
+	trackIdsToAdd?: number[],
+	trackIndicesToRemove?: number[]
+): void {
+	if (name !== undefined || comment !== undefined) {
+		const updates: string[] = ["updated_at = datetime('now')"];
+		const params: any[] = [];
+		if (name !== undefined) {
+			updates.push('name = ?');
+			params.push(name);
+		}
+		if (comment !== undefined) {
+			updates.push('comment = ?');
+			params.push(comment);
+		}
+		params.push(playlistId);
+		db.prepare(`UPDATE playlists SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+	}
+
+	if (trackIndicesToRemove && trackIndicesToRemove.length > 0) {
+		const currentTracks = db.prepare(
+			'SELECT id FROM playlist_tracks WHERE playlist_id = ? ORDER BY track_order ASC'
+		).all(playlistId) as Array<{ id: number }>;
+
+		// Subsonic indices are 0-based
+		const idsToDelete = trackIndicesToRemove
+			.map(idx => currentTracks[idx]?.id)
+			.filter(Boolean);
+
+		if (idsToDelete.length > 0) {
+			const placeholders = idsToDelete.map(() => '?').join(',');
+			db.prepare(`DELETE FROM playlist_tracks WHERE id IN (${placeholders})`).run(...idsToDelete);
+		}
+	}
+
+	if (trackIdsToAdd && trackIdsToAdd.length > 0) {
+		const maxOrderRow = db.prepare(
+			'SELECT COALESCE(MAX(track_order), 0) as max_order FROM playlist_tracks WHERE playlist_id = ?'
+		).get(playlistId) as { max_order: number };
+		let nextOrder = maxOrderRow.max_order + 1;
+
+		const insertStmt = db.prepare(`
+			INSERT INTO playlist_tracks (playlist_id, track_id, track_order)
+			VALUES (?, ?, ?)
+		`);
+		const tx = db.transaction(() => {
+			for (const tId of trackIdsToAdd) {
+				insertStmt.run(playlistId, tId, nextOrder++);
+			}
+		});
+		tx();
+	}
+}
+
+export function deletePlaylist(playlistId: number): void {
+	db.prepare('DELETE FROM playlists WHERE id = ?').run(playlistId);
+}
+
+export function getDistinctArtists(): Array<{ name: string; album_count: number }> {
+	return db.prepare(`
+		SELECT artist as name, COUNT(id) as album_count
+		FROM albums
+		WHERE artist IS NOT NULL AND TRIM(artist) != ''
+		GROUP BY artist
+		ORDER BY artist COLLATE NOCASE ASC
+	`).all() as any;
+}
+
+export function getAlbumsByArtist(artist: string): Album[] {
+	return db.prepare(`
+		SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count
+		FROM albums a
+		WHERE a.artist = ?
+		ORDER BY a.release_year DESC, a.title COLLATE NOCASE ASC
+	`).all(artist) as Album[];
+}
+
+export function getRandomTracks(limit: number, genre?: string): Track[] {
+	let query = `
+		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year
+		FROM tracks t
+		JOIN albums a ON t.album_id = a.id
+	`;
+	const params: any[] = [];
+	if (genre && genre.trim()) {
+		query += ` WHERE a.genre = ? `;
+		params.push(genre.trim());
+	}
+	query += ` ORDER BY RANDOM() LIMIT ? `;
+	params.push(Math.min(limit, 500));
+	return db.prepare(query).all(...params) as Track[];
+}
+
+export function getAlbumList(
+	type: string,
+	size: number,
+	offset: number = 0,
+	genre?: string
+): Album[] {
+	const limit = Math.min(Math.max(1, size), 500);
+	let orderBy = 'a.title COLLATE NOCASE ASC';
+
+	switch (type) {
+		case 'random':
+			orderBy = 'RANDOM()';
+			break;
+		case 'newest':
+			orderBy = 'a.created_at DESC, a.id DESC';
+			break;
+		case 'highest':
+		case 'frequent':
+			orderBy = '(SELECT COALESCE(SUM(play_count), 0) FROM tracks WHERE album_id = a.id) DESC, a.title COLLATE NOCASE ASC';
+			break;
+		case 'recent':
+			orderBy = '(SELECT MAX(last_played_at) FROM tracks WHERE album_id = a.id) DESC, a.updated_at DESC';
+			break;
+		case 'alphabeticalByName':
+			orderBy = 'a.title COLLATE NOCASE ASC';
+			break;
+		case 'alphabeticalByArtist':
+			orderBy = 'a.artist COLLATE NOCASE ASC, a.release_year DESC';
+			break;
+		case 'byYear':
+			orderBy = 'a.release_year DESC, a.title COLLATE NOCASE ASC';
+			break;
+		case 'byGenre':
+			orderBy = 'a.genre COLLATE NOCASE ASC, a.title COLLATE NOCASE ASC';
+			break;
+	}
+
+	let whereClause = '';
+	const params: any[] = [];
+	if (genre && genre.trim()) {
+		whereClause = 'WHERE a.genre = ?';
+		params.push(genre.trim());
+	}
+
+	const sql = `
+		SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count
+		FROM albums a
+		${whereClause}
+		ORDER BY ${orderBy}
+		LIMIT ? OFFSET ?
+	`;
+	params.push(limit, offset);
+
+	return db.prepare(sql).all(...params) as Album[];
+}
+
+export function getAllGenres(): Array<{ genre: string; album_count: number; song_count: number }> {
+	return db.prepare(`
+		SELECT a.genre,
+			COUNT(DISTINCT a.id) as album_count,
+			COUNT(t.id) as song_count
+		FROM albums a
+		JOIN tracks t ON a.id = t.album_id
+		WHERE a.genre IS NOT NULL AND TRIM(a.genre) != ''
+		GROUP BY a.genre
+		ORDER BY a.genre COLLATE NOCASE ASC
+	`).all() as any;
 }
