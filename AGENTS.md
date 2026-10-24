@@ -163,7 +163,22 @@ This document preserves persistent context, architectural conventions, recent ch
     - Added database queries in `src/lib/server/db.ts`: `getAllTracksPaged`, `getTracksByGenre`, `getTopTracksByArtist`, `getPlayQueue`, and `savePlayQueue`.
     - Added structured Subsonic request logging and case-insensitive action dispatcher in `src/routes/rest/[...endpoint]/+server.ts`.
 
+24. **Feishin Zod Schema Compliance, Pagination Loop Fix, & CSRF Exemption**:
+    - **Feishin Infinite Pagination Loop Fix**: Resolved `search3` infinite loop in `getSongListCount` where Feishin tested out-of-bounds offsets (`songOffset: 50000`). `search3` now properly parses `artistOffset`, `artistCount`, `albumOffset`, `albumCount`, `songOffset`, and `songCount`, and returns empty arrays when queries exceed catalog size instead of repeating offset 0.
+    - **Strict Zod Schema Compliance**: Aligned Subsonic JSON responses with Feishin's `@ts-rest/core` and Zod client validation schemas:
+      - `song`: Added required `artists`, `albumArtists`, `discNumber`, `created`, `parent`, `isDir: false`, `isVideo: false`, and boolean `starred`.
+      - `album`: Added required `album`, `title`, `artists`, `parent`, `isDir: true`, `isVideo: false`, and boolean `starred`.
+      - `getScanStatus`: Added required `folderCount` to `scanStatusBody`.
+      - `getIndexes`: Added required `child: []` and `shortcut: []` arrays to `indexes`.
+      - `getArtists` & `getArtist`: Standardized `albumCount` as string (e.g. `"1"`) and added `roles: ['artist']`.
+      - `getStarred`: Ensured `artist`, `album`, and `song` arrays are always present with valid schemas.
+    - **CSRF & FormPost Handling**:
+      - Removed `formPost` from `getOpenSubsonicExtensions` so desktop clients default to standard Subsonic `GET` requests for browsing.
+      - Added `csrf: { trustedOrigins: ['*'] }` in `vite.config.ts` allowing external Subsonic clients to send `POST` requests without triggering SvelteKit's `Cross-site POST form submissions are forbidden`.
+      - Enhanced `extractParams` in `src/routes/rest/[...endpoint]/+server.ts` to parse `application/x-www-form-urlencoded` POST bodies using `request.clone().text()` and `URLSearchParams`.
+
 ---
+
 
 
 ## 4. Workflows & Verification

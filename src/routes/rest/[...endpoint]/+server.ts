@@ -32,12 +32,26 @@ async function extractParams(request: Request, url: URL): Promise<Record<string,
 		}
 	}
 
-	// 2. Form data if POST
+	// 2. Body if POST
 	if (request.method === 'POST') {
 		const contentType = request.headers.get('content-type') || '';
-		if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
-			try {
-				const formData = await request.formData();
+		try {
+			if (contentType.includes('application/x-www-form-urlencoded')) {
+				const text = await request.clone().text();
+				const bodyParams = new URLSearchParams(text);
+				for (const [key, value] of bodyParams.entries()) {
+					if (params[key] !== undefined) {
+						if (Array.isArray(params[key])) {
+							params[key].push(value);
+						} else {
+							params[key] = [params[key], value];
+						}
+					} else {
+						params[key] = value;
+					}
+				}
+			} else if (contentType.includes('multipart/form-data')) {
+				const formData = await request.clone().formData();
 				for (const [key, value] of formData.entries()) {
 					if (typeof value === 'string') {
 						if (params[key] !== undefined) {
@@ -51,8 +65,8 @@ async function extractParams(request: Request, url: URL): Promise<Record<string,
 						}
 					}
 				}
-			} catch {}
-		}
+			}
+		} catch {}
 	}
 
 	return params;

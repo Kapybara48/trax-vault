@@ -71,7 +71,10 @@ export function trackToSubsonicSong(
 ): Record<string, any> {
 	const albumTitle = track.album_title || album?.title || 'Unknown Album';
 	const artistName = track.artist || track.album_artist || album?.artist || 'Unknown Artist';
+	const albumArtistName = track.album_artist || album?.artist || artistName;
 	const albumId = (track.album_id || album?.id || '').toString();
+	const artistId = encodeArtistId(artistName);
+	const albumArtistId = encodeArtistId(albumArtistName);
 	const durationSeconds = Math.round((track.duration_ms || 0) / 1000);
 	const ext = track.format ? track.format.toLowerCase().replace(/_.*/, '') : 'flac';
 
@@ -91,10 +94,11 @@ export function trackToSubsonicSong(
 		id: track.id.toString(),
 		parent: albumId,
 		isDir: false,
+		isVideo: false,
 		title: track.title,
 		album: albumTitle,
 		artist: artistName,
-		track: track.track_number,
+		track: track.track_number || 1,
 		discNumber: track.disc_number || 1,
 		year: track.album_year || album?.release_year || undefined,
 		genre: album?.genre || undefined,
@@ -107,14 +111,16 @@ export function trackToSubsonicSong(
 		bitRate: track.bitrate_kbps || 0,
 		path: track.file_path || `${artistName}/${albumTitle}/${track.track_number} ${track.title}.${ext}`,
 		playCount: track.play_count || 0,
-		isVideo: false,
+		created: track.created_at || new Date().toISOString(),
 		type: 'music',
 		albumId,
-		artistId: encodeArtistId(artistName)
+		artistId,
+		artists: [{ id: artistId, name: artistName }],
+		albumArtists: [{ id: albumArtistId, name: albumArtistName }]
 	};
 
 	if (isStarred) {
-		song.starred = new Date().toISOString();
+		song.starred = true;
 	}
 
 	return song;
@@ -139,22 +145,29 @@ export function albumToSubsonicAlbum(
 		}
 	}
 
+	const artistId = encodeArtistId(album.artist);
+
 	const alb: Record<string, any> = {
 		id: album.id.toString(),
 		name: album.title,
 		title: album.title,
+		album: album.title,
 		artist: album.artist,
-		artistId: encodeArtistId(album.artist),
+		artistId,
+		artists: [{ id: artistId, name: album.artist }],
 		coverArt: `al-${album.id}`,
 		songCount: songCount,
 		duration: durationSeconds,
-		created: album.created_at,
+		created: album.created_at || new Date().toISOString(),
+		isDir: true,
+		isVideo: false,
+		parent: artistId,
 		year: album.release_year || undefined,
 		genre: album.genre || undefined
 	};
 
 	if (isStarred) {
-		alb.starred = new Date().toISOString();
+		alb.starred = true;
 	}
 
 	if (tracks && tracks.length > 0) {
@@ -252,24 +265,28 @@ export const subsonicHandlers: Record<
 	},
 
 	getScanStatus: async () => {
-		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number };
+		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number } | undefined;
+		const albumRow = db.prepare('SELECT COUNT(*) as count FROM albums').get() as { count: number } | undefined;
 		return {
 			data: {
 				scanStatus: {
 					scanning: false,
-					count: row?.count || 0
+					count: row?.count || 0,
+					folderCount: albumRow?.count || 1
 				}
 			}
 		};
 	},
 
 	startScan: async () => {
-		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number };
+		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number } | undefined;
+		const albumRow = db.prepare('SELECT COUNT(*) as count FROM albums').get() as { count: number } | undefined;
 		return {
 			data: {
 				scanStatus: {
 					scanning: false,
-					count: row?.count || 0
+					count: row?.count || 0,
+					folderCount: albumRow?.count || 1
 				}
 			}
 		};
@@ -311,8 +328,9 @@ export const subsonicHandlers: Record<
 			const artObj: Record<string, any> = {
 				id: encodeArtistId(art.name),
 				name: art.name,
-				albumCount: art.album_count,
-				coverArt: `art-${encodeArtistId(art.name)}`
+				albumCount: String(art.album_count || 1),
+				coverArt: `art-${encodeArtistId(art.name)}`,
+				roles: ['artist']
 			};
 			if (isStarred) artObj.starred = new Date().toISOString();
 
@@ -331,7 +349,9 @@ export const subsonicHandlers: Record<
 				indexes: {
 					lastModified,
 					ignoredArticles: 'The El La Los Las Le Les',
-					index: indexes
+					index: indexes,
+					child: [],
+					shortcut: []
 				}
 			}
 		};
@@ -433,8 +453,9 @@ export const subsonicHandlers: Record<
 			const artObj: Record<string, any> = {
 				id: encodeArtistId(art.name),
 				name: art.name,
-				albumCount: art.album_count,
-				coverArt: `art-${encodeArtistId(art.name)}`
+				albumCount: String(art.album_count || 1),
+				coverArt: `art-${encodeArtistId(art.name)}`,
+				roles: ['artist']
 			};
 			if (isStarred) artObj.starred = new Date().toISOString();
 
@@ -468,7 +489,9 @@ export const subsonicHandlers: Record<
 		const artistObj: Record<string, any> = {
 			id: encodeArtistId(artistName),
 			name: artistName,
-			albumCount: albums.length,
+			albumCount: String(albums.length),
+			coverArt: `art-${encodeArtistId(artistName)}`,
+			roles: ['artist'],
 			album: albums.map((a) => {
 				const isAlbumStarred = isItemStarred(user.id, 'album', a.id);
 				return albumToSubsonicAlbum(a, undefined, isAlbumStarred);
@@ -806,38 +829,57 @@ export const subsonicHandlers: Record<
 	search3: async (params, user) => {
 		let query = params.query?.trim() || '';
 		if (query === '*') query = '';
-		const artistCount = parseInt(params.artistCount, 10) || 20;
-		const albumCount = parseInt(params.albumCount, 10) || 20;
-		const songCount = parseInt(params.songCount, 10) || 50;
+
+		const artistCount = params.artistCount !== undefined ? parseInt(params.artistCount, 10) : 20;
+		const artistOffset = params.artistOffset !== undefined ? parseInt(params.artistOffset, 10) : 0;
+		const albumCount = params.albumCount !== undefined ? parseInt(params.albumCount, 10) : 20;
+		const albumOffset = params.albumOffset !== undefined ? parseInt(params.albumOffset, 10) : 0;
+		const songCount = params.songCount !== undefined ? parseInt(params.songCount, 10) : 50;
+		const songOffset = params.songOffset !== undefined ? parseInt(params.songOffset, 10) : 0;
 
 		let matchingArtists: any[] = [];
 		let matchingAlbums: Album[] = [];
 		let matchingTracks: Track[] = [];
 
 		if (!query) {
-			matchingArtists = db.prepare(
-				'SELECT artist as name, COUNT(id) as album_count FROM albums GROUP BY artist ORDER BY artist COLLATE NOCASE ASC LIMIT ?'
-			).all(artistCount) as any[];
+			if (artistCount > 0) {
+				matchingArtists = db.prepare(
+					'SELECT artist as name, COUNT(id) as album_count FROM albums GROUP BY artist ORDER BY artist COLLATE NOCASE ASC LIMIT ? OFFSET ?'
+				).all(artistCount, artistOffset) as any[];
+			}
 
-			matchingAlbums = db.prepare(
-				'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count FROM albums a ORDER BY a.title COLLATE NOCASE ASC LIMIT ?'
-			).all(albumCount) as Album[];
+			if (albumCount > 0) {
+				matchingAlbums = db.prepare(
+					'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count FROM albums a ORDER BY a.title COLLATE NOCASE ASC LIMIT ? OFFSET ?'
+				).all(albumCount, albumOffset) as Album[];
+			}
 
-			matchingTracks = getAllTracksPaged(0, songCount);
+			if (songCount > 0) {
+				matchingTracks = getAllTracksPaged(songOffset, songCount);
+			}
 		} else {
-			matchingArtists = db.prepare(
-				'SELECT artist as name, COUNT(id) as album_count FROM albums WHERE artist LIKE ? GROUP BY artist LIMIT ?'
-			).all(`%${query}%`, artistCount) as any[];
+			if (artistCount > 0) {
+				matchingArtists = db.prepare(
+					'SELECT artist as name, COUNT(id) as album_count FROM albums WHERE artist LIKE ? GROUP BY artist ORDER BY artist COLLATE NOCASE ASC LIMIT ? OFFSET ?'
+				).all(`%${query}%`, artistCount, artistOffset) as any[];
+			}
 
-			matchingAlbums = getAlbums(query).slice(0, albumCount);
+			if (albumCount > 0) {
+				matchingAlbums = db.prepare(
+					'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count FROM albums a WHERE a.title LIKE ? OR a.artist LIKE ? ORDER BY a.title COLLATE NOCASE ASC LIMIT ? OFFSET ?'
+				).all(`%${query}%`, `%${query}%`, albumCount, albumOffset) as Album[];
+			}
 
-			matchingTracks = db.prepare(`
-				SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
-				FROM tracks t
-				JOIN albums a ON t.album_id = a.id
-				WHERE t.title LIKE ? OR t.artist LIKE ? OR a.title LIKE ?
-				LIMIT ?
-			`).all(`%${query}%`, `%${query}%`, `%${query}%`, songCount) as Track[];
+			if (songCount > 0) {
+				matchingTracks = db.prepare(`
+					SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
+					FROM tracks t
+					JOIN albums a ON t.album_id = a.id
+					WHERE t.title LIKE ? OR t.artist LIKE ? OR a.title LIKE ?
+					ORDER BY t.title COLLATE NOCASE ASC
+					LIMIT ? OFFSET ?
+				`).all(`%${query}%`, `%${query}%`, `%${query}%`, songCount, songOffset) as Track[];
+			}
 		}
 
 		return {
@@ -848,7 +890,9 @@ export const subsonicHandlers: Record<
 						const obj: Record<string, any> = {
 							id: encodeArtistId(art.name),
 							name: art.name,
-							albumCount: art.album_count
+							albumCount: String(art.album_count || 1),
+							coverArt: `art-${encodeArtistId(art.name)}`,
+							roles: ['artist']
 						};
 						if (isStarred) obj.starred = new Date().toISOString();
 						return obj;
@@ -882,11 +926,17 @@ export const subsonicHandlers: Record<
 		return {
 			data: {
 				starred2: {
-					artist: starred.artistNames.map((name) => ({
-						id: encodeArtistId(name),
-						name,
-						starred: new Date().toISOString()
-					})),
+					artist: starred.artistNames.map((name) => {
+						const albums = getAlbumsByArtist(name);
+						return {
+							id: encodeArtistId(name),
+							name,
+							albumCount: String(albums.length),
+							coverArt: `art-${encodeArtistId(name)}`,
+							roles: ['artist'],
+							starred: new Date().toISOString()
+						};
+					}),
 					album: starred.albums.map((a) => albumToSubsonicAlbum(a, undefined, true)),
 					song: starred.tracks.map((t) => trackToSubsonicSong(t, null, true))
 				}
@@ -899,11 +949,17 @@ export const subsonicHandlers: Record<
 		return {
 			data: {
 				starred: {
-					artist: starred.artistNames.map((name) => ({
-						id: encodeArtistId(name),
-						name,
-						starred: new Date().toISOString()
-					})),
+					artist: starred.artistNames.map((name) => {
+						const albums = getAlbumsByArtist(name);
+						return {
+							id: encodeArtistId(name),
+							name,
+							albumCount: String(albums.length),
+							coverArt: `art-${encodeArtistId(name)}`,
+							roles: ['artist'],
+							starred: new Date().toISOString()
+						};
+					}),
 					album: starred.albums.map((a) => albumToSubsonicAlbum(a, undefined, true)),
 					song: starred.tracks.map((t) => trackToSubsonicSong(t, null, true))
 				}
@@ -1086,10 +1142,6 @@ export const subsonicHandlers: Record<
 					},
 					{
 						name: 'songLyrics',
-						versions: [1]
-					},
-					{
-						name: 'formPost',
 						versions: [1]
 					},
 					{
