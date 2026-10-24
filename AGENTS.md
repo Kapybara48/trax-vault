@@ -143,6 +143,11 @@ This document preserves persistent context, architectural conventions, recent ch
     - Implemented OpenSubsonic extension `getLyricsBySongId.view` directly parsing Track Vault's synchronized companion `.lrc` lyrics into structured millisecond-timed karaoke lines for mobile apps like Symfonium.
     - Updated `src/hooks.server.ts` to allow `/rest` requests to bypass browser session cookie redirects.
     - Added Subsonic & OpenSubsonic integration card to `/settings` with one-click server URL copying, token authentication status, and instant activation form.
+22. **Feishin Desktop Client Compatibility & Handshake**:
+    - Resolved Feishin "Failed to log in" errors by implementing required Subsonic protocol handshake endpoints: `getUser.view`, `getUsers.view`, `getScanStatus.view`, `startScan.view`, `getNowPlaying.view`, and `getBookmarks.view`.
+    - Enhanced route dispatcher in `src/routes/rest/[...endpoint]/+server.ts` to automatically strip redundant `/rest` segments when clients like Feishin append `/rest/` to custom URLs (e.g., `http://<ip>:3000/rest/rest/ping.view` -> `ping.view`).
+    - Added authentication self-healing: both web logins (`authenticateUser` in `src/lib/server/auth.ts`) and legacy password parameter logins (`p=password` in `src/lib/server/subsonic/auth.ts`) automatically encrypt and persist `subsonic_secret`, enabling seamless MD5 token auth without manual setup.
+    - Updated `/settings` with separate copy buttons for Feishin / Desktop Server URL (`http://<ip>:3000`) and Mobile REST URL (`http://<ip>:3000/rest`), plus an on-demand password synchronization tool.
 
 ---
 

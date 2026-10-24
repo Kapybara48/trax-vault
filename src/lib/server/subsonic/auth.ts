@@ -105,13 +105,11 @@ export function authenticateSubsonicRequest(params: {
 			};
 		}
 
-		// Auto-backfill subsonic_secret if not already present
-		if (!row.subsonic_secret) {
-			try {
-				persistUserSubsonicSecret(row.id, cleartextPassword);
-			} catch (err) {
-				console.error('Failed to auto-persist Subsonic secret:', err);
-			}
+		// Auto-sync subsonic_secret upon successful password authentication
+		try {
+			persistUserSubsonicSecret(row.id, cleartextPassword);
+		} catch (err) {
+			console.error('Failed to auto-persist Subsonic secret:', err);
 		}
 
 		return { user };

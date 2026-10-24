@@ -37,17 +37,26 @@
 	let clientError = $state<string | null>(null);
 	let clientSuccess = $state<string | null>(null);
 
-	let copiedSubsonic = $state(false);
+	let copiedBase = $state(false);
+	let copiedRest = $state(false);
 	let syncPassword = $state('');
 	let isSyncingSubsonic = $state(false);
 	let subsonicMsg = $state<string | null>(null);
 	let subsonicErr = $state<string | null>(null);
 
-	function copySubsonicUrl() {
-		navigator.clipboard.writeText(data.subsonicUrl);
-		copiedSubsonic = true;
+	function copyBaseUrl() {
+		navigator.clipboard.writeText(data.serverBaseUrl);
+		copiedBase = true;
 		setTimeout(() => {
-			copiedSubsonic = false;
+			copiedBase = false;
+		}, 2000);
+	}
+
+	function copyRestUrl() {
+		navigator.clipboard.writeText(data.subsonicUrl);
+		copiedRest = true;
+		setTimeout(() => {
+			copiedRest = false;
 		}, 2000);
 	}
 
@@ -326,16 +335,41 @@
 					</p>
 
 					<div>
-						<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-0.5">Subsonic Server URL</span>
+						<div class="flex items-center justify-between mb-0.5">
+							<span class="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">Feishin / Desktop URL</span>
+							<span class="text-[10px] text-neutral-500">Auto-appends /rest</span>
+						</div>
+						<div class="flex items-center justify-between gap-1.5 font-mono text-[11px] text-neutral-300 bg-neutral-950 p-2 rounded-lg border border-neutral-800">
+							<span class="truncate">{data.serverBaseUrl}</span>
+							<button
+								type="button"
+								onclick={copyBaseUrl}
+								class="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+								title="Copy Feishin Server URL"
+							>
+								{#if copiedBase}
+									<Check class="h-3.5 w-3.5 text-emerald-400" />
+								{:else}
+									<Copy class="h-3.5 w-3.5" />
+								{/if}
+							</button>
+						</div>
+					</div>
+
+					<div>
+						<div class="flex items-center justify-between mb-0.5">
+							<span class="text-[11px] font-medium text-neutral-400 uppercase tracking-wider">Mobile API URL</span>
+							<span class="text-[10px] text-neutral-500">Symfonium / DSub</span>
+						</div>
 						<div class="flex items-center justify-between gap-1.5 font-mono text-[11px] text-neutral-300 bg-neutral-950 p-2 rounded-lg border border-neutral-800">
 							<span class="truncate">{data.subsonicUrl}</span>
 							<button
 								type="button"
-								onclick={copySubsonicUrl}
+								onclick={copyRestUrl}
 								class="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
-								title="Copy Subsonic Server URL"
+								title="Copy Subsonic REST URL"
 							>
-								{#if copiedSubsonic}
+								{#if copiedRest}
 									<Check class="h-3.5 w-3.5 text-emerald-400" />
 								{:else}
 									<Copy class="h-3.5 w-3.5" />
@@ -367,10 +401,14 @@
 							<span class="text-purple-300 font-semibold">Enabled</span>
 						</div>
 
-						{#if !data.hasSubsonicSecret && !data.authDisabled}
+						{#if !data.authDisabled}
 							<form onsubmit={handleSyncSubsonic} class="mt-3 pt-3 border-t border-neutral-800/60 space-y-2">
+								<div class="flex items-center justify-between">
+									<span class="text-[11px] font-semibold text-neutral-300">Sync Subsonic Password</span>
+									<span class="text-[10px] text-neutral-500">Updates token secret</span>
+								</div>
 								<p class="text-[11px] text-neutral-400">
-									Enter your current password once to activate Subsonic token authentication for mobile clients:
+									Enter your current Track Vault password to synchronize token authentication for Feishin & mobile apps:
 								</p>
 								<div class="flex gap-2">
 									<input
@@ -384,7 +422,7 @@
 										disabled={isSyncingSubsonic || !syncPassword}
 										class="px-3 py-1.5 rounded-lg bg-purple-600 text-white font-medium text-xs hover:bg-purple-500 disabled:opacity-50 transition cursor-pointer"
 									>
-										{#if isSyncingSubsonic}Syncing...{:else}Activate{/if}
+										{#if isSyncingSubsonic}Syncing...{:else}Sync{/if}
 									</button>
 								</div>
 								{#if subsonicErr}

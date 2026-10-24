@@ -167,6 +167,105 @@ export const subsonicHandlers: Record<
 		};
 	},
 
+	getUser: async (params, user) => {
+		const targetUsername = (params.username || params.u || user.username).trim().toLowerCase();
+		return {
+			data: {
+				user: {
+					username: targetUsername,
+					email: `${targetUsername}@vault.local`,
+					scrobblingEnabled: true,
+					adminRole: true,
+					settingsRole: true,
+					downloadRole: true,
+					uploadRole: true,
+					playlistRole: true,
+					coverArtRole: true,
+					commentRole: true,
+					podcastRole: true,
+					streamRole: true,
+					jukeboxRole: true,
+					shareRole: true,
+					videoConversionRole: false,
+					folder: [1]
+				}
+			}
+		};
+	},
+
+	getUsers: async (_params, user) => {
+		return {
+			data: {
+				users: {
+					user: [
+						{
+							username: user.username,
+							email: `${user.username}@vault.local`,
+							scrobblingEnabled: true,
+							adminRole: true,
+							settingsRole: true,
+							downloadRole: true,
+							uploadRole: true,
+							playlistRole: true,
+							coverArtRole: true,
+							commentRole: true,
+							podcastRole: true,
+							streamRole: true,
+							jukeboxRole: true,
+							shareRole: true,
+							videoConversionRole: false,
+							folder: [1]
+						}
+					]
+				}
+			}
+		};
+	},
+
+	getScanStatus: async () => {
+		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number };
+		return {
+			data: {
+				scanStatus: {
+					scanning: false,
+					count: row?.count || 0
+				}
+			}
+		};
+	},
+
+	startScan: async () => {
+		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number };
+		return {
+			data: {
+				scanStatus: {
+					scanning: false,
+					count: row?.count || 0
+				}
+			}
+		};
+	},
+
+	getNowPlaying: async () => {
+		return {
+			data: {
+				nowPlaying: {
+					entry: []
+				}
+			}
+		};
+	},
+
+	getBookmarks: async () => {
+		return {
+			data: {
+				bookmarks: {
+					bookmark: []
+				}
+			}
+		};
+	},
+
 	getArtists: async (_params, user) => {
 		const rawArtists = getDistinctArtists();
 		// Group into alphabetical index

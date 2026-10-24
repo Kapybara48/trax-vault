@@ -21,6 +21,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number })?.count || 0;
 	const defaultPicardUrl = `http://${url.hostname || 'localhost'}:5800`;
 	const subsonicUrl = `${url.protocol}//${url.host}/rest`;
+	const serverBaseUrl = `${url.protocol}//${url.host}`;
 
 	return {
 		account: userDetails || locals.user,
@@ -28,6 +29,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		totalUsers,
 		hasSubsonicSecret: !!userRow?.subsonic_secret,
 		subsonicUrl,
+		serverBaseUrl,
 		authDisabled: locals.authDisabled,
 		env: {
 			dataDir: process.env.DATA_DIR || './data',

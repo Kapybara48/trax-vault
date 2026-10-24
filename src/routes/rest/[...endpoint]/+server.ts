@@ -59,8 +59,11 @@ async function extractParams(request: Request, url: URL): Promise<Record<string,
 }
 
 async function handleSubsonic(endpoint: string, request: Request, url: URL): Promise<Response> {
-	// Normalize action: remove .view and trailing slash
-	const action = endpoint.replace(/\.view$/, '').replace(/\/$/, '');
+	// Normalize action: remove leading/trailing slashes, .view, and leading rest/ segment
+	let action = (endpoint || '').replace(/^\/+/, '').replace(/\.view$/, '').replace(/\/+$/, '');
+	if (action.startsWith('rest/')) {
+		action = action.substring(5);
+	}
 	const params = await extractParams(request, url);
 
 	const format = params.f || 'xml';

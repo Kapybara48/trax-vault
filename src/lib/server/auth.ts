@@ -154,13 +154,11 @@ export function authenticateUser(username: string, password: string): User | nul
 		return null;
 	}
 
-	// Auto backfill subsonic secret if not already set
-	if (!row.subsonic_secret) {
-		try {
-			persistUserSubsonicSecret(row.id, password);
-		} catch (e) {
-			console.error('Failed to auto-persist Subsonic secret on login:', e);
-		}
+	// Auto sync subsonic secret on successful login
+	try {
+		persistUserSubsonicSecret(row.id, password);
+	} catch (e) {
+		console.error('Failed to auto-persist Subsonic secret on login:', e);
 	}
 
 	return {
