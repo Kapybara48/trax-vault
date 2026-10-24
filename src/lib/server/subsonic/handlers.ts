@@ -1209,5 +1209,18 @@ export const subsonicHandlers: Record<
 				}
 			}
 		};
+	},
+
+	jukeboxControl: async (params) => {
+		return {
+			data: {
+				jukeboxStatus: {
+					currentIndex: 0,
+					playing: false,
+					gain: 1.0,
+					position: 0
+				}
+			}
+		};
 	}
 };
