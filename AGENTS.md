@@ -147,9 +147,24 @@ This document preserves persistent context, architectural conventions, recent ch
     - Resolved Feishin "Failed to log in" errors by implementing required Subsonic protocol handshake endpoints: `getUser.view`, `getUsers.view`, `getScanStatus.view`, `startScan.view`, `getNowPlaying.view`, and `getBookmarks.view`.
     - Enhanced route dispatcher in `src/routes/rest/[...endpoint]/+server.ts` to automatically strip redundant `/rest` segments when clients like Feishin append `/rest/` to custom URLs (e.g., `http://<ip>:3000/rest/rest/ping.view` -> `ping.view`).
     - Added authentication self-healing: both web logins (`authenticateUser` in `src/lib/server/auth.ts`) and legacy password parameter logins (`p=password` in `src/lib/server/subsonic/auth.ts`) automatically encrypt and persist `subsonic_secret`, enabling seamless MD5 token auth without manual setup.
-    - Updated `/settings` with separate copy buttons for Feishin / Desktop Server URL (`http://<ip>:3000`) and Mobile REST URL (`http://<ip>:3000/rest`), plus an on-demand password synchronization tool.
+23. **Feishin Subsonic Song Loading & Catalog Browsing Endpoints**:
+    - Resolved Feishin empty library/song view by implementing core Subsonic catalog discovery endpoints in `src/lib/server/subsonic/handlers.ts`:
+      - `getIndexes.view`: Alphabetical artist directory indexing with `lastModified` timestamps and article ignoring.
+      - `getMusicDirectory.view`: Recursive folder/directory browsing resolving root folders (`id=0`, `id=root`), artist directories (`id=art_...`), and album directories (`id=al-...` / numeric IDs). Disambiguated album ID `1` from root folder `1`.
+      - `getSongsByGenre.view`: Genre-filtered song lists with offset and limit pagination.
+      - `getTopSongs.view`: Artist discography top tracks ranked by play count.
+      - `getSimilarSongs.view` / `getSimilarSongs2.view`: Related tracks discovery for radio/smart playback.
+      - `getAlbumInfo.view` / `getAlbumInfo2.view`: Rich album metadata and cover references.
+      - `getPlayQueue.view` / `savePlayQueue.view`: Subsonic play queue synchronization backed by SQLite `play_queues` table.
+      - `getSongs.view`: OpenSubsonic flat song list pagination.
+    - Updated `search3.view` & `search2.view` to return full catalog when given empty queries (`query=""` or `query="*"`), enabling Feishin to instantly populate its Songs view.
+    - Added required `size` (in bytes) and `format` fields to `trackToSubsonicSong` using filesystem stats (`fs.statSync`) and bitrate fallback.
+    - Added automatic calculation of total album `duration` and `songCount` in `albumToSubsonicAlbum` so album lists and cards show full playback length.
+    - Added database queries in `src/lib/server/db.ts`: `getAllTracksPaged`, `getTracksByGenre`, `getTopTracksByArtist`, `getPlayQueue`, and `savePlayQueue`.
+    - Added structured Subsonic request logging and case-insensitive action dispatcher in `src/routes/rest/[...endpoint]/+server.ts`.
 
 ---
+
 
 ## 4. Workflows & Verification
 

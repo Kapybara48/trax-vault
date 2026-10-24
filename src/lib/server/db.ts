@@ -131,6 +131,14 @@ db.exec(`
 	CREATE INDEX IF NOT EXISTS idx_starred_item ON starred_items(item_type, item_id);
 	CREATE INDEX IF NOT EXISTS idx_playlists_user ON playlists(user_id);
 	CREATE INDEX IF NOT EXISTS idx_playlist_tracks ON playlist_tracks(playlist_id);
+
+	CREATE TABLE IF NOT EXISTS play_queues (
+		user_id INTEGER PRIMARY KEY,
+		current_track_id INTEGER,
+		position INTEGER NOT NULL DEFAULT 0,
+		track_ids TEXT NOT NULL DEFAULT '[]',
+		changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
 `);
 
 // Idempotent column migrations for existing databases
@@ -1456,3 +1464,67 @@ export function getAllGenres(): Array<{ genre: string; album_count: number; song
 		ORDER BY a.genre COLLATE NOCASE ASC
 	`).all() as any;
 }
+
+export function getAllTracksPaged(offset: number = 0, limit: number = 500): Track[] {
+	const cappedLimit = Math.min(Math.max(1, limit), 1000);
+	return db.prepare(`
+		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
+		FROM tracks t
+		JOIN albums a ON t.album_id = a.id
+		ORDER BY t.album_id ASC, t.disc_number ASC, t.track_number ASC
+		LIMIT ? OFFSET ?
+	`).all(cappedLimit, Math.max(0, offset)) as Track[];
+}
+
+export function getTracksByGenre(genre: string, offset: number = 0, limit: number = 500): Track[] {
+	const cappedLimit = Math.min(Math.max(1, limit), 1000);
+	return db.prepare(`
+		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
+		FROM tracks t
+		JOIN albums a ON t.album_id = a.id
+		WHERE a.genre = ?
+		ORDER BY a.title COLLATE NOCASE ASC, t.track_number ASC
+		LIMIT ? OFFSET ?
+	`).all(genre.trim(), cappedLimit, Math.max(0, offset)) as Track[];
+}
+
+export function getTopTracksByArtist(artist: string, limit: number = 20): Track[] {
+	const cappedLimit = Math.min(Math.max(1, limit), 200);
+	return db.prepare(`
+		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
+		FROM tracks t
+		JOIN albums a ON t.album_id = a.id
+		WHERE t.artist = ? OR t.artist LIKE ? OR a.artist = ?
+		ORDER BY t.play_count DESC, t.id ASC
+		LIMIT ?
+	`).all(artist, `%${artist}%`, artist, cappedLimit) as Track[];
+}
+
+export function getPlayQueue(userId: number): { current: number | null; position: number; changed: string; trackIds: number[] } | null {
+	const row = db.prepare('SELECT current_track_id, position, changed_at, track_ids FROM play_queues WHERE user_id = ?').get(userId) as any;
+	if (!row) return null;
+	let trackIds: number[] = [];
+	try {
+		trackIds = JSON.parse(row.track_ids || '[]');
+	} catch {}
+	return {
+		current: row.current_track_id,
+		position: row.position || 0,
+		changed: row.changed_at,
+		trackIds
+	};
+}
+
+export function savePlayQueue(userId: number, currentTrackId: number | null, position: number, trackIds: number[]) {
+	const now = new Date().toISOString();
+	db.prepare(`
+		INSERT INTO play_queues (user_id, current_track_id, position, track_ids, changed_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			current_track_id = excluded.current_track_id,
+			position = excluded.position,
+			track_ids = excluded.track_ids,
+			changed_at = excluded.changed_at
+	`).run(userId, currentTrackId, position, JSON.stringify(trackIds), now);
+}
+

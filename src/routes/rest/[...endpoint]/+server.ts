@@ -69,6 +69,14 @@ async function handleSubsonic(endpoint: string, request: Request, url: URL): Pro
 	const format = params.f || 'xml';
 	const jsonpCallback = params.callback;
 
+	// Sanitize params for logging (redact secrets)
+	const safeParams = { ...params };
+	delete safeParams.p;
+	delete safeParams.t;
+	delete safeParams.s;
+	const paramStr = Object.entries(safeParams).map(([k, v]) => `${k}=${v}`).join(' ');
+	console.log(`[Subsonic] ${request.method} ${action} ${paramStr}`);
+
 	// Media streams and cover art
 	if (action === 'stream') {
 		const auth = authenticateSubsonicRequest(params);
@@ -92,8 +100,17 @@ async function handleSubsonic(endpoint: string, request: Request, url: URL): Pro
 		return buildSubsonicError(auth.error.code, auth.error.message, format, jsonpCallback);
 	}
 
-	const handler = subsonicHandlers[action];
+	let handler = subsonicHandlers[action];
 	if (!handler) {
+		const lowerAction = action.toLowerCase();
+		const matchedKey = Object.keys(subsonicHandlers).find((k) => k.toLowerCase() === lowerAction);
+		if (matchedKey) {
+			handler = subsonicHandlers[matchedKey];
+		}
+	}
+
+	if (!handler) {
+		console.warn(`[Subsonic] Unsupported action requested: ${action}`);
 		return buildSubsonicError(
 			SubsonicErrorCode.GENERIC,
 			`Action '${action}' is not supported by this server.`,

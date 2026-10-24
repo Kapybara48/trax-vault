@@ -20,7 +20,12 @@ import {
 	getPlaylistTracks,
 	createPlaylist,
 	updatePlaylist,
-	deletePlaylist
+	deletePlaylist,
+	getAllTracksPaged,
+	getTracksByGenre,
+	getTopTracksByArtist,
+	getPlayQueue,
+	savePlayQueue
 } from '$lib/server/db.js';
 import { findCompanionLyricsFile, resolveTrackFilePath } from '$lib/server/scanner.js';
 import type { Album, Track } from '$lib/types/index.js';
@@ -70,6 +75,18 @@ export function trackToSubsonicSong(
 	const durationSeconds = Math.round((track.duration_ms || 0) / 1000);
 	const ext = track.format ? track.format.toLowerCase().replace(/_.*/, '') : 'flac';
 
+	// Compute real file size on disk or estimate from bitrate & duration
+	let sizeBytes = 0;
+	const resolvedPath = resolveTrackFilePath(track);
+	if (resolvedPath && fs.existsSync(resolvedPath)) {
+		try {
+			sizeBytes = fs.statSync(resolvedPath).size;
+		} catch {}
+	}
+	if (!sizeBytes && durationSeconds > 0) {
+		sizeBytes = Math.round((durationSeconds * (track.bitrate_kbps || 320) * 1000) / 8);
+	}
+
 	const song: Record<string, any> = {
 		id: track.id.toString(),
 		parent: albumId,
@@ -82,8 +99,10 @@ export function trackToSubsonicSong(
 		year: track.album_year || album?.release_year || undefined,
 		genre: album?.genre || undefined,
 		coverArt: `tr-${track.id}`,
+		size: sizeBytes,
 		contentType: getContentType(track.format, track.file_path || undefined),
 		suffix: ext,
+		format: ext,
 		duration: durationSeconds,
 		bitRate: track.bitrate_kbps || 0,
 		path: track.file_path || `${artistName}/${albumTitle}/${track.track_number} ${track.title}.${ext}`,
@@ -106,9 +125,19 @@ export function albumToSubsonicAlbum(
 	tracks?: Track[],
 	isStarred: boolean = false
 ): Record<string, any> {
-	const durationSeconds = tracks
-		? Math.round(tracks.reduce((sum, t) => sum + (t.duration_ms || 0), 0) / 1000)
-		: 0;
+	let durationSeconds = 0;
+	let songCount = album.track_count || 0;
+
+	if (tracks && tracks.length > 0) {
+		durationSeconds = Math.round(tracks.reduce((sum, t) => sum + (t.duration_ms || 0), 0) / 1000);
+		songCount = tracks.length;
+	} else if (album.id) {
+		const row = db.prepare('SELECT SUM(duration_ms) as total_ms, COUNT(*) as count FROM tracks WHERE album_id = ?').get(album.id) as any;
+		if (row && row.total_ms) {
+			durationSeconds = Math.round((row.total_ms || 0) / 1000);
+			songCount = row.count || songCount;
+		}
+	}
 
 	const alb: Record<string, any> = {
 		id: album.id.toString(),
@@ -117,7 +146,7 @@ export function albumToSubsonicAlbum(
 		artist: album.artist,
 		artistId: encodeArtistId(album.artist),
 		coverArt: `al-${album.id}`,
-		songCount: tracks ? tracks.length : (album.track_count || 0),
+		songCount: songCount,
 		duration: durationSeconds,
 		created: album.created_at,
 		year: album.release_year || undefined,
@@ -161,7 +190,7 @@ export const subsonicHandlers: Record<
 		return {
 			data: {
 				musicFolders: {
-					musicFolder: [{ id: 1, name: 'Track Vault Music' }]
+					musicFolder: [{ id: 0, name: 'Track Vault Music' }]
 				}
 			}
 		};
@@ -187,7 +216,7 @@ export const subsonicHandlers: Record<
 					jukeboxRole: true,
 					shareRole: true,
 					videoConversionRole: false,
-					folder: [1]
+					folder: [0]
 				}
 			}
 		};
@@ -214,7 +243,7 @@ export const subsonicHandlers: Record<
 							jukeboxRole: true,
 							shareRole: true,
 							videoConversionRole: false,
-							folder: [1]
+							folder: [0]
 						}
 					]
 				}
@@ -264,6 +293,127 @@ export const subsonicHandlers: Record<
 				}
 			}
 		};
+	},
+
+	getIndexes: async (params, user) => {
+		const rawArtists = getDistinctArtists();
+		const indexMap = new Map<string, any[]>();
+
+		for (const art of rawArtists) {
+			const firstChar = art.name.trim().charAt(0).toUpperCase();
+			const indexLetter = /^[A-Z]$/.test(firstChar) ? firstChar : '#';
+
+			if (!indexMap.has(indexLetter)) {
+				indexMap.set(indexLetter, []);
+			}
+
+			const isStarred = isItemStarred(user.id, 'artist', art.name as any);
+			const artObj: Record<string, any> = {
+				id: encodeArtistId(art.name),
+				name: art.name,
+				albumCount: art.album_count,
+				coverArt: `art-${encodeArtistId(art.name)}`
+			};
+			if (isStarred) artObj.starred = new Date().toISOString();
+
+			indexMap.get(indexLetter)!.push(artObj);
+		}
+
+		const indexes = Array.from(indexMap.entries())
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([name, artist]) => ({ name, artist }));
+
+		const lastRow = db.prepare('SELECT MAX(updated_at) as last_updated FROM tracks').get() as any;
+		const lastModified = lastRow?.last_updated ? new Date(lastRow.last_updated).getTime() : Date.now();
+
+		return {
+			data: {
+				indexes: {
+					lastModified,
+					ignoredArticles: 'The El La Los Las Le Les',
+					index: indexes
+				}
+			}
+		};
+	},
+
+	getMusicDirectory: async (params, user) => {
+		const rawId = (params.id || '').toString();
+		if (!rawId) {
+			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'id' is required" } };
+		}
+
+		// 1. Artist directory (art_...) -> list albums as child dirs
+		if (rawId.startsWith('art_')) {
+			const artistName = decodeArtistId(rawId);
+			const albums = getAlbumsByArtist(artistName);
+			return {
+				data: {
+					directory: {
+						id: rawId,
+						parent: '0',
+						name: artistName,
+						child: albums.map((a) => {
+							const isStarred = isItemStarred(user.id, 'album', a.id);
+							const albSub = albumToSubsonicAlbum(a, undefined, isStarred);
+							return {
+								...albSub,
+								parent: rawId,
+								isDir: true
+							};
+						})
+					}
+				}
+			};
+		}
+
+		// 2. Album directory (numeric id or al-...) -> list songs as files
+		const cleanId = rawId.replace(/^al-/, '');
+		const albumId = parseInt(cleanId, 10);
+		if (!isNaN(albumId) && rawId !== '0' && rawId !== 'root') {
+			const result = getAlbumById(albumId);
+			if (result) {
+				const isStarred = isItemStarred(user.id, 'album', albumId);
+				const parentArtistId = encodeArtistId(result.album.artist);
+				return {
+					data: {
+						directory: {
+							id: rawId,
+							parent: parentArtistId,
+							name: result.album.title,
+							child: result.tracks.map((t) => {
+								const isSongStarred = isItemStarred(user.id, 'track', t.id);
+								return trackToSubsonicSong(t, result.album, isSongStarred);
+							})
+						}
+					}
+				};
+			}
+		}
+
+		// 3. Root directory (folder id 0, "root", or fallback) -> list all artists as dirs
+		if (rawId === '0' || rawId === 'root' || rawId === '1') {
+			const artists = getDistinctArtists();
+			return {
+				data: {
+					directory: {
+						id: rawId,
+						name: 'Track Vault Music',
+						child: artists.map((art) => ({
+							id: encodeArtistId(art.name),
+							parent: rawId,
+							isDir: true,
+							title: art.name,
+							name: art.name,
+							artist: art.name,
+							albumCount: art.album_count
+						}))
+					}
+				}
+			};
+		}
+
+		return { error: { code: SubsonicErrorCode.DATA_NOT_FOUND, message: 'Directory not found' } };
 	},
 
 	getArtists: async (_params, user) => {
@@ -361,6 +511,42 @@ export const subsonicHandlers: Record<
 					smallImageUrl: '',
 					mediumImageUrl: '',
 					largeImageUrl: ''
+				}
+			}
+		};
+	},
+
+	getAlbumInfo: async (params) => {
+		const rawId = (params.id || '').toString().replace(/^al-/, '');
+		const albumId = parseInt(rawId, 10);
+		const albumRes = !isNaN(albumId) ? getAlbumById(albumId) : null;
+		return {
+			data: {
+				albumInfo: {
+					notes: albumRes?.album.notes || (albumRes ? `${albumRes.album.title} by ${albumRes.album.artist}` : ''),
+					musicBrainzId: '',
+					lastFmUrl: '',
+					smallImageUrl: albumId ? `al-${albumId}` : '',
+					mediumImageUrl: albumId ? `al-${albumId}` : '',
+					largeImageUrl: albumId ? `al-${albumId}` : ''
+				}
+			}
+		};
+	},
+
+	getAlbumInfo2: async (params) => {
+		const rawId = (params.id || '').toString().replace(/^al-/, '');
+		const albumId = parseInt(rawId, 10);
+		const albumRes = !isNaN(albumId) ? getAlbumById(albumId) : null;
+		return {
+			data: {
+				albumInfo2: {
+					notes: albumRes?.album.notes || (albumRes ? `${albumRes.album.title} by ${albumRes.album.artist}` : ''),
+					musicBrainzId: '',
+					lastFmUrl: '',
+					smallImageUrl: albumId ? `al-${albumId}` : '',
+					mediumImageUrl: albumId ? `al-${albumId}` : '',
+					largeImageUrl: albumId ? `al-${albumId}` : ''
 				}
 			}
 		};
@@ -476,40 +662,183 @@ export const subsonicHandlers: Record<
 		};
 	},
 
+	getSongsByGenre: async (params, user) => {
+		const genre = params.genre;
+		if (!genre) {
+			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'genre' is required" } };
+		}
+		const count = parseInt(params.count, 10) || 50;
+		const offset = parseInt(params.offset, 10) || 0;
+		const tracks = getTracksByGenre(genre, offset, count);
+
+		return {
+			data: {
+				songsByGenre: {
+					song: tracks.map((t) => {
+						const isStarred = isItemStarred(user.id, 'track', t.id);
+						return trackToSubsonicSong(t, null, isStarred);
+					})
+				}
+			}
+		};
+	},
+
+	getTopSongs: async (params, user) => {
+		const rawArtist = params.artist || (params.artistId ? decodeArtistId(params.artistId) : '');
+		const count = parseInt(params.count, 10) || 50;
+		const tracks = rawArtist ? getTopTracksByArtist(rawArtist, count) : [];
+
+		return {
+			data: {
+				topSongs: {
+					song: tracks.map((t) => {
+						const isStarred = isItemStarred(user.id, 'track', t.id);
+						return trackToSubsonicSong(t, null, isStarred);
+					})
+				}
+			}
+		};
+	},
+
+	getSimilarSongs: async (params, user) => {
+		const count = parseInt(params.count, 10) || 50;
+		const songId = parseInt(params.id, 10);
+		let tracks: Track[] = [];
+		if (!isNaN(songId)) {
+			const source = getTrackById(songId);
+			if (source) {
+				tracks = getTopTracksByArtist(source.artist || '', count);
+			}
+		}
+		if (tracks.length === 0) {
+			tracks = getRandomTracks(count);
+		}
+		return {
+			data: {
+				similarSongs: {
+					song: tracks.map((t) => {
+						const isStarred = isItemStarred(user.id, 'track', t.id);
+						return trackToSubsonicSong(t, null, isStarred);
+					})
+				}
+			}
+		};
+	},
+
+	getSimilarSongs2: async (params, user) => {
+		const count = parseInt(params.count, 10) || 50;
+		const songId = parseInt(params.id, 10);
+		let tracks: Track[] = [];
+		if (!isNaN(songId)) {
+			const source = getTrackById(songId);
+			if (source) {
+				tracks = getTopTracksByArtist(source.artist || '', count);
+			}
+		}
+		if (tracks.length === 0) {
+			tracks = getRandomTracks(count);
+		}
+		return {
+			data: {
+				similarSongs2: {
+					song: tracks.map((t) => {
+						const isStarred = isItemStarred(user.id, 'track', t.id);
+						return trackToSubsonicSong(t, null, isStarred);
+					})
+				}
+			}
+		};
+	},
+
+	getPlayQueue: async (_params, user) => {
+		const q = getPlayQueue(user.id);
+		let songs: any[] = [];
+		if (q && q.trackIds.length > 0) {
+			for (const trId of q.trackIds) {
+				const tr = getTrackById(trId);
+				if (tr) {
+					const isStarred = isItemStarred(user.id, 'track', tr.id);
+					songs.push(trackToSubsonicSong(tr, null, isStarred));
+				}
+			}
+		}
+		return {
+			data: {
+				playQueue: {
+					current: q?.current ? q.current.toString() : undefined,
+					position: q?.position || 0,
+					changed: q?.changed || new Date().toISOString(),
+					changedBy: user.username,
+					entry: songs
+				}
+			}
+		};
+	},
+
+	savePlayQueue: async (params, user) => {
+		const current = params.current ? parseInt(params.current, 10) : null;
+		const position = parseInt(params.position, 10) || 0;
+		let ids: number[] = [];
+		if (params.id) {
+			const idList = Array.isArray(params.id) ? params.id : [params.id];
+			ids = idList.map((id: string) => parseInt(id, 10)).filter((n: number) => !isNaN(n));
+		}
+		savePlayQueue(user.id, isNaN(current as any) ? null : current, position, ids);
+		return { data: {} };
+	},
+
+	getSongs: async (params, user) => {
+		const size = parseInt(params.size || params.count, 10) || 500;
+		const offset = parseInt(params.offset, 10) || 0;
+		const tracks = getAllTracksPaged(offset, size);
+		return {
+			data: {
+				songs: {
+					song: tracks.map((t) => {
+						const isStarred = isItemStarred(user.id, 'track', t.id);
+						return trackToSubsonicSong(t, null, isStarred);
+					})
+				}
+			}
+		};
+	},
+
 	search3: async (params, user) => {
-		const query = params.query?.trim() || '';
+		let query = params.query?.trim() || '';
+		if (query === '*') query = '';
 		const artistCount = parseInt(params.artistCount, 10) || 20;
 		const albumCount = parseInt(params.albumCount, 10) || 20;
-		const songCount = parseInt(params.songCount, 10) || 20;
+		const songCount = parseInt(params.songCount, 10) || 50;
+
+		let matchingArtists: any[] = [];
+		let matchingAlbums: Album[] = [];
+		let matchingTracks: Track[] = [];
 
 		if (!query) {
-			return {
-				data: {
-					searchResult3: {
-						artist: [],
-						album: [],
-						song: []
-					}
-				}
-			};
+			matchingArtists = db.prepare(
+				'SELECT artist as name, COUNT(id) as album_count FROM albums GROUP BY artist ORDER BY artist COLLATE NOCASE ASC LIMIT ?'
+			).all(artistCount) as any[];
+
+			matchingAlbums = db.prepare(
+				'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count FROM albums a ORDER BY a.title COLLATE NOCASE ASC LIMIT ?'
+			).all(albumCount) as Album[];
+
+			matchingTracks = getAllTracksPaged(0, songCount);
+		} else {
+			matchingArtists = db.prepare(
+				'SELECT artist as name, COUNT(id) as album_count FROM albums WHERE artist LIKE ? GROUP BY artist LIMIT ?'
+			).all(`%${query}%`, artistCount) as any[];
+
+			matchingAlbums = getAlbums(query).slice(0, albumCount);
+
+			matchingTracks = db.prepare(`
+				SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
+				FROM tracks t
+				JOIN albums a ON t.album_id = a.id
+				WHERE t.title LIKE ? OR t.artist LIKE ? OR a.title LIKE ?
+				LIMIT ?
+			`).all(`%${query}%`, `%${query}%`, `%${query}%`, songCount) as Track[];
 		}
-
-		// Search artists
-		const matchingArtists = db.prepare(
-			'SELECT artist as name, COUNT(id) as album_count FROM albums WHERE artist LIKE ? GROUP BY artist LIMIT ?'
-		).all(`%${query}%`, artistCount) as any[];
-
-		// Search albums
-		const matchingAlbums = getAlbums(query).slice(0, albumCount);
-
-		// Search tracks
-		const matchingTracks = db.prepare(`
-			SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year
-			FROM tracks t
-			JOIN albums a ON t.album_id = a.id
-			WHERE t.title LIKE ? OR t.artist LIKE ?
-			LIMIT ?
-		`).all(`%${query}%`, `%${query}%`, songCount) as Track[];
 
 		return {
 			data: {
@@ -538,16 +867,13 @@ export const subsonicHandlers: Record<
 	},
 
 	search2: async (params, user) => {
-		// Delegates to search3 format under searchResult2
-		const res = await subsonicHandlers.search3(params, user);
-		if (res.data?.searchResult3) {
-			return {
-				data: {
-					searchResult2: res.data.searchResult3
-				}
-			};
-		}
-		return res;
+		const res = await (subsonicHandlers.search3 as any)(params, user);
+		if (res.error) return res;
+		return {
+			data: {
+				searchResult2: res.data?.searchResult3 || { artist: [], album: [], song: [] }
+			}
+		};
 	},
 
 	getStarred2: async (_params, user) => {
@@ -759,7 +1085,15 @@ export const subsonicHandlers: Record<
 						versions: [1]
 					},
 					{
+						name: 'songLyrics',
+						versions: [1]
+					},
+					{
 						name: 'formPost',
+						versions: [1]
+					},
+					{
+						name: 'topSongsByArtistId',
 						versions: [1]
 					}
 				]
