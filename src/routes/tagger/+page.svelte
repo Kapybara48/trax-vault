@@ -518,7 +518,7 @@
 </script>
 
 <svelte:head>
-	<title>MusicBrainz Tagger Studio - Track Vault</title>
+	<title>MusicBrainz Tagger Studio - Trax Vault</title>
 </svelte:head>
 
 <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">

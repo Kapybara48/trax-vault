@@ -120,7 +120,7 @@
 		}
 	}
 
-	// Import chosen release into Track Vault
+	// Import chosen release into Trax Vault
 	async function importMBRelease() {
 		if (!selectedRelease) return;
 		isImporting = true;
@@ -313,7 +313,7 @@
 
 	<!-- Page Heading -->
 	<div class="mb-6">
-		<h1 class="text-2xl sm:text-3xl font-black text-white">Add Album to Track Vault</h1>
+		<h1 class="text-2xl sm:text-3xl font-black text-white">Add Album to Trax Vault</h1>
 		<p class="mt-1 text-sm text-neutral-400">
 			Import directly from MusicBrainz with full tracklists & cover art, or enter an album manually.
 		</p>
@@ -617,7 +617,7 @@
 							class="flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-600/30 transition hover:bg-emerald-500 disabled:opacity-50"
 						>
 							<Sparkles class="h-4 w-4" />
-							{isImporting ? 'Importing into Vault...' : 'Import Album into Track Vault'}
+							{isImporting ? 'Importing into Vault...' : 'Import Album into Trax Vault'}
 						</button>
 					</div>
 				</div>

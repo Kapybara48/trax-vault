@@ -282,7 +282,7 @@ export async function downloadAndSaveCover(
 		const res = await fetch(imageUrl, {
 			redirect: 'follow',
 			headers: {
-				'User-Agent': 'TrackVault/1.0.0 ( contact@trackvault.local )'
+				'User-Agent': 'TraxVault/1.0.0 ( contact@traxvault.local )'
 			}
 		});
 

@@ -149,7 +149,7 @@
 </script>
 
 <svelte:head>
-	<title>Track Vault - Settings</title>
+	<title>Trax Vault - Settings</title>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -258,7 +258,7 @@
 						<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-0.5">Database Storage</span>
 						<div class="flex items-center gap-1.5 font-mono text-[11px] text-neutral-300 bg-neutral-950 p-2 rounded-lg border border-neutral-800 break-all">
 							<Layers class="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-							<span>{data.env.dataDir}/trackvault.db</span>
+							<span>{data.env.dataDir}/traxvault.db</span>
 						</div>
 					</div>
 
@@ -291,7 +291,7 @@
 
 				<div class="space-y-3">
 					<p class="text-neutral-400 leading-relaxed text-[11px]">
-						Track Vault's built-in tagger studio queries MusicBrainz directly, aligns songs with releases, downloads official cover art, and writes verified ID3/Vorbis tags directly to audio files on disk.
+						Trax Vault's built-in tagger studio queries MusicBrainz directly, aligns songs with releases, downloads official cover art, and writes verified ID3/Vorbis tags directly to audio files on disk.
 					</p>
 
 					<div class="pt-2 border-t border-neutral-800/60">
@@ -320,7 +320,7 @@
 
 				<div class="space-y-3">
 					<p class="text-neutral-400 leading-relaxed text-[11px]">
-						Connect third-party music streaming clients like <strong class="text-neutral-200">Symfonium</strong> (Android), <strong class="text-neutral-200">Feishin</strong> (Desktop), or <strong class="text-neutral-200">Amperfy</strong> (iOS) directly to Track Vault.
+						Connect third-party music streaming clients like <strong class="text-neutral-200">Symfonium</strong> (Android), <strong class="text-neutral-200">Feishin</strong> (Desktop), or <strong class="text-neutral-200">Amperfy</strong> (iOS) directly to Trax Vault.
 					</p>
 
 					<div>
@@ -397,7 +397,7 @@
 									<span class="text-[10px] text-neutral-500">Updates token secret</span>
 								</div>
 								<p class="text-[11px] text-neutral-400">
-									Enter your current Track Vault password to synchronize token authentication for Feishin & mobile apps:
+									Enter your current Trax Vault password to synchronize token authentication for Feishin & mobile apps:
 								</p>
 								<div class="flex gap-2">
 									<input

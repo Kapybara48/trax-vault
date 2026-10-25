@@ -15,9 +15,24 @@ import type {
 } from '$lib/types/index.js';
 import { parseSearchQuery } from '$lib/search.js';
 
-const DB_PATH = process.env.DATA_DIR
-	? path.join(process.env.DATA_DIR, 'trackvault.db')
-	: path.resolve('./data/trackvault.db');
+function resolveDatabasePath(): string {
+	const baseDir = process.env.DATA_DIR || './data';
+	const newDbPath = path.resolve(baseDir, 'traxvault.db');
+	const legacyDbPath = path.resolve(baseDir, 'trackvault.db');
+
+	// If the new database already exists, use it
+	if (fs.existsSync(newDbPath)) {
+		return newDbPath;
+	}
+	// If legacy database exists, seamlessly continue using it to preserve user library
+	if (fs.existsSync(legacyDbPath)) {
+		return legacyDbPath;
+	}
+	// Fresh install: create traxvault.db
+	return newDbPath;
+}
+
+const DB_PATH = resolveDatabasePath();
 
 // Ensure data folder exists
 const dbDir = path.dirname(DB_PATH);

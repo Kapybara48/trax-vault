@@ -52,7 +52,7 @@
 </script>
 
 <svelte:head>
-	<title>Track Vault - Login</title>
+	<title>Trax Vault - Login</title>
 </svelte:head>
 
 <div class="flex min-h-[85vh] items-center justify-center px-4 py-12 sm:px-6">
@@ -63,7 +63,7 @@
 				<Disc class="h-9 w-9 stroke-[2.2]" />
 			</div>
 			<h1 class="text-2xl sm:text-3xl font-black text-white">
-				Track Vault
+				Trax Vault
 			</h1>
 			<p class="mt-1 text-xs text-neutral-400">
 				Sign in to access your music collection and vault tools

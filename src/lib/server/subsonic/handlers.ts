@@ -192,7 +192,7 @@ export const subsonicHandlers: Record<
 			data: {
 				license: {
 					valid: true,
-					email: 'admin@trackvault.local',
+					email: 'admin@traxvault.local',
 					licenseExpires: '2099-12-31T23:59:59Z',
 					trialExpires: '2099-12-31T23:59:59Z'
 				}
@@ -204,7 +204,7 @@ export const subsonicHandlers: Record<
 		return {
 			data: {
 				musicFolders: {
-					musicFolder: [{ id: 0, name: 'Track Vault Music' }]
+					musicFolder: [{ id: 0, name: 'Trax Vault Music' }]
 				}
 			}
 		};
@@ -419,7 +419,7 @@ export const subsonicHandlers: Record<
 				data: {
 					directory: {
 						id: rawId,
-						name: 'Track Vault Music',
+						name: 'Trax Vault Music',
 						child: artists.map((art) => ({
 							id: encodeArtistId(art.name),
 							parent: rawId,

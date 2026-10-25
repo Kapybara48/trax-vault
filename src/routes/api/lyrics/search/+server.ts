@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 
-const USER_AGENT = 'TrackVault/1.0 (https://github.com/Kapybara48/track-vault)';
+const USER_AGENT = 'TraxVault/1.0 (https://github.com/Kapybara48/trax-vault)';
 
 export const GET: RequestHandler = async ({ url, fetch }) => {
 	const trackName = url.searchParams.get('track') || url.searchParams.get('track_name') || '';

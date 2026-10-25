@@ -713,7 +713,7 @@ export async function scanLibraryDirectory(targetDir?: string): Promise<{
 }
 
 /**
- * Import a scanned album and only its chosen/selected tracks into Track Vault
+ * Import a scanned album and only its chosen/selected tracks into Trax Vault
  */
 export async function importScannedAlbum(
 	album: ScannedAlbum,
@@ -818,7 +818,7 @@ export async function backfillTrackBitrates(): Promise<number> {
 				}
 			});
 			batch(updatesToApply);
-			console.log(`[TrackVault] Successfully backfilled exact bitrate for ${updatesToApply.length} tracks.`);
+			console.log(`[TraxVault] Successfully backfilled exact bitrate for ${updatesToApply.length} tracks.`);
 		}
 
 		return updatesToApply.length;

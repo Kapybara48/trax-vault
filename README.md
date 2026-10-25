@@ -1,8 +1,8 @@
-# 💽 Track Vault
+# 💽 Trax Vault
 
-**Track Vault** is a modern, self-hosted web application for music collectors and audiophiles to track and audit their music library's audio quality, format status, lyrics coverage, and censorship state.
+**Trax Vault** is a modern, self-hosted web application for music collectors and audiophiles to track and audit their music library's audio quality, format status, lyrics coverage, and censorship state.
 
-![Track Vault](https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/disc-3.svg)
+![Trax Vault](https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/disc-3.svg)
 
 ---
 
@@ -58,23 +58,23 @@
 
 ## 🐳 Self-Hosting with Docker
 
-Track Vault publishes automated, multi-architecture Docker images (`linux/amd64` and `linux/arm64`) to the **GitHub Container Registry** (`ghcr.io/kapybara48/track-vault:latest`) on every push to `main`.
+Trax Vault publishes automated, multi-architecture Docker images (`linux/amd64` and `linux/arm64`) to the **GitHub Container Registry** (`ghcr.io/kapybara48/trax-vault:latest`) on every push to `main`.
 
 ### Quick Start (No Git Clone Required)
 
 On your server, you don't even need to clone the repository or install Node.js. All you need is a single `docker-compose.yml` file:
 
 ```bash
-# 1. Create a directory for Track Vault
-mkdir -p track-vault && cd track-vault
+# 1. Create a directory for Trax Vault
+mkdir -p trax-vault && cd trax-vault
 
 # 2. Download the ready-to-run compose file
-curl -fsSL https://raw.githubusercontent.com/Kapybara48/track-vault/main/docker-compose.server.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/Kapybara48/trax-vault/main/docker-compose.server.yml -o docker-compose.yml
 
 # 3. Edit paths if your music is stored outside ./music (optional)
 # MUSIC_PATH=/path/to/your/music docker compose up -d
 
-# 4. Start Track Vault
+# 4. Start Trax Vault
 docker compose up -d
 ```
 
@@ -83,7 +83,7 @@ docker compose up -d
 Whenever a new commit is pushed or a new version is released:
 
 ```bash
-cd track-vault
+cd trax-vault
 docker compose pull
 docker compose up -d
 ```
@@ -95,19 +95,19 @@ docker compose up -d
 If you prefer building directly from source on your local machine:
 
 ```bash
-git clone https://github.com/Kapybara48/track-vault.git
-cd track-vault
+git clone https://github.com/Kapybara48/trax-vault.git
+cd trax-vault
 docker compose up -d --build
 ```
 
 ---
 
-### Accessing Track Vault
+### Accessing Trax Vault
 
-Access Track Vault in your browser:
-- **Track Vault**: `http://localhost:3000` (or `http://<your-server-ip>:3000`)
+Access Trax Vault in your browser:
+- **Trax Vault**: `http://localhost:3000` (or `http://<your-server-ip>:3000`)
 
-On your first visit to Track Vault, you will be greeted with a **First-Run Admin Setup** screen to create your admin credentials. After setup, standard login is enforced unless `AUTH_DISABLED=true` is set in your environment. You can access the **Tagger Studio** at any time from the Navbar, the Library Scanner, album pages, or Settings.
+On your first visit to Trax Vault, you will be greeted with a **First-Run Admin Setup** screen to create your admin credentials. After setup, standard login is enforced unless `AUTH_DISABLED=true` is set in your environment. You can access the **Tagger Studio** at any time from the Navbar, the Library Scanner, album pages, or Settings.
 
 ---
 

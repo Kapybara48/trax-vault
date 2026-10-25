@@ -196,7 +196,7 @@
 		if (albumTitle) header.push(`[al:${albumTitle}]`);
 		if (duration > 0) header.push(`[length:${formatDurationShort(duration)}]`);
 		if (isInstrumental) header.push('[au:Instrumental]');
-		header.push('[by:Track Vault]');
+		header.push('[by:Trax Vault]');
 		header.push('');
 
 		if (isInstrumental) {
@@ -262,7 +262,7 @@
 		rawLyricsText = generateLrcContent();
 		saveStatus = {
 			type: 'info',
-			message: `Marked as Instrumental track (${marker}). Click "Save to Track Vault" to write companion file.`
+			message: `Marked as Instrumental track (${marker}). Click "Save to Trax Vault" to write companion file.`
 		};
 	}
 
@@ -615,12 +615,12 @@
 		currentMode = 'sync';
 	}
 
-	// Save to Track Vault
-	async function saveToTrackVault() {
+	// Save to Trax Vault
+	async function saveToTraxVault() {
 		if (!data.track) {
 			saveStatus = {
 				type: 'info',
-				message: 'No Track Vault track associated. Use "Download .lrc" or "Copy LRC" instead.'
+				message: 'No Trax Vault track associated. Use "Download .lrc" or "Copy LRC" instead.'
 			};
 			return;
 		}
@@ -651,19 +651,19 @@
 						type: 'success',
 						message: isInstrumental
 							? 'Saved as Instrumental track to database & companion .lrc file written to disk!'
-							: 'Saved to Track Vault database and companion .lrc file written to server!'
+							: 'Saved to Trax Vault database and companion .lrc file written to server!'
 					};
 				} else if (json.disk_error) {
 					saveStatus = {
 						type: 'info',
-						message: `Saved to Track Vault database! (${json.disk_error})`
+						message: `Saved to Trax Vault database! (${json.disk_error})`
 					};
 				} else {
 					saveStatus = {
 						type: 'success',
 						message: isInstrumental
-							? 'Saved to Track Vault database! Lyrics status updated to Instrumental.'
-							: 'Saved to Track Vault database! Lyrics status updated to Synced LRC.'
+							? 'Saved to Trax Vault database! Lyrics status updated to Instrumental.'
+							: 'Saved to Trax Vault database! Lyrics status updated to Synced LRC.'
 					};
 				}
 			} else {
@@ -847,12 +847,12 @@
 				{#if data.track}
 					<button
 						type="button"
-						onclick={saveToTrackVault}
+						onclick={saveToTraxVault}
 						disabled={isSaving}
 						class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition text-xs font-semibold shadow-lg shadow-emerald-950/40 cursor-pointer disabled:opacity-50"
 					>
 						<Save class="w-3.5 h-3.5" />
-						{isSaving ? 'Saving...' : 'Save to Track Vault'}
+						{isSaving ? 'Saving...' : 'Save to Trax Vault'}
 					</button>
 				{/if}
 

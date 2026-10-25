@@ -143,7 +143,7 @@
 	<div class="mb-5">
 		<div class="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-400">
 			<TriangleAlert class="h-4 w-4 text-emerald-400" />
-			Track Vault Fixer
+			Trax Vault Fixer
 		</div>
 		<h1 class="mt-1 text-2xl sm:text-3xl font-black text-white">
 			Track Fixer

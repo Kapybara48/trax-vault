@@ -48,10 +48,10 @@
 		<div class="flex items-center gap-6">
 			<a href="/" class="flex items-center gap-2.5 transition hover:opacity-90">
 				<div class="flex h-9 w-9 items-center justify-center rounded-xl overflow-hidden shadow-lg shadow-emerald-500/20 border border-emerald-500/30 bg-neutral-900 shrink-0">
-					<img src="/favicon.svg" alt="Track Vault Icon" class="h-full w-full object-cover" />
+					<img src="/favicon.svg" alt="Trax Vault Icon" class="h-full w-full object-cover" />
 				</div>
 				<div>
-					<span class="text-base sm:text-lg font-black tracking-wider text-white">TRACK<span class="text-emerald-400">VAULT</span></span>
+					<span class="text-base sm:text-lg font-black tracking-wider text-white">TRAX<span class="text-emerald-400">VAULT</span></span>
 					<span class="hidden sm:block text-[9px] font-medium uppercase tracking-widest text-emerald-400/80">Music Quality & Lyrics Tracker</span>
 				</div>
 			</a>

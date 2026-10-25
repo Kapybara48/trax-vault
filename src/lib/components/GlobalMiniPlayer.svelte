@@ -55,7 +55,7 @@
 					{player.currentTrack.title}
 				</a>
 				<div class="text-[11px] text-neutral-400 truncate">
-					{player.currentTrack.artist || player.currentAlbum?.artist || 'Track Vault'}
+					{player.currentTrack.artist || player.currentAlbum?.artist || 'Trax Vault'}
 				</div>
 				<div class="hidden sm:flex items-center gap-1.5 mt-0.5">
 					<span class="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-neutral-950 border border-emerald-500/30 text-emerald-400 font-semibold">

@@ -380,7 +380,7 @@
 					</span>
 				</div>
 				<p class="text-neutral-400 mt-1">
-					Use Track Vault's native MusicBrainz Tagger to search official releases, align tracks, download high-res artwork, and write embedded tags directly to your library.
+					Use Trax Vault's native MusicBrainz Tagger to search official releases, align tracks, download high-res artwork, and write embedded tags directly to your library.
 				</p>
 			</div>
 		</div>

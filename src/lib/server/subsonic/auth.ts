@@ -64,7 +64,7 @@ export function authenticateSubsonicRequest(params: {
 			return {
 				error: {
 					code: SubsonicErrorCode.WRONG_CREDENTIALS,
-					message: 'Subsonic token auth is not yet initialized for this user. Please log in once to Track Vault web or set a Subsonic password in Settings.'
+					message: 'Subsonic token auth is not yet initialized for this user. Please log in once to Trax Vault web or set a Subsonic password in Settings.'
 				}
 			};
 		}

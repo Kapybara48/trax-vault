@@ -2,7 +2,7 @@ import { SubsonicErrorCode, type SubsonicError } from './types.js';
 
 const SUBSONIC_API_VERSION = '1.16.1';
 const SERVER_VERSION = '1.0.0';
-const SERVER_TYPE = 'trackvault';
+const SERVER_TYPE = 'traxvault';
 
 function escapeXmlAttr(str: any): string {
 	if (str === null || str === undefined) return '';

@@ -60,7 +60,7 @@
 </script>
 
 <svelte:head>
-	<title>Track Vault - Initial Setup</title>
+	<title>Trax Vault - Initial Setup</title>
 </svelte:head>
 
 <div class="flex min-h-[85vh] items-center justify-center px-4 py-12 sm:px-6">
@@ -72,7 +72,7 @@
 			</div>
 			<div class="flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-widest text-emerald-400">
 				<Sparkles class="h-3.5 w-3.5" />
-				Welcome to Track Vault
+				Welcome to Trax Vault
 			</div>
 			<h1 class="mt-2 text-2xl sm:text-3xl font-black text-white">
 				First-Run Setup

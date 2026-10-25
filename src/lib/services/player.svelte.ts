@@ -32,7 +32,7 @@ class GlobalPlayer {
 
 			// Restore saved volume
 			try {
-				const saved = localStorage.getItem('trackvault_player_volume');
+				const saved = localStorage.getItem('traxvault_player_volume') || localStorage.getItem('trackvault_player_volume');
 				if (saved) {
 					this.volume = parseFloat(saved);
 				}
@@ -40,11 +40,11 @@ class GlobalPlayer {
 
 			// Restore saved shuffle and repeat modes
 			try {
-				const savedShuffle = localStorage.getItem('trackvault_player_shuffle');
+				const savedShuffle = localStorage.getItem('traxvault_player_shuffle') ?? localStorage.getItem('trackvault_player_shuffle');
 				if (savedShuffle !== null) {
 					this.shuffleEnabled = savedShuffle === 'true';
 				}
-				const savedRepeat = localStorage.getItem('trackvault_player_repeat');
+				const savedRepeat = localStorage.getItem('traxvault_player_repeat') || localStorage.getItem('trackvault_player_repeat');
 				if (savedRepeat === 'off' || savedRepeat === 'all' || savedRepeat === 'one') {
 					this.repeatMode = savedRepeat;
 				}
@@ -110,8 +110,8 @@ class GlobalPlayer {
 	private updateMediaSession() {
 		if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || !this.currentTrack) return;
 
-		const artist = this.currentTrack.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Track Vault');
-		const albumTitle = this.currentAlbum ? this.currentAlbum.title : 'Track Vault';
+		const artist = this.currentTrack.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Trax Vault');
+		const albumTitle = this.currentAlbum ? this.currentAlbum.title : 'Trax Vault';
 		const artworkUrl = this.currentAlbum?.cover_url;
 
 		navigator.mediaSession.metadata = new MediaMetadata({
@@ -163,8 +163,8 @@ class GlobalPlayer {
 		}
 
 		if (typeof document !== 'undefined') {
-			const artist = track.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Track Vault');
-			document.title = `${track.title} • ${artist} | Track Vault`;
+			const artist = track.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Trax Vault');
+			document.title = `${track.title} • ${artist} | Trax Vault`;
 		}
 
 		this.updateMediaSession();
@@ -301,7 +301,7 @@ class GlobalPlayer {
 			this.audioEl.volume = this.isMuted ? 0 : this.volume;
 		}
 		try {
-			localStorage.setItem('trackvault_player_volume', clamped.toString());
+			localStorage.setItem('traxvault_player_volume', clamped.toString());
 		} catch {}
 	}
 
@@ -315,7 +315,7 @@ class GlobalPlayer {
 	toggleShuffle() {
 		this.shuffleEnabled = !this.shuffleEnabled;
 		try {
-			localStorage.setItem('trackvault_player_shuffle', this.shuffleEnabled.toString());
+			localStorage.setItem('traxvault_player_shuffle', this.shuffleEnabled.toString());
 		} catch {}
 	}
 
@@ -328,7 +328,7 @@ class GlobalPlayer {
 			this.repeatMode = 'off';
 		}
 		try {
-			localStorage.setItem('trackvault_player_repeat', this.repeatMode);
+			localStorage.setItem('traxvault_player_repeat', this.repeatMode);
 		} catch {}
 	}
 
@@ -343,7 +343,7 @@ class GlobalPlayer {
 		this.currentTime = 0;
 		this.duration = 0;
 		if (typeof document !== 'undefined') {
-			document.title = 'Track Vault - Music Quality & Lyrics Tracker';
+			document.title = 'Trax Vault - Music Quality & Lyrics Tracker';
 		}
 	}
 }

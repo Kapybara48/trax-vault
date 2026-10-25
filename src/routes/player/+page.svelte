@@ -642,7 +642,7 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<!-- Track Vault Studio Audio Player (Full Viewport, Non-Scrollable Window) -->
+<!-- Trax Vault Studio Audio Player (Full Viewport, Non-Scrollable Window) -->
 <div class="flex-1 h-full flex flex-col bg-neutral-950 text-neutral-100 font-sans select-none overflow-hidden min-h-0">
 	<!-- Workspace: Side Library + Main Stage + Drawers -->
 	<div class="flex-1 flex overflow-hidden min-h-0 p-3 gap-3">

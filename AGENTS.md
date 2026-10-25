@@ -1,4 +1,4 @@
-# Track Vault - Agent Memory & Project Instructions
+# Trax Vault - Agent Memory & Project Instructions
 
 This document preserves persistent context, architectural conventions, recent changes, and operational guidelines across AI pair programming sessions.
 
@@ -6,8 +6,8 @@ This document preserves persistent context, architectural conventions, recent ch
 
 ## 1. Project Overview
 
-- **Name:** Track Vault
-- **Repository:** `Kapybara48/track-vault`
+- **Name:** Trax Vault
+- **Repository:** `Kapybara48/trax-vault`
 - **Stack:**
   - **Framework:** SvelteKit 5 (Svelte 5 Runes: `$state`, `$derived`, `$props`)
   - **Language:** TypeScript
@@ -22,7 +22,7 @@ This document preserves persistent context, architectural conventions, recent ch
 ## 2. Architecture & Conventions
 
 ### Database & Migrations (`src/lib/server/db.ts`)
-- Path defaults to `./data/trackvault.db` or `DATA_DIR` env variable.
+- Path defaults to `./data/traxvault.db` (with automated fallback to legacy `trackvault.db`) or `DATA_DIR` env variable.
 - Uses `better-sqlite3` synchronously.
 - **Migrations:** Always verify schema column existence with `PRAGMA table_info(table)` before running `ALTER TABLE ... ADD COLUMN` so that unexpected database errors (permission, disk space, lock) are not silently swallowed.
 - **Indices:** Use `CREATE INDEX IF NOT EXISTS` natively without empty try/catch wrappers.
@@ -266,12 +266,21 @@ This document preserves persistent context, architectural conventions, recent ch
     - **CI/CD Workflow (`.github/workflows/docker-publish.yml`)**:
       - Automated build and push on every `git push` to `main`, version tags (`v*`), or via manual `workflow_dispatch`.
       - Multi-platform container compilation (`linux/amd64` and `linux/arm64`) using QEMU and Docker Buildx.
-      - Automated publication to GitHub Container Registry: `ghcr.io/kapybara48/track-vault:latest` (with branch, sha, and semver tag variants).
+      - Automated publication to GitHub Container Registry: `ghcr.io/kapybara48/trax-vault:latest` (with branch, sha, and semver tag variants).
       - BuildKit GitHub Actions cache (`type=gha`) for fast subsequent image creation.
     - **Clone-Free Server Deployment (`docker-compose.server.yml`)**:
-      - Standalone, ready-to-run Docker Compose definition referencing `ghcr.io/kapybara48/track-vault:latest`.
+      - Standalone, ready-to-run Docker Compose definition referencing `ghcr.io/kapybara48/trax-vault:latest`.
       - Enables headless server deployments without cloning the Git repository, installing Node.js, or compiling C++ dependencies on the target host.
       - 1-command upgrade workflow: `docker compose pull && docker compose up -d`.
+
+30. **Project Renamed to Trax Vault (`trax-vault`)**:
+    - Renamed application branding across all pages, titles, navbar logo, and footer to **Trax Vault** (`trax-vault`).
+    - Updated git remote origin to `git@github.com:Kapybara48/trax-vault.git`.
+    - Implemented database backward compatibility in `src/lib/server/db.ts`: `resolveDatabasePath()` checks for `traxvault.db` and seamlessly falls back to legacy `trackvault.db` without data loss.
+    - Preserved active user sessions (`SESSION_COOKIE_NAME = 'vault_session'`).
+    - Migrated audio player storage keys to `traxvault_player_*` with fallback to `trackvault_player_*`.
+    - Updated Subsonic protocol `SERVER_TYPE = 'traxvault'` and root music folder to `Trax Vault Music`.
+    - Updated container names and images to `trax-vault` and `ghcr.io/kapybara48/trax-vault:latest`.
 
 ---
 
@@ -298,16 +307,15 @@ docker compose pull && docker compose up -d
 Verify the container is healthy:
 ```bash
 docker compose ps
-docker logs track-vault --tail 20
-```
-docker logs track-vault --tail 20
+docker logs trax-vault --tail 20
 ```
 
 ### Git Workflow & Commits
-- **Remote:** `origin` (`git@github.com:Kapybara48/track-vault.git`)
+- **Remote:** `origin` (`git@github.com:Kapybara48/trax-vault.git`)
 - **Default branch:** `main`
 - When instructed to commit and push:
   1. Check git status: `git status`
   2. Stage files: `git add <files>`
   3. Commit with a clear, concise message: `git commit -m "..."`
   4. Push to remote: `git push origin main`
+

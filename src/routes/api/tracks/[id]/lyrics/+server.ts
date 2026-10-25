@@ -156,7 +156,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			} catch (err: any) {
 				diskError =
 					err.code === 'EROFS'
-						? 'Music directory is mounted read-only (:ro). Synced lyrics saved to Track Vault database only.'
+						? 'Music directory is mounted read-only (:ro). Synced lyrics saved to Trax Vault database only.'
 						: `Could not write to disk: ${err.message}`;
 			}
 		}

@@ -1,10 +1,10 @@
 services:
-  track-vault:
-    image: ghcr.io/kapybara48/track-vault:latest
+  trax-vault:
+    image: ghcr.io/kapybara48/trax-vault:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: track-vault
+    container_name: trax-vault
     restart: unless-stopped
     ports:
       - "3000:3000"

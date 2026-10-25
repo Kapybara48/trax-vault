@@ -418,7 +418,7 @@
 					{#if data.searchQuery || data.activeFilter !== 'all' || selectedFormat !== 'all' || selectedCensorship !== 'all' || selectedLyrics !== 'all'}
 						No albums matching your criteria
 					{:else}
-						Your Track Vault is empty
+						Your Trax Vault is empty
 					{/if}
 				</h3>
 				<p class="mt-1 max-w-sm text-sm text-neutral-400">
