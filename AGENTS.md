@@ -371,7 +371,7 @@ docker logs trax-vault --tail 20
 ```
 
 ### Git Workflow & Commits
-- **Remote:** `origin` (`git@github.com:Kapybara48/trax-vault.git`)
+- **Remote:** `origin` (`ssh://git@git.kapyhub.cz:222/kapybara/trax-vault.git`)
 - **Default branch:** `main`
 - When instructed to commit and push:
   1. Check git status: `git status`
