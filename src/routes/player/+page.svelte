@@ -23,8 +23,10 @@
 		ExternalLink,
 		X,
 		Music,
-		CircleCheck
+		CircleCheck,
+		ListPlus
 	} from '@lucide/svelte';
+	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -51,6 +53,17 @@
 	let isInstrumentalLyrics = $state(false);
 	let instrumentalMarker = $state('♪');
 	let lyricsContainerEl: HTMLDivElement | null = $state(null);
+
+	// Add to Playlist Modal State
+	let showPlaylistModal = $state(false);
+	let playlistModalTrackIds = $state<number[]>([]);
+	let playlistModalTitle = $state<string | undefined>(undefined);
+
+	function openAddToPlaylist(trackIds: number[], title?: string) {
+		playlistModalTrackIds = trackIds;
+		playlistModalTitle = title;
+		showPlaylistModal = true;
+	}
 
 	// Helpers: Format mm:ss
 	function formatTime(seconds: number): string {
@@ -570,6 +583,17 @@
 									<span class="hidden sm:inline">Vault Details</span>
 								</a>
 
+								<!-- Add Album to Playlist -->
+								<button
+									type="button"
+									onclick={() => openAddToPlaylist(selectedAlbum.tracks.map((t) => t.id), selectedAlbum.title)}
+									class="p-2 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1.5"
+									title="Add entire album to a playlist"
+								>
+									<ListPlus class="w-3.5 h-3.5 text-emerald-400" />
+									<span class="hidden sm:inline">Add to Playlist</span>
+								</button>
+
 								<!-- Search in Album -->
 								<div class="relative ml-auto hidden md:block w-48">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -594,7 +618,8 @@
 								<th class="font-semibold">Title</th>
 								<th class="font-semibold hidden sm:table-cell">Quality</th>
 								<th class="font-semibold hidden md:table-cell">Lyrics</th>
-								<th class="w-16 text-right pr-4 font-semibold"><Clock class="w-3.5 h-3.5 inline text-neutral-500" /></th>
+								<th class="w-14 text-right pr-2 font-semibold"><Clock class="w-3.5 h-3.5 inline text-neutral-500" /></th>
+								<th class="w-8 text-center pr-3 font-semibold"></th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-neutral-800/30">
@@ -672,8 +697,23 @@
 									</td>
 
 									<!-- Duration -->
-									<td class="text-right pr-4 font-mono tabular-nums text-xs text-neutral-400">
+									<td class="text-right pr-2 font-mono tabular-nums text-xs text-neutral-400">
 										{formatDurationMs(track.duration_ms)}
+									</td>
+
+									<!-- Add to Playlist Action -->
+									<td class="text-center pr-3">
+										<button
+											type="button"
+											onclick={(e) => {
+												e.stopPropagation();
+												openAddToPlaylist([track.id], track.title);
+											}}
+											class="p-1 rounded text-neutral-500 hover:text-emerald-400 hover:bg-neutral-800 transition"
+											title="Add to Playlist"
+										>
+											<ListPlus class="w-3.5 h-3.5" />
+										</button>
 									</td>
 								</tr>
 							{/each}
@@ -996,6 +1036,13 @@
 			</div>
 		</div>
 	</footer>
+
+	<AddToPlaylistModal
+		isOpen={showPlaylistModal}
+		trackIds={playlistModalTrackIds}
+		trackTitle={playlistModalTitle}
+		onClose={() => (showPlaylistModal = false)}
+	/>
 </div>
 
 <style>

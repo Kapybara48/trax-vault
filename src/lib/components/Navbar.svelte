@@ -11,7 +11,8 @@
 		Settings as SettingsIcon,
 		Tag,
 		ExternalLink,
-		Mic
+		Mic,
+		ListMusic
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -71,6 +72,14 @@
 				>
 					<Disc3 class="h-4 w-4 text-emerald-400" />
 					<span>Player</span>
+				</a>
+
+				<a
+					href="/playlists"
+					class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium transition {currentPath.startsWith('/playlist') ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 shadow-sm' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'}"
+				>
+					<ListMusic class="h-4 w-4 text-emerald-400" />
+					<span>Playlists</span>
 				</a>
 
 				<a
@@ -146,11 +155,11 @@
 		</div>
 	</div>
 
-	<!-- Mobile Navigation Bottom Bar (7-tab bar) -->
-	<div class="grid grid-cols-7 md:hidden border-t border-neutral-800/80 px-1 py-1.5 bg-neutral-950 text-center">
+	<!-- Mobile Navigation Bottom Bar (8-tab bar) -->
+	<div class="grid grid-cols-8 md:hidden border-t border-neutral-800/80 px-1 py-1.5 bg-neutral-950 text-center">
 		<a
 			href="/"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath === '/' ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium {currentPath === '/' ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Library class="h-4 w-4" />
 			<span>Vault</span>
@@ -158,15 +167,23 @@
 
 		<a
 			href="/player"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/player') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium {currentPath.startsWith('/player') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Disc3 class="h-4 w-4 {currentPath.startsWith('/player') ? 'text-emerald-400 animate-spin-slow' : ''}" />
 			<span>Player</span>
 		</a>
 
 		<a
+			href="/playlists"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium {currentPath.startsWith('/playlist') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+		>
+			<ListMusic class="h-4 w-4 {currentPath.startsWith('/playlist') ? 'text-emerald-400' : ''}" />
+			<span>Lists</span>
+		</a>
+
+		<a
 			href="/issues"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium relative {currentPath.startsWith('/issues') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium relative {currentPath.startsWith('/issues') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<div class="relative">
 				<TriangleAlert class="h-4 w-4 {issuesCount > 0 ? 'text-amber-400' : ''}" />
@@ -181,7 +198,7 @@
 
 		<a
 			href="/tagger"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/tagger') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium {currentPath.startsWith('/tagger') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Tag class="h-4 w-4 {currentPath.startsWith('/tagger') ? 'text-emerald-400' : ''}" />
 			<span>Tagger</span>
@@ -189,7 +206,7 @@
 
 		<a
 			href="/lrc-maker"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/lrc-maker') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium {currentPath.startsWith('/lrc-maker') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Mic class="h-4 w-4" />
 			<span>LRC</span>
@@ -197,7 +214,7 @@
 
 		<a
 			href="/scan"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/scan') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium {currentPath.startsWith('/scan') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<FolderSync class="h-4 w-4" />
 			<span>Scan</span>
@@ -205,7 +222,7 @@
 
 		<a
 			href="/settings"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/settings') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[9px] font-medium {currentPath.startsWith('/settings') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<SettingsIcon class="h-4 w-4" />
 			<span>Settings</span>

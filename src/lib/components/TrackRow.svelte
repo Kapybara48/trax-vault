@@ -19,7 +19,8 @@
 		Mic2,
 		Sparkles,
 		Check,
-		AlignLeft
+		AlignLeft,
+		ListPlus
 	} from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 
@@ -28,9 +29,10 @@
 		onTrackUpdated?: (updated: Track) => void;
 		onTrackDeleted?: (id: number) => void;
 		onOpenLyrics?: (track: Track) => void;
+		onAddToPlaylist?: (track: Track) => void;
 	}
 
-	let { track, onTrackUpdated, onTrackDeleted, onOpenLyrics }: Props = $props();
+	let { track, onTrackUpdated, onTrackDeleted, onOpenLyrics, onAddToPlaylist }: Props = $props();
 
 	let isUpdating = $state(false);
 	let showNotes = $state(false);
@@ -227,6 +229,17 @@
 				<span class="truncate italic text-neutral-400 text-[11px] max-w-[200px]" title={track.notes}>
 					"{track.notes}"
 				</span>
+			{/if}
+
+			{#if onAddToPlaylist}
+				<button
+					type="button"
+					onclick={() => onAddToPlaylist?.(track)}
+					class="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-emerald-400 transition"
+					title="Add to Playlist"
+				>
+					<ListPlus class="h-3.5 w-3.5" />
+				</button>
 			{/if}
 
 			<button

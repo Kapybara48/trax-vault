@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { db, getAlbumById, getTrackById } from '$lib/server/db.js';
+import { db, getAlbumById, getTrackById, getPlaylistTracks } from '$lib/server/db.js';
 import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/server/scanner.js';
 import { decodeArtistId } from './handlers.js';
 
@@ -199,6 +199,24 @@ export async function handleSubsonicCoverArt(params: Record<string, any>): Promi
 					const resolvedTrack = resolveTrackFilePath(track);
 					if (resolvedTrack) {
 						imageDiskPath = resolveCoverFromFolder(path.dirname(resolvedTrack));
+					}
+				}
+			}
+		}
+	} else if (rawId.startsWith('pl-')) {
+		const playlistId = parseInt(rawId.substring(3), 10);
+		if (!isNaN(playlistId)) {
+			const tracks = getPlaylistTracks(playlistId);
+			for (const t of tracks) {
+				if (t.album_cover_url) {
+					imageDiskPath = parseCoverUrlToDiskPath(t.album_cover_url);
+					if (imageDiskPath) break;
+				}
+				if (t.file_path) {
+					const resolvedTrack = resolveTrackFilePath(t);
+					if (resolvedTrack) {
+						imageDiskPath = resolveCoverFromFolder(path.dirname(resolvedTrack));
+						if (imageDiskPath) break;
 					}
 				}
 			}

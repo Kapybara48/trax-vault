@@ -27,8 +27,10 @@
 		Save,
 		Check,
 		FileText,
-		Sparkles
+		Sparkles,
+		ListPlus
 	} from '@lucide/svelte';
+	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 
 	let { data }: { data: PageData } = $props();
@@ -414,6 +416,17 @@
 			console.error('Failed to delete album:', err);
 		}
 	}
+
+	// Add to Playlist Modal State
+	let showPlaylistModal = $state(false);
+	let playlistModalTrackIds = $state<number[]>([]);
+	let playlistModalTitle = $state<string | undefined>(undefined);
+
+	function openAddToPlaylist(trackIds: number[], title?: string) {
+		playlistModalTrackIds = trackIds;
+		playlistModalTitle = title;
+		showPlaylistModal = true;
+	}
 </script>
 
 <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
@@ -608,6 +621,16 @@
 					<Sparkles class="h-3.5 w-3.5 text-emerald-400" />
 					<span>Auto-Tag with MusicBrainz</span>
 				</a>
+
+				<button
+					type="button"
+					onclick={() => openAddToPlaylist(tracks.map((t) => t.id), album.title)}
+					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 hover:text-white px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
+					title="Add entire album to a playlist"
+				>
+					<ListPlus class="h-3.5 w-3.5 text-emerald-400" />
+					<span>Add to Playlist</span>
+				</button>
 			</div>
 
 			<div class="flex items-center gap-3">
@@ -747,6 +770,7 @@
 								onTrackUpdated={handleTrackUpdated}
 								onTrackDeleted={handleTrackDeleted}
 								onOpenLyrics={openLyricsModal}
+								onAddToPlaylist={(t) => openAddToPlaylist([t.id], t.title)}
 							/>
 						{/each}
 					</div>
@@ -1432,3 +1456,10 @@
 		</div>
 	</div>
 {/if}
+
+<AddToPlaylistModal
+	isOpen={showPlaylistModal}
+	trackIds={playlistModalTrackIds}
+	trackTitle={playlistModalTitle}
+	onClose={() => (showPlaylistModal = false)}
+/>

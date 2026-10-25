@@ -210,13 +210,41 @@ This document preserves persistent context, architectural conventions, recent ch
 27. **Pre-Import MusicBrainz Tagger & Missing Track Detection**:
     - **Scanned Folders Mode in Tagger Studio**: Added dual-mode tab switcher to `/tagger` (`Vault Albums` vs `Scanned Folders`), allowing users to browse, search, and tag unimported audio folders before adding them to the database.
     - **1-Click Tagging from Library Scanner**: Added direct `Tag` button on every scanned album card in `/scan` linking to `/tagger?folderPath=...`.
-    - **Missing Songs Alert Banner**: Automatically identifies when a MusicBrainz release contains tracks not present in the local directory (e.g. 14 local tracks for a 27-track release), rendering an amber/rose alert banner with exact track numbers, titles, and durations so users can verify completeness.
+    - **Missing Songs Alert Banner**: Automatically identifies when a MusicBrainz release contains tracks not present in the local directory, rendering an amber/rose alert banner with exact track numbers, titles, and durations so users can verify completeness.
     - **Real-Time Track Alignment & Re-mapping**: Aligns raw folder audio files (`.flac`, `.mp3`, etc.) using fuzzy title/artist distance, track numbers, and durations, with real-time missing songs updates when remapping.
     - **Direct Tag Writing & 1-Click Vault Import**: Added `applyFolderTags()` to write verified tags to files on disk, save `cover.jpg`, and optionally import the cleanly tagged album into SQLite with `manually_checked = 1`.
     - **API Endpoints**:
       - `GET /api/tagger/folders`: Scanned music folders directory index.
       - `GET / POST /api/tagger/folder/match`: Folder alignment with MusicBrainz candidates and missing track computation.
       - `POST /api/tagger/folder/apply`: Batch disk file tagging and optional Vault album creation.
+
+28. **Playlist Creation, Reordering & Full Symfonium / Subsonic Protocol Compatibility**:
+    - **Database & Data Model**:
+      - Updated `Playlist` interface with optional `cover_url` dynamically resolved from the first song in the playlist.
+      - Updated `getUserPlaylists` and `getPlaylistById` in `src/lib/server/db.ts` to compute `song_count`, total `duration_ms`, and `cover_url` via SQLite subqueries.
+      - Added `createPlaylist` supporting `is_public` and tracklists.
+      - Added `updatePlaylist` supporting `isPublic` flag toggling and `track_order` defragmentation.
+      - Added `replacePlaylistTracks(playlistId, trackIds)` for atomic reordering/replacement in a single transaction.
+      - Added `removePlaylistTrack(playlistId, trackId?, trackIndex?)`.
+    - **Subsonic & OpenSubsonic Compatibility (Symfonium, Feishin, DSub)**:
+      - `getPlaylists.view`: Guaranteed `playlist: []` array, supports `username` query, serves `coverArt: pl-${id}`.
+      - `getPlaylist.view`: Full `entry: []` serialization containing artists, albumArtists, bitrates, file sizes, and paths.
+      - `createPlaylist.view`: Added support for `params.playlistId` to replace and reorder tracks, matching Symfonium's native sync and reordering mechanism.
+      - `updatePlaylist.view`: Supports `public` boolean parameter, `songIdToAdd`, and `songIndexToRemove`.
+      - `deletePlaylist.view`: Accepts both `id` and `playlistId`.
+      - `getCoverArt.view`: Added `pl-${id}` handler resolving the cover art image of the first song in the playlist.
+    - **Web REST API Endpoints**:
+      - `GET / POST /api/playlists`: Playlists list and creation.
+      - `GET / PATCH / DELETE /api/playlists/[id]`: Playlist metadata and deletion.
+      - `POST / PUT / DELETE /api/playlists/[id]/tracks`: Track addition, atomic reordering, and removal.
+    - **Player Service**:
+      - Added `player.playPlaylist(playlist, tracks, startIndex)` supporting persistent background playback across routes with synthetic album queue representations.
+    - **Web UI & Navigation**:
+      - Built interactive Playlists Hub at `/playlists` with grid view, hover play overlays, dynamic cover art, search filtering, and "+ Create Playlist" modal.
+      - Built Playlist Detail view at `/playlist/[id]` with Play All, Shuffle Play, Edit Details, Delete, track numbers, duration, format badges, up/down track reordering, and track removal.
+      - Added reusable popover `AddToPlaylistModal.svelte` with search, 1-click add, and inline playlist creation.
+      - Integrated "Add to Playlist" across Track Vault: Album detail hero action bar (`/album/[id]`), individual song rows (`TrackRow.svelte`), and Audiophile Player studio (`/player` hero and track rows).
+      - Added `Playlists` navigation link to desktop navbar and 8-tab mobile bottom bar.
 
 
 ---

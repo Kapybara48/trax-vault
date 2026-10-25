@@ -122,6 +122,7 @@ export interface Playlist {
 	updated_at: string;
 	song_count?: number;
 	duration_ms?: number;
+	cover_url?: string | null;
 }
 
 export interface CollectionStats {

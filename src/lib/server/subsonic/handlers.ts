@@ -20,6 +20,7 @@ import {
 	getPlaylistTracks,
 	createPlaylist,
 	updatePlaylist,
+	replacePlaylistTracks,
 	deletePlaylist,
 	getAllTracksPaged,
 	getTracksByGenre,
@@ -1023,8 +1024,11 @@ export const subsonicHandlers: Record<
 		return { data: {} };
 	},
 
-	getPlaylists: async (_params, user) => {
-		const playlists = getUserPlaylists(user.id);
+	getPlaylists: async (params, user) => {
+		const targetUserId = params.username
+			? (db.prepare('SELECT id FROM users WHERE username = ?').get(params.username) as { id: number } | undefined)?.id || user.id
+			: user.id;
+		const playlists = getUserPlaylists(targetUserId);
 		return {
 			data: {
 				playlists: {
@@ -1077,15 +1081,32 @@ export const subsonicHandlers: Record<
 	},
 
 	createPlaylist: async (params, user) => {
-		const name = params.name?.trim();
-		if (!name) {
-			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'name' is required" } };
-		}
-
 		const rawSongIds = params.songId ? (Array.isArray(params.songId) ? params.songId : [params.songId]) : [];
 		const songIds = rawSongIds.map((s: string) => parseInt(s, 10)).filter((n: number) => !isNaN(n));
 
-		const playlistId = createPlaylist(user.id, name, undefined, songIds);
+		const existingId = params.playlistId ? parseInt(params.playlistId, 10) : null;
+		let playlistId: number;
+
+		if (existingId && !isNaN(existingId)) {
+			// Updating / replacing an existing playlist (Symfonium full sync)
+			const existing = getPlaylistById(existingId);
+			if (!existing) {
+				return { error: { code: SubsonicErrorCode.DATA_NOT_FOUND, message: 'Playlist not found' } };
+			}
+			playlistId = existingId;
+			if (params.name?.trim()) {
+				updatePlaylist(playlistId, params.name.trim());
+			}
+			replacePlaylistTracks(playlistId, songIds);
+		} else {
+			// Creating a new playlist
+			const name = params.name?.trim();
+			if (!name) {
+				return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'name' is required" } };
+			}
+			playlistId = createPlaylist(user.id, name, undefined, songIds);
+		}
+
 		const playlist = getPlaylistById(playlistId);
 		const tracks = getPlaylistTracks(playlistId);
 
@@ -1093,11 +1114,15 @@ export const subsonicHandlers: Record<
 			data: {
 				playlist: {
 					id: playlistId.toString(),
-					name: playlist?.name || name,
+					name: playlist?.name || params.name || '',
+					comment: playlist?.comment || undefined,
+					owner: user.username,
+					public: playlist?.is_public === 1,
 					songCount: tracks.length,
 					duration: Math.round((playlist?.duration_ms || 0) / 1000),
 					created: playlist?.created_at,
 					changed: playlist?.updated_at,
+					coverArt: `pl-${playlistId}`,
 					entry: tracks.map((t) => trackToSubsonicSong(t, null))
 				}
 			}
@@ -1112,6 +1137,12 @@ export const subsonicHandlers: Record<
 
 		const name = params.name?.trim();
 		const comment = params.comment?.trim();
+		const isPublic =
+			params.public !== undefined
+				? params.public === true || params.public === 'true' || params.public === '1'
+					? 1
+					: 0
+				: undefined;
 
 		const rawAddIds = params.songIdToAdd ? (Array.isArray(params.songIdToAdd) ? params.songIdToAdd : [params.songIdToAdd]) : [];
 		const trackIdsToAdd = rawAddIds.map((s: string) => parseInt(s, 10)).filter((n: number) => !isNaN(n));
@@ -1119,13 +1150,13 @@ export const subsonicHandlers: Record<
 		const rawRemoveIndices = params.songIndexToRemove ? (Array.isArray(params.songIndexToRemove) ? params.songIndexToRemove : [params.songIndexToRemove]) : [];
 		const trackIndicesToRemove = rawRemoveIndices.map((s: string) => parseInt(s, 10)).filter((n: number) => !isNaN(n));
 
-		updatePlaylist(playlistId, name, comment, trackIdsToAdd, trackIndicesToRemove);
+		updatePlaylist(playlistId, name, comment, trackIdsToAdd, trackIndicesToRemove, isPublic);
 
 		return { data: {} };
 	},
 
 	deletePlaylist: async (params) => {
-		const playlistId = parseInt(params.id, 10);
+		const playlistId = parseInt(params.id || params.playlistId, 10);
 		if (!isNaN(playlistId)) {
 			deletePlaylist(playlistId);
 		}

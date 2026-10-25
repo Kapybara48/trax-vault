@@ -170,6 +170,32 @@ class GlobalPlayer {
 		this.updateMediaSession();
 	}
 
+	playPlaylist(
+		playlist: { id: number; name: string; comment?: string | null; cover_url?: string | null },
+		tracks: Track[],
+		startIndex: number = 0
+	) {
+		if (!tracks || tracks.length === 0) return;
+		const safeIndex = Math.max(0, Math.min(startIndex, tracks.length - 1));
+
+		const syntheticAlbum: PlayerAlbum = {
+			id: -playlist.id,
+			musicbrainz_id: null,
+			title: playlist.name,
+			artist: 'Playlist',
+			release_year: null,
+			genre: null,
+			cover_url: playlist.cover_url || tracks[0]?.album_cover_url || null,
+			media_type: 'Playlist',
+			notes: playlist.comment || null,
+			created_at: '',
+			updated_at: '',
+			tracks
+		};
+
+		this.playTrack(tracks[safeIndex], syntheticAlbum, tracks);
+	}
+
 	togglePlay() {
 		if (!this.audioEl) return;
 

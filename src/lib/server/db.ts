@@ -1325,11 +1325,20 @@ export function getStarredItems(userId: number): {
 	};
 }
 
-export function getUserPlaylists(userId: number): Array<Playlist & { song_count: number; duration_ms: number }> {
+export function getUserPlaylists(userId: number): Array<Playlist & { song_count: number; duration_ms: number; cover_url: string | null }> {
 	return db.prepare(`
 		SELECT p.*,
 			COUNT(pt.id) as song_count,
-			COALESCE(SUM(t.duration_ms), 0) as duration_ms
+			COALESCE(SUM(t.duration_ms), 0) as duration_ms,
+			(
+				SELECT a.cover_url
+				FROM playlist_tracks pt2
+				JOIN tracks t2 ON pt2.track_id = t2.id
+				JOIN albums a ON t2.album_id = a.id
+				WHERE pt2.playlist_id = p.id AND a.cover_url IS NOT NULL AND a.cover_url != ''
+				ORDER BY pt2.track_order ASC
+				LIMIT 1
+			) as cover_url
 		FROM playlists p
 		LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
 		LEFT JOIN tracks t ON pt.track_id = t.id
@@ -1339,11 +1348,20 @@ export function getUserPlaylists(userId: number): Array<Playlist & { song_count:
 	`).all(userId) as any;
 }
 
-export function getPlaylistById(playlistId: number): (Playlist & { song_count: number; duration_ms: number }) | null {
+export function getPlaylistById(playlistId: number): (Playlist & { song_count: number; duration_ms: number; cover_url: string | null }) | null {
 	const row = db.prepare(`
 		SELECT p.*,
 			COUNT(pt.id) as song_count,
-			COALESCE(SUM(t.duration_ms), 0) as duration_ms
+			COALESCE(SUM(t.duration_ms), 0) as duration_ms,
+			(
+				SELECT a.cover_url
+				FROM playlist_tracks pt2
+				JOIN tracks t2 ON pt2.track_id = t2.id
+				JOIN albums a ON t2.album_id = a.id
+				WHERE pt2.playlist_id = p.id AND a.cover_url IS NOT NULL AND a.cover_url != ''
+				ORDER BY pt2.track_order ASC
+				LIMIT 1
+			) as cover_url
 		FROM playlists p
 		LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
 		LEFT JOIN tracks t ON pt.track_id = t.id
@@ -1364,11 +1382,17 @@ export function getPlaylistTracks(playlistId: number): Track[] {
 	`).all(playlistId) as Track[];
 }
 
-export function createPlaylist(userId: number, name: string, comment?: string, trackIds?: number[]): number {
+export function createPlaylist(
+	userId: number,
+	name: string,
+	comment?: string,
+	trackIds?: number[],
+	isPublic: number = 0
+): number {
 	const res = db.prepare(`
-		INSERT INTO playlists (user_id, name, comment)
-		VALUES (?, ?, ?)
-	`).run(userId, name, comment || null);
+		INSERT INTO playlists (user_id, name, comment, is_public)
+		VALUES (?, ?, ?, ?)
+	`).run(userId, name, comment || null, isPublic);
 
 	const playlistId = Number(res.lastInsertRowid);
 
@@ -1393,9 +1417,10 @@ export function updatePlaylist(
 	name?: string,
 	comment?: string,
 	trackIdsToAdd?: number[],
-	trackIndicesToRemove?: number[]
+	trackIndicesToRemove?: number[],
+	isPublic?: number
 ): void {
-	if (name !== undefined || comment !== undefined) {
+	if (name !== undefined || comment !== undefined || isPublic !== undefined) {
 		const updates: string[] = ["updated_at = datetime('now')"];
 		const params: any[] = [];
 		if (name !== undefined) {
@@ -1405,6 +1430,10 @@ export function updatePlaylist(
 		if (comment !== undefined) {
 			updates.push('comment = ?');
 			params.push(comment);
+		}
+		if (isPublic !== undefined) {
+			updates.push('is_public = ?');
+			params.push(isPublic);
 		}
 		params.push(playlistId);
 		db.prepare(`UPDATE playlists SET ${updates.join(', ')} WHERE id = ?`).run(...params);
@@ -1417,13 +1446,25 @@ export function updatePlaylist(
 
 		// Subsonic indices are 0-based
 		const idsToDelete = trackIndicesToRemove
-			.map(idx => currentTracks[idx]?.id)
+			.map((idx) => currentTracks[idx]?.id)
 			.filter(Boolean);
 
 		if (idsToDelete.length > 0) {
 			const placeholders = idsToDelete.map(() => '?').join(',');
 			db.prepare(`DELETE FROM playlist_tracks WHERE id IN (${placeholders})`).run(...idsToDelete);
 		}
+
+		// Defragment track order
+		const remaining = db.prepare(
+			'SELECT id FROM playlist_tracks WHERE playlist_id = ? ORDER BY track_order ASC'
+		).all(playlistId) as Array<{ id: number }>;
+		const updateOrderStmt = db.prepare('UPDATE playlist_tracks SET track_order = ? WHERE id = ?');
+		const tx = db.transaction(() => {
+			remaining.forEach((item, idx) => {
+				updateOrderStmt.run(idx + 1, item.id);
+			});
+		});
+		tx();
 	}
 
 	if (trackIdsToAdd && trackIdsToAdd.length > 0) {
@@ -1443,6 +1484,55 @@ export function updatePlaylist(
 		});
 		tx();
 	}
+}
+
+export function replacePlaylistTracks(playlistId: number, trackIds: number[]): void {
+	const tx = db.transaction(() => {
+		db.prepare('DELETE FROM playlist_tracks WHERE playlist_id = ?').run(playlistId);
+		if (trackIds.length > 0) {
+			const insertStmt = db.prepare(`
+				INSERT INTO playlist_tracks (playlist_id, track_id, track_order)
+				VALUES (?, ?, ?)
+			`);
+			trackIds.forEach((tId, idx) => {
+				insertStmt.run(playlistId, tId, idx + 1);
+			});
+		}
+		db.prepare("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
+	});
+	tx();
+}
+
+export function removePlaylistTrack(playlistId: number, trackId?: number, trackIndex?: number): void {
+	if (trackIndex !== undefined) {
+		const tracks = db.prepare(
+			'SELECT id FROM playlist_tracks WHERE playlist_id = ? ORDER BY track_order ASC'
+		).all(playlistId) as Array<{ id: number }>;
+		if (tracks[trackIndex]) {
+			db.prepare('DELETE FROM playlist_tracks WHERE id = ?').run(tracks[trackIndex].id);
+		}
+	} else if (trackId !== undefined) {
+		// Delete the first occurrence of this track in the playlist
+		const row = db.prepare(
+			'SELECT id FROM playlist_tracks WHERE playlist_id = ? AND track_id = ? ORDER BY track_order ASC LIMIT 1'
+		).get(playlistId, trackId) as { id: number } | undefined;
+		if (row) {
+			db.prepare('DELETE FROM playlist_tracks WHERE id = ?').run(row.id);
+		}
+	}
+
+	// Defragment track_order
+	const remaining = db.prepare(
+		'SELECT id FROM playlist_tracks WHERE playlist_id = ? ORDER BY track_order ASC'
+	).all(playlistId) as Array<{ id: number }>;
+	const updateStmt = db.prepare('UPDATE playlist_tracks SET track_order = ? WHERE id = ?');
+	const tx = db.transaction(() => {
+		remaining.forEach((item, idx) => {
+			updateStmt.run(idx + 1, item.id);
+		});
+		db.prepare("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
+	});
+	tx();
 }
 
 export function deletePlaylist(playlistId: number): void {
