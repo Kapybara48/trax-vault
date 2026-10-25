@@ -1,7 +1,8 @@
 import { SubsonicErrorCode, type SubsonicError } from './types.js';
+import { APP_VERSION } from '$lib/version.js';
 
 const SUBSONIC_API_VERSION = '1.16.1';
-const SERVER_VERSION = '1.0.0';
+const SERVER_VERSION = APP_VERSION;
 const SERVER_TYPE = 'traxvault';
 
 function escapeXmlAttr(str: any): string {

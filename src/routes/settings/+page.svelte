@@ -254,6 +254,23 @@
 				</div>
 
 				<div class="space-y-3">
+					<div class="flex items-center justify-between pb-2 border-b border-neutral-800/60 text-neutral-400">
+						<span>Application Version:</span>
+						<div class="flex items-center gap-1.5 font-mono">
+							<span class="rounded bg-emerald-950/80 border border-emerald-600/40 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
+								v{data.versionInfo.appVersion}
+							</span>
+							<span class="text-[10px] text-neutral-500">schema {data.versionInfo.schemaVersion}</span>
+						</div>
+					</div>
+
+					{#if data.versionInfo.metadata.migrated_from}
+						<div class="flex items-center justify-between pb-2 border-b border-neutral-800/60 text-[11px] text-neutral-400">
+							<span>Migration Bridge:</span>
+							<span class="font-mono text-emerald-400">Upgraded from v{data.versionInfo.metadata.migrated_from}</span>
+						</div>
+					{/if}
+
 					<div>
 						<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-0.5">Database Storage</span>
 						<div class="flex items-center gap-1.5 font-mono text-[11px] text-neutral-300 bg-neutral-950 p-2 rounded-lg border border-neutral-800 break-all">

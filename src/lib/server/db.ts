@@ -1,6 +1,13 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
+import {
+	APP_NAME,
+	APP_VERSION,
+	CURRENT_SCHEMA_VERSION,
+	MIN_COMPATIBLE_VERSION,
+	MIN_COMPATIBLE_SCHEMA_VERSION
+} from '$lib/version.js';
 import type {
 	Album,
 	Track,
@@ -15,30 +22,96 @@ import type {
 } from '$lib/types/index.js';
 import { parseSearchQuery } from '$lib/search.js';
 
-function resolveDatabasePath(): string {
+/**
+ * Version Lifecycle & Migration Engine
+ * Implements N-1 Stepping Stone Upgrade Policy:
+ * - v1.6: Legacy database (trackvault.db)
+ * - v1.7: Bridge release: auto-migrates trackvault.db to traxvault.db with safety backup
+ * - v2.0: Requires v1.7+ (schema >= 170). Direct upgrade from v1.6 is rejected.
+ */
+function prepareDatabase(): { dbPath: string; migratedFromLegacy: boolean } {
 	const baseDir = process.env.DATA_DIR || './data';
 	const newDbPath = path.resolve(baseDir, 'traxvault.db');
 	const legacyDbPath = path.resolve(baseDir, 'trackvault.db');
 
-	// If the new database already exists, use it
+	if (!fs.existsSync(baseDir)) {
+		fs.mkdirSync(baseDir, { recursive: true });
+	}
+
+	// 1. If traxvault.db exists, it is the primary database
 	if (fs.existsSync(newDbPath)) {
-		return newDbPath;
+		return { dbPath: newDbPath, migratedFromLegacy: false };
 	}
-	// If legacy database exists, seamlessly continue using it to preserve user library
+
+	// 2. If legacy trackvault.db exists, check version compatibility
 	if (fs.existsSync(legacyDbPath)) {
-		return legacyDbPath;
+		// Stepping Stone Policy Check:
+		// If MIN_COMPATIBLE_SCHEMA_VERSION is greater than 160 (e.g. in v2.0+),
+		// direct upgrade from v1.6 is strictly prohibited!
+		if (MIN_COMPATIBLE_SCHEMA_VERSION > 160) {
+			const fatalMsg =
+				`\n====================================================================\n` +
+				`[FATAL ERROR] Incompatible database detected!\n` +
+				`Found legacy 'trackvault.db' (v1.6).\n` +
+				`${APP_NAME} v${APP_VERSION} requires an existing database from at least v${MIN_COMPATIBLE_VERSION}.\n` +
+				`Direct upgrades from v1.6 to v${APP_VERSION} are not supported to prevent data corruption.\n\n` +
+				`PLEASE FOLLOW THIS STEPPING-STONE UPGRADE:\n` +
+				`1. Upgrade to Trax Vault v1.7 first so it can migrate your database.\n` +
+				`2. Then upgrade to Trax Vault v${APP_VERSION}.\n` +
+				`====================================================================\n`;
+			console.error(fatalMsg);
+			throw new Error(fatalMsg);
+		}
+
+		// Backward-compatible v1.6 -> v1.7 Migration Bridge:
+		console.log(`[Migration] Detected legacy v1.6 database (${legacyDbPath}).`);
+		console.log(`[Migration] Starting automatic upgrade to v1.7 (${newDbPath})...`);
+
+		try {
+			// Step A: Checkpoint and flush WAL to ensure main database file is complete
+			try {
+				const tempLegacyDb = new Database(legacyDbPath);
+				tempLegacyDb.pragma('wal_checkpoint(TRUNCATE)');
+				tempLegacyDb.close();
+			} catch (walErr) {
+				console.warn('[Migration] Notice during legacy WAL checkpoint:', walErr);
+			}
+
+			// Step B: Copy trackvault.db to traxvault.db
+			fs.copyFileSync(legacyDbPath, newDbPath);
+
+			// Step C: Safely archive legacy database files as .bak
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const backupLegacyDb = path.resolve(baseDir, `trackvault.db.v1.6.${timestamp}.bak`);
+			fs.renameSync(legacyDbPath, backupLegacyDb);
+
+			// Also archive any remaining -wal or -shm if they exist
+			const legacyWal = `${legacyDbPath}-wal`;
+			const legacyShm = `${legacyDbPath}-shm`;
+			if (fs.existsSync(legacyWal)) {
+				fs.renameSync(legacyWal, `${backupLegacyDb}-wal`);
+			}
+			if (fs.existsSync(legacyShm)) {
+				fs.renameSync(legacyShm, `${backupLegacyDb}-shm`);
+			}
+
+			console.log(
+				`[Migration] Successfully migrated database to ${newDbPath}!\n` +
+				`[Migration] Safety backup saved at ${backupLegacyDb}`
+			);
+
+			return { dbPath: newDbPath, migratedFromLegacy: true };
+		} catch (migErr: any) {
+			console.error('[Migration Error] Failed to migrate legacy database:', migErr);
+			throw new Error(`Failed to migrate legacy trackvault.db: ${migErr.message}`);
+		}
 	}
-	// Fresh install: create traxvault.db
-	return newDbPath;
+
+	// 3. Fresh installation: create traxvault.db
+	return { dbPath: newDbPath, migratedFromLegacy: false };
 }
 
-const DB_PATH = resolveDatabasePath();
-
-// Ensure data folder exists
-const dbDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dbDir)) {
-	fs.mkdirSync(dbDir, { recursive: true });
-}
+const { dbPath: DB_PATH, migratedFromLegacy } = prepareDatabase();
 
 export const db = new Database(DB_PATH);
 
@@ -154,6 +227,12 @@ db.exec(`
 		track_ids TEXT NOT NULL DEFAULT '[]',
 		changed_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
+
+	CREATE TABLE IF NOT EXISTS system_metadata (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
 `);
 
 // Idempotent column migrations for existing databases
@@ -203,6 +282,44 @@ if (!columnExists('users', 'subsonic_secret')) {
 }
 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_manually_checked ON tracks(manually_checked);`);
+
+// System version tracking & user_version stamping
+try {
+	const currentDbVersion = db.pragma('user_version', { simple: true }) as number;
+	if (currentDbVersion < CURRENT_SCHEMA_VERSION) {
+		db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);
+	}
+
+	const upsertMetadata = db.prepare(`
+		INSERT INTO system_metadata (key, value, updated_at) 
+		VALUES (?, ?, datetime('now')) 
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+	`);
+
+	upsertMetadata.run('app_version', APP_VERSION);
+	upsertMetadata.run('schema_version', CURRENT_SCHEMA_VERSION.toString());
+	upsertMetadata.run('min_compatible_version', MIN_COMPATIBLE_VERSION);
+
+	if (migratedFromLegacy) {
+		upsertMetadata.run('migrated_from', '1.6.0');
+		upsertMetadata.run('migrated_at', new Date().toISOString());
+	}
+} catch (metaErr) {
+	console.warn('[DB] Metadata version stamp notice:', metaErr);
+}
+
+export function getSystemMetadata(): Record<string, string> {
+	try {
+		const rows = db.prepare('SELECT key, value FROM system_metadata').all() as Array<{ key: string; value: string }>;
+		const metadata: Record<string, string> = {};
+		for (const row of rows) {
+			metadata[row.key] = row.value;
+		}
+		return metadata;
+	} catch {
+		return {};
+	}
+}
 
 // Backfill missing file_path for existing imported tracks
 try {

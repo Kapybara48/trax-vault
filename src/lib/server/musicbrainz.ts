@@ -3,8 +3,9 @@ import type {
 	MusicBrainzReleaseDetail,
 	MusicBrainzReleaseTrack
 } from '$lib/types/index.js';
+import { APP_VERSION } from '$lib/version.js';
 
-const USER_AGENT = 'TraxVault/1.0.0 ( mailto:daniel.krejci44@gmail.com )';
+const USER_AGENT = `TraxVault/${APP_VERSION} ( mailto:daniel.krejci44@gmail.com )`;
 let lastRequestEndTime = 0;
 let requestQueue: Promise<any> = Promise.resolve();
 

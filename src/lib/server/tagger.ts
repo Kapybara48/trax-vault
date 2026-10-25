@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { writeTags, readTags } from '@dantheman827/taglib-ts/simpleApi.js';
+import { APP_VERSION } from '$lib/version.js';
 import { searchMusicBrainz, getMusicBrainzRelease } from '$lib/server/musicbrainz.js';
 import {
 	resolveTrackFilePath,
@@ -282,7 +283,7 @@ export async function downloadAndSaveCover(
 		const res = await fetch(imageUrl, {
 			redirect: 'follow',
 			headers: {
-				'User-Agent': 'TraxVault/1.0.0 ( contact@traxvault.local )'
+				'User-Agent': `TraxVault/${APP_VERSION} ( contact@traxvault.local )`
 			}
 		});
 

@@ -2,7 +2,8 @@ import { redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types.js';
 import { getUserById, changePassword, verifyPassword } from '$lib/server/auth.js';
 import { persistUserSubsonicSecret } from '$lib/server/subsonic/crypto.js';
-import { db } from '$lib/server/db.js';
+import { db, getSystemMetadata } from '$lib/server/db.js';
+import { APP_VERSION, CURRENT_SCHEMA_VERSION, MIN_COMPATIBLE_VERSION } from '$lib/version.js';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) {
@@ -30,6 +31,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		subsonicUrl,
 		serverBaseUrl,
 		authDisabled: locals.authDisabled,
+		versionInfo: {
+			appVersion: APP_VERSION,
+			schemaVersion: CURRENT_SCHEMA_VERSION,
+			minCompatibleVersion: MIN_COMPATIBLE_VERSION,
+			metadata: getSystemMetadata()
+		},
 		env: {
 			dataDir: process.env.DATA_DIR || './data',
 			musicDir: process.env.MUSIC_DIR || process.env.MUSIC_PATH || './music',

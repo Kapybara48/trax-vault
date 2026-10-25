@@ -132,6 +132,20 @@ PORT=3000 MUSIC_DIR=/path/to/music node build
 
 ---
 
+## 🔄 Version Lifecycle & Upgrades
+
+Trax Vault uses an **N-1 Stepping-Stone Upgrade Policy** to ensure zero data loss across major architectural transitions:
+
+- **v1.6 (Legacy `trackvault.db`)**: Legacy database format.
+- **v1.7 (Bridge Release - Current)**:
+  - Automatically migrates existing `trackvault.db` to `traxvault.db`.
+  - Performs WAL checkpointing (`PRAGMA wal_checkpoint(TRUNCATE)`), creates a timestamped safety backup (`trackvault.db.v1.6.<timestamp>.bak`), and stamps schema version `170`.
+- **v2.0+ (Future Releases)**:
+  - Direct upgrades from v1.6 are rejected with an informative fatal error to protect against data corruption.
+  - Users running v1.6 must upgrade to v1.7 first before upgrading to v2.0.
+
+---
+
 ## 🗄️ Tech Stack
 
 - **Framework**: [SvelteKit 5](https://svelte.dev) + TypeScript

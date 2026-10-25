@@ -282,6 +282,24 @@ This document preserves persistent context, architectural conventions, recent ch
     - Updated Subsonic protocol `SERVER_TYPE = 'traxvault'` and root music folder to `Trax Vault Music`.
     - Updated container names and images to `trax-vault` and `ghcr.io/kapybara48/trax-vault:latest`.
 
+31. **Version Lifecycle & N-1 Stepping-Stone Upgrade Architecture (`v1.6 -> v1.7 -> v2.0`)**:
+    - Declared centralized version configuration in `src/lib/version.ts`:
+      - `APP_VERSION = '1.7.0'`, `CURRENT_SCHEMA_VERSION = 170`, `MIN_COMPATIBLE_VERSION = '1.6.0'`, `MIN_COMPATIBLE_SCHEMA_VERSION = 160`.
+    - **v1.7 Migration Engine (`prepareDatabase()` in `src/lib/server/db.ts`)**:
+      - Auto-detects legacy `trackvault.db` (v1.6).
+      - Flushes SQLite write-ahead log (`PRAGMA wal_checkpoint(TRUNCATE)`) to prevent data loss.
+      - Safely copies database to `traxvault.db`.
+      - Archives original file as timestamped backup (`trackvault.db.v1.6.<timestamp>.bak`) alongside `-wal` and `-shm`.
+      - Stamps `PRAGMA user_version = 170` and records detailed migration audit history in SQLite `system_metadata` table (`app_version`, `schema_version`, `migrated_from = '1.6.0'`, `migrated_at`).
+    - **N-1 Stepping-Stone Guard for v2.0+**:
+      - If `MIN_COMPATIBLE_SCHEMA_VERSION > 160` (as in v2.0) and a user attempts to boot with only a raw v1.6 database (`trackvault.db`), the server aborts startup immediately with a clear, actionable fatal error message instructing them to upgrade to v1.7 first.
+    - **Global Version Synchronization**:
+      - Synchronized `package.json` to `1.7.0`.
+      - Updated Subsonic `SERVER_VERSION = APP_VERSION` (`1.7.0`) in `format.ts`.
+      - Updated User-Agent headers across MusicBrainz, Tagger, and Lyrics endpoints to `TraxVault/1.7.0`.
+      - Added Application Version (`v1.7.0 schema 170`) and Migration Bridge status pill to `/settings`.
+      - Updated layout footer to `Trax Vault v1.7`.
+
 ---
 
 
