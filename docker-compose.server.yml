@@ -1,0 +1,21 @@
+services:
+  track-vault:
+    image: ghcr.io/kapybara48/track-vault:latest
+    container_name: track-vault
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - MUSIC_DIR=/music
+      # Set to your server URL or domain (e.g. http://my-server.lan:3000 or http://192.168.1.50:3000)
+      - ORIGIN=http://localhost:3000
+      # Optional: set to true to bypass login on private local network
+      # - AUTH_DISABLED=false
+    volumes:
+      # Persistent SQLite database & album covers
+      - ./data:/app/data
+      # Mount your existing music library folder here (read-write for companion lyrics files and tagger)
+      - ${MUSIC_PATH:-./music}:/music

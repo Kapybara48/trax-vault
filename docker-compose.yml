@@ -1,5 +1,6 @@
 services:
   track-vault:
+    image: ghcr.io/kapybara48/track-vault:latest
     build:
       context: .
       dockerfile: Dockerfile

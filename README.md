@@ -58,47 +58,54 @@
 
 ## 🐳 Self-Hosting with Docker
 
-The easiest way to run Track Vault on your server is with Docker Compose.
+Track Vault publishes automated, multi-architecture Docker images (`linux/amd64` and `linux/arm64`) to the **GitHub Container Registry** (`ghcr.io/kapybara48/track-vault:latest`) on every push to `main`.
 
-### 1. Clone repository
+### Quick Start (No Git Clone Required)
+
+On your server, you don't even need to clone the repository or install Node.js. All you need is a single `docker-compose.yml` file:
+
+```bash
+# 1. Create a directory for Track Vault
+mkdir -p track-vault && cd track-vault
+
+# 2. Download the ready-to-run compose file
+curl -fsSL https://raw.githubusercontent.com/Kapybara48/track-vault/main/docker-compose.server.yml -o docker-compose.yml
+
+# 3. Edit paths if your music is stored outside ./music (optional)
+# MUSIC_PATH=/path/to/your/music docker compose up -d
+
+# 4. Start Track Vault
+docker compose up -d
+```
+
+### Updating to the Latest Version
+
+Whenever a new commit is pushed or a new version is released:
+
+```bash
+cd track-vault
+docker compose pull
+docker compose up -d
+```
+
+---
+
+### Alternative: Build from Source with Docker
+
+If you prefer building directly from source on your local machine:
+
 ```bash
 git clone https://github.com/Kapybara48/track-vault.git
 cd track-vault
-```
-
-### 2. Configure Your Music Directory
-Edit `docker-compose.yml` (or create a `.env` file from `.env.example`):
-
-```yaml
-services:
-  track-vault:
-    build: .
-    container_name: track-vault
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - DATA_DIR=/app/data
-      - MUSIC_DIR=/music
-      - ORIGIN=http://localhost:3000
-      # Optional: set to true if you want to bypass login on a local network
-      # - AUTH_DISABLED=false
-    volumes:
-      # Persistent SQLite database & album covers
-      - ./data:/app/data
-      # Mount your music collection (read-write for companion lyrics and tagger)
-      - ${MUSIC_PATH:-./music}:/music
-```
-
-### 3. Start Container
-```bash
 docker compose up -d --build
 ```
 
+---
+
+### Accessing Track Vault
+
 Access Track Vault in your browser:
-- **Track Vault**: `http://localhost:3000` (library scanner, music player, issues fixer, tagger studio, lyrics maker)
+- **Track Vault**: `http://localhost:3000` (or `http://<your-server-ip>:3000`)
 
 On your first visit to Track Vault, you will be greeted with a **First-Run Admin Setup** screen to create your admin credentials. After setup, standard login is enforced unless `AUTH_DISABLED=true` is set in your environment. You can access the **Tagger Studio** at any time from the Navbar, the Library Scanner, album pages, or Settings.
 

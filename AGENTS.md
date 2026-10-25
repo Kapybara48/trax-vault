@@ -262,6 +262,17 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added HTTP 303 redirects in `src/hooks.server.ts` routing `/playlists` -> `/player?view=playlists` and `/playlist/:id` -> `/player?playlistId=:id`.
       - Removed legacy route folders `src/routes/playlists` and `src/routes/playlist`.
 
+29. **Automated GitHub Actions Docker CI & Clone-Free Server Deployment**:
+    - **CI/CD Workflow (`.github/workflows/docker-publish.yml`)**:
+      - Automated build and push on every `git push` to `main`, version tags (`v*`), or via manual `workflow_dispatch`.
+      - Multi-platform container compilation (`linux/amd64` and `linux/arm64`) using QEMU and Docker Buildx.
+      - Automated publication to GitHub Container Registry: `ghcr.io/kapybara48/track-vault:latest` (with branch, sha, and semver tag variants).
+      - BuildKit GitHub Actions cache (`type=gha`) for fast subsequent image creation.
+    - **Clone-Free Server Deployment (`docker-compose.server.yml`)**:
+      - Standalone, ready-to-run Docker Compose definition referencing `ghcr.io/kapybara48/track-vault:latest`.
+      - Enables headless server deployments without cloning the Git repository, installing Node.js, or compiling C++ dependencies on the target host.
+      - 1-command upgrade workflow: `docker compose pull && docker compose up -d`.
+
 ---
 
 
@@ -276,13 +287,19 @@ npm run build    # Vite production build
 ```
 
 ### Docker Deployments (Mandatory)
-Every new version must be rebuilt and run in Docker:
+Local development rebuild:
 ```bash
 docker compose up -d --build
+```
+Production server update (pulling automated CI/CD image):
+```bash
+docker compose pull && docker compose up -d
 ```
 Verify the container is healthy:
 ```bash
 docker compose ps
+docker logs track-vault --tail 20
+```
 docker logs track-vault --tail 20
 ```
 
