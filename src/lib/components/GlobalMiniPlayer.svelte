@@ -58,6 +58,11 @@
 					{player.currentTrack.artist || player.currentAlbum?.artist || 'Trax Vault'}
 				</div>
 				<div class="hidden sm:flex items-center gap-1.5 mt-0.5">
+					{#if (player.currentTrack.disc_number || 1) > 1}
+						<span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-950/70 border border-amber-800/60 text-amber-400 font-bold">
+							CD {player.currentTrack.disc_number}
+						</span>
+					{/if}
 					<span class="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-neutral-950 border border-emerald-500/30 text-emerald-400 font-semibold">
 						{player.currentTrack.format}
 					</span>

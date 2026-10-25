@@ -333,6 +333,22 @@
 		);
 	});
 
+	// Multi-disc detection and stats for album view
+	let albumDiscCount = $derived.by(() => {
+		if (selectedType !== 'album' || !selectedAlbum?.tracks) return 1;
+		return new Set(selectedAlbum.tracks.map((t) => t.disc_number || 1)).size;
+	});
+	let albumHasMultipleDiscs = $derived(albumDiscCount > 1);
+
+	function getDiscStats(discNum: number): { count: number; duration: string } {
+		if (!selectedAlbum) return { count: 0, duration: '0:00' };
+		const discTracks = selectedAlbum.tracks.filter((t) => (t.disc_number || 1) === discNum);
+		return {
+			count: discTracks.length,
+			duration: formatTotalAlbumDuration(discTracks)
+		};
+	}
+
 	// Select Handlers
 	function selectAlbum(album: PlayerAlbum) {
 		selectedType = 'album';
@@ -1069,7 +1085,7 @@
 									<span class="text-neutral-400">{selectedAlbum.release_year}</span>
 								{/if}
 								<span>&bull;</span>
-								<span class="text-neutral-400">{selectedAlbum.tracks.length} tracks</span>
+								<span class="text-neutral-400">{selectedAlbum.tracks.length} tracks{albumHasMultipleDiscs ? ` (${albumDiscCount} CDs)` : ''}</span>
 								{#if selectedAlbum.genre && !showLyricsDrawer}
 									<span>&bull;</span>
 									<span class="px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 text-[10px]">
@@ -1170,6 +1186,48 @@
 						</thead>
 						<tbody class="divide-y divide-neutral-800/30">
 							{#each displayedTracks as track, idx}
+								{@const currentDisc = track.disc_number || 1}
+								{@const showDiscHeader = selectedType === 'album' && albumHasMultipleDiscs && !albumTrackSearch.trim() && (idx === 0 || (displayedTracks[idx - 1]?.disc_number || 1) !== currentDisc)}
+								{@const discStats = showDiscHeader ? getDiscStats(currentDisc) : null}
+
+								{#if showDiscHeader}
+									<tr class="bg-neutral-900/95 border-y border-neutral-800/80 sticky top-8 z-[5] backdrop-blur-md group/disc">
+										<td colspan="6" class="py-2 px-3 text-left sticky top-8 bg-neutral-900/95 backdrop-blur-md z-[5]">
+											<div class="flex items-center justify-between">
+												<div class="flex items-center gap-2">
+													<div class="w-5 h-5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-xs">
+														<Disc3 class="w-3.5 h-3.5" />
+													</div>
+													<span class="text-xs font-bold uppercase tracking-wider text-neutral-200">
+														Disc {currentDisc}
+													</span>
+													{#if discStats}
+														<span class="text-[11px] font-normal text-neutral-400">
+															&bull; {discStats.count} {discStats.count === 1 ? 'track' : 'tracks'} ({discStats.duration})
+														</span>
+													{/if}
+												</div>
+
+												<button
+													type="button"
+													onclick={(e) => {
+														e.stopPropagation();
+														const discTracks = selectedAlbum!.tracks.filter((t) => (t.disc_number || 1) === currentDisc);
+														if (discTracks.length > 0) {
+															player.playTrack(discTracks[0], selectedAlbum!, selectedAlbum!.tracks);
+														}
+													}}
+													class="opacity-90 sm:opacity-0 sm:group-hover/disc:opacity-100 flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold transition cursor-pointer"
+													title="Play Disc {currentDisc}"
+												>
+													<Play class="w-2.5 h-2.5 fill-current" />
+													<span>Play Disc</span>
+												</button>
+											</div>
+										</td>
+									</tr>
+								{/if}
+
 								{@const isCurrent = player.currentTrack?.id === track.id}
 								{@const isCurrentPlaying = isCurrent && player.isPlaying}
 								<tr
@@ -1587,7 +1645,12 @@
 						{#if player.currentTrack}
 							<div class="p-2.5 rounded-xl bg-neutral-800/60 border border-neutral-700/40 flex items-center gap-3">
 								<div class="min-w-0 flex-1">
-									<div class="text-xs font-bold text-emerald-300 truncate">{player.currentTrack.title}</div>
+									<div class="flex items-center gap-1.5">
+										{#if (player.currentTrack.disc_number || 1) > 1}
+											<span class="text-[9px] font-mono font-bold text-amber-400 bg-amber-950/60 px-1 py-0.2 rounded border border-amber-800/50 shrink-0">CD {player.currentTrack.disc_number}</span>
+										{/if}
+										<div class="text-xs font-bold text-emerald-300 truncate">{player.currentTrack.title}</div>
+									</div>
 									<div class="text-[10px] text-neutral-400 truncate">{player.currentTrack.artist || player.currentAlbum?.artist}</div>
 								</div>
 								<div class="text-right shrink-0">
@@ -1609,7 +1672,12 @@
 								class="w-full text-left p-2 rounded-xl hover:bg-neutral-800/40 flex items-center justify-between gap-3 text-xs text-neutral-300 transition cursor-pointer"
 							>
 								<div class="min-w-0 flex-1">
-									<div class="font-medium text-white truncate">{nextTr.title}</div>
+									<div class="flex items-center gap-1.5">
+										{#if (nextTr.disc_number || 1) > 1}
+											<span class="text-[9px] font-mono font-bold text-amber-400 bg-amber-950/60 px-1 py-0.2 rounded border border-amber-800/50 shrink-0">CD {nextTr.disc_number}</span>
+										{/if}
+										<div class="font-medium text-white truncate">{nextTr.title}</div>
+									</div>
 									<div class="text-[10px] text-neutral-400 truncate">{nextTr.artist || player.currentAlbum?.artist}</div>
 								</div>
 								<div class="text-right shrink-0">
@@ -1649,6 +1717,10 @@
 						{player.currentTrack.artist || player.currentAlbum?.artist || 'Unknown Artist'}
 					</div>
 					<div class="flex items-center gap-1.5 mt-0.5 text-[9px] font-mono">
+						{#if (player.currentTrack.disc_number || 1) > 1}
+							<span class="text-amber-400 font-semibold bg-amber-950/60 px-1 rounded border border-amber-800/50">CD {player.currentTrack.disc_number}</span>
+							<span class="text-neutral-500">&bull;</span>
+						{/if}
 						<span class="text-emerald-400 font-semibold">{player.currentTrack.format}</span>
 						{#if player.currentTrack.bitrate_kbps}
 							<span class="text-neutral-500">&bull;</span>

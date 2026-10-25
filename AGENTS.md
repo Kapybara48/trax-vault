@@ -309,6 +309,17 @@ This document preserves persistent context, architectural conventions, recent ch
     - When lyrics are closed, the songs panel seamlessly transitions back to full center stage (`order-2 flex-1 min-w-0`).
     - Dedicated Play Queue drawer retained on the right (`order-3 w-80 lg:w-96`) when opened independently.
 
+33. **Multi-Disc Separators & CD Management in Audiophile Player Studio**:
+    - **Multi-Disc Detection**: Added reactive derived state in `src/routes/player/+page.svelte` (`albumDiscCount` and `albumHasMultipleDiscs`) detecting multi-disc albums (e.g. Eminem - *Encore* with Disc 1 tracks 1–20 and Disc 2 tracks 1–3). Single-disc albums omit disc divider clutter.
+    - **Sticky Disc / CD Dividers**:
+      - Inserted sticky divider rows (`sticky top-8 z-[5] bg-neutral-900/95 backdrop-blur-md`) in the tracklist table between discs.
+      - Renders disc number badge, disc track count, and disc playback duration (`Disc X • Y tracks (duration)`).
+      - Added 1-click "Play Disc" button starting playback immediately from track 1 of that disc while preserving the entire album in the queue.
+    - **Album Hero Metadata**: Updated track count pill in the album hero banner to reflect CD count when multi-disc (e.g. `23 tracks (2 CDs)`).
+    - **Disc Context Across UI**:
+      - Added amber `CD X` badges in the Play Queue drawer (`Now Playing` and `Next Up` tracks) for tracks on non-primary discs (`disc_number > 1`).
+      - Added `CD X` badge to the persistent bottom floating audio dock and `GlobalMiniPlayer.svelte` fidelity bar.
+
 ---
 
 
