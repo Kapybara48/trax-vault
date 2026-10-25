@@ -207,6 +207,18 @@ This document preserves persistent context, architectural conventions, recent ch
     - Updated `applyAlbumTags` in `src/lib/server/tagger.ts` to map downloaded cover art into container-compatible `/api/library/cover?path=...` URLs.
     - Repaired database record for existing tagged albums to point to verified local cover images.
 
+27. **Pre-Import MusicBrainz Tagger & Missing Track Detection**:
+    - **Scanned Folders Mode in Tagger Studio**: Added dual-mode tab switcher to `/tagger` (`Vault Albums` vs `Scanned Folders`), allowing users to browse, search, and tag unimported audio folders before adding them to the database.
+    - **1-Click Tagging from Library Scanner**: Added direct `Tag` button on every scanned album card in `/scan` linking to `/tagger?folderPath=...`.
+    - **Missing Songs Alert Banner**: Automatically identifies when a MusicBrainz release contains tracks not present in the local directory (e.g. 14 local tracks for a 27-track release), rendering an amber/rose alert banner with exact track numbers, titles, and durations so users can verify completeness.
+    - **Real-Time Track Alignment & Re-mapping**: Aligns raw folder audio files (`.flac`, `.mp3`, etc.) using fuzzy title/artist distance, track numbers, and durations, with real-time missing songs updates when remapping.
+    - **Direct Tag Writing & 1-Click Vault Import**: Added `applyFolderTags()` to write verified tags to files on disk, save `cover.jpg`, and optionally import the cleanly tagged album into SQLite with `manually_checked = 1`.
+    - **API Endpoints**:
+      - `GET /api/tagger/folders`: Scanned music folders directory index.
+      - `GET / POST /api/tagger/folder/match`: Folder alignment with MusicBrainz candidates and missing track computation.
+      - `POST /api/tagger/folder/apply`: Batch disk file tagging and optional Vault album creation.
+
+
 ---
 
 

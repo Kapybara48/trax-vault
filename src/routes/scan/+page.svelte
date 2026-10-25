@@ -681,6 +681,15 @@
 
 						<!-- Action Controls -->
 						<div class="flex items-center gap-2 sm:justify-end">
+							<a
+								href="/tagger?folderPath={encodeURIComponent(album.folder_path)}"
+								class="flex items-center gap-1.5 rounded-xl bg-neutral-800/80 px-3 py-2 text-xs font-semibold text-emerald-400 hover:bg-neutral-700 hover:text-emerald-300 border border-neutral-700/60 transition"
+								title="Tag audio files with MusicBrainz before or after import"
+							>
+								<Tag class="h-3.5 w-3.5" />
+								<span>Tag</span>
+							</a>
+
 							<button
 								type="button"
 								onclick={() => toggleExpand(album.album_key)}

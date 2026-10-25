@@ -4,7 +4,8 @@ import { getAlbumWithTracks } from '$lib/server/db.js';
 import {
 	searchMusicBrainz,
 	getMusicBrainzRelease,
-	alignTracks
+	alignTracks,
+	getMissingTracks
 } from '$lib/server/tagger.js';
 import type { MusicBrainzReleaseItem } from '$lib/types/index.js';
 
@@ -59,6 +60,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		}
 
 		const matches = alignTracks(tracks, release.tracks);
+		const missingTracks = getMissingTracks(release.tracks, matches);
 		const overallScore = matches.length > 0
 			? Math.round(matches.reduce((sum, m) => sum + m.score, 0) / matches.length)
 			: 0;
@@ -67,6 +69,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			album,
 			release,
 			matches,
+			missing_tracks: missingTracks,
 			candidates,
 			overall_score: overallScore
 		});

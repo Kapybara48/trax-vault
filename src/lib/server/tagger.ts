@@ -2,8 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { writeTags, readTags } from '@dantheman827/taglib-ts/simpleApi.js';
 import { searchMusicBrainz, getMusicBrainzRelease } from '$lib/server/musicbrainz.js';
-import { resolveTrackFilePath, getMusicDirectory, isPathWithin } from '$lib/server/scanner.js';
-import { updateAlbumAndTracksFromMusicBrainz, getAlbumWithTracks } from '$lib/server/db.js';
+import {
+	resolveTrackFilePath,
+	getMusicDirectory,
+	isPathWithin,
+	scanAudioFile,
+	AUDIO_EXTENSIONS,
+	findLocalCoverArt,
+	importScannedAlbum
+} from '$lib/server/scanner.js';
+import { updateAlbumAndTracksFromMusicBrainz, getAlbumWithTracks, db } from '$lib/server/db.js';
 import type {
 	Track,
 	Album,
@@ -11,7 +19,10 @@ import type {
 	MusicBrainzReleaseDetail,
 	MusicBrainzReleaseTrack,
 	TrackMatch,
-	AlbumMatchResult
+	AlbumMatchResult,
+	FolderMatchResult,
+	ScannedTrack,
+	ScannedAlbum
 } from '$lib/types/index.js';
 
 export { searchMusicBrainz, getMusicBrainzRelease };
@@ -425,3 +436,350 @@ export async function applyAlbumTags(
 		tracks: updated.tracks
 	};
 }
+
+/**
+ * Computes list of MusicBrainz release tracks that are missing from local tracks/matches
+ */
+export function getMissingTracks(
+	releaseTracks: MusicBrainzReleaseTrack[],
+	matches: TrackMatch[]
+): MusicBrainzReleaseTrack[] {
+	const matchedMbIds = new Set<string>();
+	for (const m of matches) {
+		if (m.mb_track?.id) {
+			matchedMbIds.add(m.mb_track.id);
+		}
+	}
+	return releaseTracks.filter((rt) => !matchedMbIds.has(rt.id));
+}
+
+/**
+ * Scans a folder on disk and prepares it for MusicBrainz matching and tag alignment
+ */
+export async function scanFolderForTagger(folderPath: string): Promise<{
+	folder_path: string;
+	folder_name: string;
+	folder_title: string;
+	folder_artist: string;
+	folder_year: number | null;
+	cover_url: string | null;
+	musicbrainz_id: string | null;
+	already_in_vault: boolean;
+	existing_album_id: number | null;
+	tracks: Track[];
+	raw_tracks: ScannedTrack[];
+}> {
+	const musicDir = getMusicDirectory();
+	let canonicalMusicDir: string;
+	try {
+		canonicalMusicDir = fs.existsSync(musicDir) ? fs.realpathSync(musicDir) : path.resolve(musicDir);
+	} catch {
+		canonicalMusicDir = path.resolve(musicDir);
+	}
+
+	const requested = path.resolve(folderPath);
+	let canonicalTarget: string;
+	try {
+		canonicalTarget = fs.existsSync(requested) ? fs.realpathSync(requested) : requested;
+	} catch {
+		canonicalTarget = requested;
+	}
+
+	// Boundary verification
+	if (!isPathWithin(canonicalTarget, canonicalMusicDir) && canonicalTarget !== canonicalMusicDir) {
+		throw new Error(`Access denied: Target directory is outside configured music directory (${canonicalMusicDir}).`);
+	}
+
+	if (!fs.existsSync(canonicalTarget)) {
+		throw new Error(`Directory not found: ${canonicalTarget}`);
+	}
+
+	const audioFiles: string[] = [];
+
+	function walk(currentDir: string) {
+		try {
+			const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+			for (const entry of entries) {
+				if (entry.name.startsWith('.')) continue;
+
+				const fullPath = path.join(currentDir, entry.name);
+				if (entry.isDirectory()) {
+					walk(fullPath);
+				} else if (entry.isFile()) {
+					const ext = path.extname(entry.name).toLowerCase();
+					if (AUDIO_EXTENSIONS.has(ext)) {
+						audioFiles.push(fullPath);
+					}
+				}
+			}
+		} catch (err) {
+			console.warn(`Error scanning directory ${currentDir}:`, err);
+		}
+	}
+
+	walk(canonicalTarget);
+
+	const rawTracks: ScannedTrack[] = [];
+	for (const file of audioFiles) {
+		const track = await scanAudioFile(file);
+		if (track) {
+			rawTracks.push(track);
+		}
+	}
+
+	// Sort raw tracks by disc number then track number
+	rawTracks.sort((a, b) => {
+		if (a.disc_number !== b.disc_number) return a.disc_number - b.disc_number;
+		return a.track_number - b.track_number;
+	});
+
+	const first = rawTracks[0];
+	const folderTitle = first?.album || path.basename(canonicalTarget);
+	const folderArtist = rawTracks.find((t) => t.album_artist)?.album_artist || first?.artist || 'Unknown Artist';
+	const folderYear = rawTracks.find((t) => t.year)?.year || null;
+	const mbId = rawTracks.find((t) => t.musicbrainz_album_id)?.musicbrainz_album_id || null;
+
+	let coverUrl = findLocalCoverArt(canonicalTarget);
+	if (!coverUrl && mbId) {
+		coverUrl = `https://coverartarchive.org/release/${mbId}/front-500`;
+	}
+
+	// Check if already in vault SQLite DB
+	let alreadyInVault = false;
+	let existingAlbumId: number | null = null;
+
+	if (mbId) {
+		const row = db.prepare('SELECT id FROM albums WHERE musicbrainz_id = ?').get(mbId) as
+			| { id: number }
+			| undefined;
+		if (row) {
+			alreadyInVault = true;
+			existingAlbumId = row.id;
+		}
+	}
+	if (!alreadyInVault) {
+		const row = db
+			.prepare('SELECT id FROM albums WHERE LOWER(title) = LOWER(?) AND LOWER(artist) = LOWER(?)')
+			.get(folderTitle, folderArtist) as { id: number } | undefined;
+		if (row) {
+			alreadyInVault = true;
+			existingAlbumId = row.id;
+		}
+	}
+
+	// Construct synthetic Track objects for alignment
+	const tracks: Track[] = rawTracks.map((rt, idx) => ({
+		id: idx + 1,
+		album_id: existingAlbumId || 0,
+		disc_number: rt.disc_number,
+		track_number: rt.track_number,
+		title: rt.title,
+		artist: rt.artist,
+		duration_ms: rt.duration_ms,
+		format: rt.format,
+		quality_rating: rt.quality_rating,
+		censorship: rt.censorship,
+		lyrics: rt.lyrics,
+		needs_attention: 0,
+		manually_checked: 0,
+		notes: null,
+		file_path: rt.file_path,
+		lyrics_text: rt.lyrics_content || null,
+		bitrate_kbps: rt.bitrate_kbps,
+		sample_rate: rt.sample_rate,
+		bits_per_sample: rt.bits_per_sample,
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString()
+	}));
+
+	return {
+		folder_path: canonicalTarget,
+		folder_name: path.basename(canonicalTarget),
+		folder_title: folderTitle,
+		folder_artist: folderArtist,
+		folder_year: folderYear,
+		cover_url: coverUrl,
+		musicbrainz_id: mbId,
+		already_in_vault: alreadyInVault,
+		existing_album_id: existingAlbumId,
+		tracks,
+		raw_tracks: rawTracks
+	};
+}
+
+/**
+ * Applies tags to audio files in a local folder, saves cover.jpg, and optionally imports into Vault
+ */
+export async function applyFolderTags(
+	folderPath: string,
+	releaseMbid: string,
+	confirmedMatches: Array<{
+		localTrackId: number;
+		filePath?: string;
+		mbTrackId: string;
+		title: string;
+		artist?: string | null;
+		trackNumber: number;
+		discNumber?: number;
+	}>,
+	options: {
+		updateCover?: boolean;
+		updateAlbumTitle?: boolean;
+		updateArtist?: boolean;
+		updateYear?: boolean;
+		importToVault?: boolean;
+	} = {}
+): Promise<{
+	success: boolean;
+	updatedTracksCount: number;
+	importedAlbumId?: number | null;
+	coverPath?: string;
+	error?: string;
+}> {
+	const folderData = await scanFolderForTagger(folderPath);
+	const canonicalTarget = folderData.folder_path;
+	const musicDir = getMusicDirectory();
+	let canonicalMusicDir: string;
+	try {
+		canonicalMusicDir = fs.existsSync(musicDir) ? fs.realpathSync(musicDir) : path.resolve(musicDir);
+	} catch {
+		canonicalMusicDir = path.resolve(musicDir);
+	}
+
+	const release = await getMusicBrainzRelease(releaseMbid);
+	if (!release) {
+		throw new Error(`MusicBrainz release ${releaseMbid} not found.`);
+	}
+
+	// 1. Download cover art if requested
+	let coverPath: string | undefined;
+	let coverUrl: string | null = folderData.cover_url;
+	if (options.updateCover && release.cover_url) {
+		const coverRes = await downloadAndSaveCover(canonicalTarget, release.cover_url);
+		if (coverRes.success && coverRes.coverPath) {
+			coverPath = coverRes.coverPath;
+			const relPath = path.relative(canonicalMusicDir, coverPath);
+			const containerPath = `/music/${relPath.replace(/^\/+/, '')}`;
+			coverUrl = `/api/library/cover?path=${encodeURIComponent(containerPath)}&t=${Date.now()}`;
+		}
+	}
+
+	// 2. Write audio tags to disk
+	let updatedTracksCount = 0;
+	const targetAlbumTitle = options.updateAlbumTitle ? release.title : folderData.folder_title;
+	const targetYear =
+		options.updateYear && release.release_year ? release.release_year : folderData.folder_year || undefined;
+
+	for (const match of confirmedMatches) {
+		// Find matching local file path
+		const localTr = folderData.tracks.find((t) => t.id === match.localTrackId);
+		const diskPath = match.filePath || localTr?.file_path;
+
+		if (diskPath && fs.existsSync(diskPath)) {
+			const targetTitle = match.title.trim();
+			const targetArtist = match.artist?.trim() || release.artist;
+			const targetTrackNum = match.trackNumber;
+
+			const tagResult = await writeTagsToAudioFile(diskPath, {
+				title: targetTitle,
+				artist: targetArtist,
+				album: targetAlbumTitle,
+				year: targetYear,
+				track: targetTrackNum
+			});
+
+			if (tagResult.success) {
+				updatedTracksCount++;
+			}
+		}
+	}
+
+	// 3. If importToVault requested
+	let importedAlbumId: number | null = folderData.existing_album_id;
+
+	if (options.importToVault) {
+		if (folderData.already_in_vault && folderData.existing_album_id) {
+			// Already in vault: update album and tracks in DB
+			const albumUpdate: {
+				title?: string;
+				artist?: string;
+				release_year?: number | null;
+				genre?: string | null;
+				cover_url?: string | null;
+				musicbrainz_id?: string | null;
+			} = {
+				musicbrainz_id: release.id
+			};
+
+			if (options.updateAlbumTitle) albumUpdate.title = release.title;
+			if (options.updateArtist) albumUpdate.artist = release.artist;
+			if (options.updateYear && release.release_year) albumUpdate.release_year = release.release_year;
+			if (coverUrl) albumUpdate.cover_url = coverUrl;
+
+			// Map confirmed matches to track IDs in the DB
+			const dbTracksRes = getAlbumWithTracks(folderData.existing_album_id);
+			if (dbTracksRes) {
+				const trackUpdates: Array<{
+					id: number;
+					title: string;
+					artist?: string | null;
+					track_number: number;
+					disc_number?: number;
+				}> = [];
+
+				for (const match of confirmedMatches) {
+					const localSynthetic = folderData.tracks.find((t) => t.id === match.localTrackId);
+					if (!localSynthetic?.file_path) continue;
+
+					// Match DB track by file_path or track_number
+					const dbTr = dbTracksRes.tracks.find(
+						(dt) => dt.file_path === localSynthetic.file_path || dt.track_number === localSynthetic.track_number
+					);
+
+					if (dbTr) {
+						trackUpdates.push({
+							id: dbTr.id,
+							title: match.title.trim(),
+							artist: match.artist?.trim() || release.artist,
+							track_number: match.trackNumber,
+							disc_number: match.discNumber || dbTr.disc_number || 1
+						});
+					}
+				}
+
+				updateAlbumAndTracksFromMusicBrainz(folderData.existing_album_id, albumUpdate, trackUpdates);
+			}
+		} else {
+			// Not in vault: re-scan folder now that tags are written, then import into Vault
+			const rescan = await scanFolderForTagger(canonicalTarget);
+			const scannedAlbum: ScannedAlbum = {
+				album_key: `dir:${canonicalTarget}`,
+				title: options.updateAlbumTitle ? release.title : rescan.folder_title,
+				artist: options.updateArtist ? release.artist : rescan.folder_artist,
+				year: options.updateYear && release.release_year ? release.release_year : rescan.folder_year,
+				folder_path: canonicalTarget,
+				musicbrainz_id: release.id,
+				cover_url: coverUrl || rescan.cover_url,
+				track_count: rescan.raw_tracks.length,
+				has_flac: rescan.raw_tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC'),
+				has_lrc: rescan.raw_tracks.some((t) => t.lyrics === 'synced_lrc'),
+				already_in_vault: false,
+				tracks: rescan.raw_tracks,
+				selected: true
+			};
+
+			importedAlbumId = await importScannedAlbum(scannedAlbum);
+
+			// Mark all tracks of the cleanly imported album as verified
+			db.prepare('UPDATE tracks SET manually_checked = 1 WHERE album_id = ?').run(importedAlbumId);
+		}
+	}
+
+	return {
+		success: true,
+		updatedTracksCount,
+		importedAlbumId,
+		coverPath
+	};
+}
+

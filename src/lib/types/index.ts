@@ -191,7 +191,35 @@ export interface AlbumMatchResult {
 	album: Album;
 	release: MusicBrainzReleaseDetail;
 	matches: TrackMatch[];
+	missing_tracks?: MusicBrainzReleaseTrack[];
 	overall_score: number;
+}
+
+export interface FolderMatchResult {
+	folder_path: string;
+	folder_name: string;
+	folder_title: string;
+	folder_artist: string;
+	folder_year: number | null;
+	already_in_vault: boolean;
+	existing_album_id: number | null;
+	release: MusicBrainzReleaseDetail | null;
+	candidates: MusicBrainzReleaseItem[];
+	matches: TrackMatch[];
+	missing_tracks: MusicBrainzReleaseTrack[];
+	overall_score: number;
+	message?: string;
+}
+
+export interface ScannedFolderItem {
+	album_key: string;
+	folder_path: string;
+	title: string;
+	artist: string;
+	year: number | null;
+	track_count: number;
+	already_in_vault: boolean;
+	cover_url: string | null;
 }
 
 export interface ScannedTrack {

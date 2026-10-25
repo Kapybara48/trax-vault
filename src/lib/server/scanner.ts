@@ -12,7 +12,7 @@ import type {
 	LyricsStatus
 } from '$lib/types/index.js';
 
-const AUDIO_EXTENSIONS = new Set([
+export const AUDIO_EXTENSIONS = new Set([
 	'.flac',
 	'.mp3',
 	'.m4a',
@@ -421,7 +421,7 @@ export function detectCensorship(title: string, rawTags?: any): CensorshipStatus
 /**
  * Find local folder cover art image if available
  */
-function findLocalCoverArt(dir: string): string | null {
+export function findLocalCoverArt(dir: string): string | null {
 	const candidates = [
 		'cover.jpg',
 		'cover.jpeg',
