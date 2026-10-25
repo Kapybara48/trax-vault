@@ -300,6 +300,15 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added Application Version (`v1.7.0 schema 170`) and Migration Bridge status pill to `/settings`.
       - Updated layout footer to `Trax Vault v1.7`.
 
+32. **Player Studio Lyrics Center Stage & Songs Right Dock Layout**:
+    - Reconfigured layout ordering in `src/routes/player/+page.svelte` when opening live synced lyrics:
+      - **Left (`order-1 w-72 lg:w-80`)**: Your Library (Albums & Playlists).
+      - **Middle (`order-2 flex-1`)**: Live Synced Lyrics Studio taking center stage with spacious karaoke lines, smooth auto-follow vertical scrolling, instrumental track indicators, and top-right close action.
+      - **Right (`order-3 flex-1 min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]`)**: Songs & Hero dock displaying album/playlist details, playback controls, and tracklist table.
+    - Added responsive hero banner compaction (slimmer cover and action bar) and column adaptation (hiding non-essential quality/lyrics columns on narrower widths) when lyrics are active.
+    - When lyrics are closed, the songs panel seamlessly transitions back to full center stage (`order-2 flex-1 min-w-0`).
+    - Dedicated Play Queue drawer retained on the right (`order-3 w-80 lg:w-96`) when opened independently.
+
 ---
 
 

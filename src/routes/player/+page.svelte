@@ -647,7 +647,7 @@
 	<!-- Workspace: Side Library + Main Stage + Drawers -->
 	<div class="flex-1 flex overflow-hidden min-h-0 p-3 gap-3">
 		<!-- LEFT SIDEBAR: Vault Audio Library & Playlists -->
-		<aside class="w-72 lg:w-80 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-xl">
+		<aside class="order-1 w-72 lg:w-80 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-xl">
 			<!-- Header & Mode Tabs -->
 			<div class="p-3.5 pb-2 border-b border-neutral-800/60 shrink-0">
 				<div class="flex items-center justify-between mb-2.5">
@@ -921,27 +921,124 @@
 			</div>
 		</aside>
 
-		<!-- CENTER MAIN PANEL: Studio Viewport (Hero & Songs Table) -->
-		<main class="flex-1 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden min-h-0 shadow-xl">
+		<!-- CENTER / MIDDLE PANEL: Studio Synced Lyrics (When Open) -->
+		{#if showLyricsDrawer}
+			<section class="order-2 flex-1 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden min-h-0 shadow-xl animate-in fade-in duration-200">
+				<!-- Lyrics Header -->
+				<div class="p-3.5 px-5 border-b border-neutral-800/60 flex items-center justify-between shrink-0">
+					<div class="flex items-center gap-2.5">
+						<div class="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+							<Mic class="w-4 h-4" />
+						</div>
+						<div>
+							<h3 class="font-bold text-xs text-white">Live Synced Lyrics</h3>
+							{#if player.currentTrack}
+								<p class="text-[10px] text-neutral-400 truncate max-w-xs">{player.currentTrack.title} &bull; {player.currentTrack.artist || player.currentAlbum?.artist}</p>
+							{/if}
+						</div>
+					</div>
+
+					<div class="flex items-center gap-2">
+						{#if player.currentTrack && lyricsLines.length > 0}
+							<a
+								href="/lrc-maker?trackId={player.currentTrack.id}"
+								class="text-[11px] font-semibold text-neutral-400 hover:text-emerald-300 px-2 py-1 rounded-lg hover:bg-neutral-800/60 transition"
+								title="Edit in LRC Maker Studio"
+							>
+								Edit LRC &rarr;
+							</a>
+						{/if}
+
+						<button
+							type="button"
+							onclick={() => {
+								showLyricsDrawer = false;
+							}}
+							class="text-neutral-400 hover:text-white p-1.5 rounded-lg hover:bg-neutral-800 cursor-pointer transition"
+							title="Close Lyrics"
+						>
+							<X class="w-4 h-4" />
+						</button>
+					</div>
+				</div>
+
+				<!-- Lyrics Scrollable Body -->
+				<div class="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col min-h-0">
+					{#if lyricsLoading}
+						<div class="flex-1 flex flex-col items-center justify-center text-xs text-neutral-400 gap-2">
+							<div class="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+							<span>Loading synced lyrics...</span>
+						</div>
+					{:else if isInstrumentalLyrics}
+						<div class="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
+							<div class="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center justify-center text-3xl font-serif shadow-lg">
+								♪
+							</div>
+							<div>
+								<h4 class="text-base font-bold text-white">Instrumental Track</h4>
+								<p class="text-xs text-purple-300/80 mt-1">This song contains no vocal lyrics</p>
+							</div>
+							<div class="text-[11px] font-mono text-neutral-400 bg-neutral-950 px-3 py-1.5 rounded-xl border border-neutral-800">
+								[00:00.00]{instrumentalMarker}
+							</div>
+						</div>
+					{:else if lyricsLines.length > 0}
+						<div bind:this={lyricsContainerEl} class="max-w-2xl mx-auto w-full space-y-2 py-8 px-2">
+							{#each lyricsLines as line, i}
+								{@const isActive = activeLyricLineIndex === i}
+								<button
+									type="button"
+									id={`lyrics-line-${i}`}
+									onclick={() => line.time !== null && player.seekTo(line.time)}
+									class="w-full text-left cursor-pointer rounded-2xl px-4 py-2.5 text-[17px] font-semibold leading-relaxed border transition-all duration-200 {isActive
+										? 'text-emerald-300 bg-emerald-950/40 border-emerald-500/40 drop-shadow-[0_0_14px_rgba(16,185,129,0.4)] scale-[1.01]'
+										: i < activeLyricLineIndex
+										? 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-neutral-800/30'
+										: 'text-neutral-300 border-transparent hover:text-white hover:bg-neutral-800/30'}"
+								>
+									{line.text}
+								</button>
+							{/each}
+						</div>
+					{:else}
+						<div class="flex-1 flex flex-col items-center justify-center text-center p-6 text-neutral-500 space-y-3">
+							<Mic class="w-10 h-10 opacity-30" />
+							<p class="text-xs">No lyrics found for this song.</p>
+							{#if player.currentTrack}
+								<a
+									href="/lrc-maker?trackId={player.currentTrack.id}"
+									class="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-xs font-semibold transition"
+								>
+									Create Synced Lyrics &rarr;
+								</a>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			</section>
+		{/if}
+
+		<!-- SONGS & HERO PANEL: Main Viewport (Center when lyrics closed, Right when lyrics open) -->
+		<main class="{showLyricsDrawer ? 'order-3 flex-1 min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden min-h-0 shadow-xl transition-all duration-200">
 			{#if selectedType === 'album' && selectedAlbum}
 				<!-- ALBUM HERO BANNER -->
-				<div class="p-6 pb-4 border-b border-neutral-800/60 shrink-0">
-					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-5">
+				<div class="{showLyricsDrawer ? 'p-4 pb-3' : 'p-6 pb-4'} border-b border-neutral-800/60 shrink-0">
+					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-4">
 						<!-- Big Album Cover -->
-						<div class="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-2xl border border-neutral-800">
+						<div class="relative {showLyricsDrawer ? 'w-24 h-24 sm:w-28 sm:h-28' : 'w-36 h-36 sm:w-44 sm:h-44'} rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-2xl border border-neutral-800">
 							{#if selectedAlbum.cover_url}
 								<img src={selectedAlbum.cover_url} alt={selectedAlbum.title} class="w-full h-full object-cover" />
 							{:else}
 								<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-600">
-									<Music class="w-14 h-14" />
+									<Music class={showLyricsDrawer ? 'w-10 h-10' : 'w-14 h-14'} />
 								</div>
 							{/if}
 						</div>
 
 						<!-- Album Metadata Header -->
-						<div class="flex-1 min-w-0 text-center sm:text-left space-y-2">
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-								<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-800/50">
+						<div class="flex-1 min-w-0 text-center sm:text-left space-y-1.5">
+							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
+								<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/50">
 									Album
 								</span>
 
@@ -959,12 +1056,12 @@
 								{/if}
 							</div>
 
-							<h1 class="text-xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight leading-tight line-clamp-2">
+							<h1 class="{showLyricsDrawer ? 'text-lg sm:text-xl font-bold' : 'text-xl sm:text-3xl lg:text-4xl font-extrabold'} text-white tracking-tight leading-tight line-clamp-2">
 								{selectedAlbum.title}
 							</h1>
 
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-neutral-300">
-								<span class="font-bold text-white">
+							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 text-xs text-neutral-300">
+								<span class="font-bold text-white truncate max-w-[200px]">
 									{selectedAlbum.artist}
 								</span>
 								{#if selectedAlbum.release_year}
@@ -972,8 +1069,8 @@
 									<span class="text-neutral-400">{selectedAlbum.release_year}</span>
 								{/if}
 								<span>&bull;</span>
-								<span class="text-neutral-400">{selectedAlbum.tracks.length} tracks ({formatTotalAlbumDuration(selectedAlbum.tracks)})</span>
-								{#if selectedAlbum.genre}
+								<span class="text-neutral-400">{selectedAlbum.tracks.length} tracks</span>
+								{#if selectedAlbum.genre && !showLyricsDrawer}
 									<span>&bull;</span>
 									<span class="px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 text-[10px]">
 										{selectedAlbum.genre}
@@ -982,7 +1079,7 @@
 							</div>
 
 							<!-- Action Bar -->
-							<div class="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-3">
+							<div class="pt-1.5 flex flex-wrap items-center justify-center sm:justify-start gap-2">
 								<!-- Play Button -->
 								<button
 									type="button"
@@ -993,14 +1090,14 @@
 											player.playTrack(selectedAlbum!.tracks[0], selectedAlbum!, selectedAlbum!.tracks);
 										}
 									}}
-									class="px-5 py-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
+									class="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
 								>
 									{#if player.currentAlbum?.id === selectedAlbum.id && player.isPlaying}
-										<Pause class="w-4 h-4 fill-current" />
+										<Pause class="w-3.5 h-3.5 fill-current" />
 										<span>Pause</span>
 									{:else}
-										<Play class="w-4 h-4 fill-current ml-0.5" />
-										<span>Play Album</span>
+										<Play class="w-3.5 h-3.5 fill-current ml-0.5" />
+										<span>Play</span>
 									{/if}
 								</button>
 
@@ -1015,7 +1112,7 @@
 											}
 										}
 									}}
-									class="p-2 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1.5"
+									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
 									title="Shuffle Play"
 								>
 									<Shuffle class="w-3.5 h-3.5" />
@@ -1025,32 +1122,32 @@
 								<!-- Open in Album Details -->
 								<a
 									href="/album/{selectedAlbum.id}"
-									class="p-2 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1.5"
+									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
 									title="View Album Details & Fixer Rules"
 								>
 									<ExternalLink class="w-3.5 h-3.5" />
-									<span class="hidden sm:inline">Vault Details</span>
+									<span class="hidden sm:inline">Details</span>
 								</a>
 
 								<!-- Add Album to Playlist -->
 								<button
 									type="button"
 									onclick={() => openAddToPlaylist(selectedAlbum!.tracks.map((t) => t.id), selectedAlbum!.title)}
-									class="p-2 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1.5"
+									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
 									title="Add entire album to a playlist"
 								>
 									<ListPlus class="w-3.5 h-3.5 text-emerald-400" />
-									<span class="hidden sm:inline">Add to Playlist</span>
+									<span class="hidden sm:inline">Add</span>
 								</button>
 
 								<!-- Search in Album -->
-								<div class="relative ml-auto hidden md:block w-48">
+								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-32' : 'w-48'}">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
 										bind:value={albumTrackSearch}
-										placeholder="Filter songs..."
-										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-7 pr-2.5 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
+										placeholder="Filter..."
+										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-7 pr-2.5 py-1 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
 									/>
 								</div>
 							</div>
@@ -1065,8 +1162,8 @@
 							<tr class="h-8">
 								<th class="w-10 text-center font-semibold">#</th>
 								<th class="font-semibold">Title</th>
-								<th class="font-semibold hidden sm:table-cell">Quality</th>
-								<th class="font-semibold hidden md:table-cell">Lyrics</th>
+								<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'}">Quality</th>
+								<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'}">Lyrics</th>
 								<th class="w-14 text-right pr-2 font-semibold"><Clock class="w-3.5 h-3.5 inline text-neutral-500" /></th>
 								<th class="w-8 text-center pr-3 font-semibold"></th>
 							</tr>
@@ -1104,7 +1201,7 @@
 									</td>
 
 									<!-- Quality Badge -->
-									<td class="hidden sm:table-cell pr-3">
+									<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'} pr-3">
 										<div class="flex items-center gap-1.5 flex-wrap">
 											<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
 												? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
@@ -1120,7 +1217,7 @@
 									</td>
 
 									<!-- Lyrics Indicator Button -->
-									<td class="hidden md:table-cell pr-3">
+									<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'} pr-3">
 										{#if track.lyrics === 'instrumental'}
 											<span class="px-2 py-0.5 rounded text-[10px] bg-purple-950/60 text-purple-300 border border-purple-800/50 font-serif">
 												♪ Instrumental
@@ -1171,70 +1268,70 @@
 				</div>
 			{:else if selectedType === 'playlist' && selectedPlaylist}
 				<!-- PLAYLIST HERO BANNER -->
-				<div class="p-6 pb-4 border-b border-neutral-800/60 shrink-0">
-					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-5">
+				<div class="{showLyricsDrawer ? 'p-4 pb-3' : 'p-6 pb-4'} border-b border-neutral-800/60 shrink-0">
+					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-4">
 						<!-- Big Playlist Cover Art -->
-						<div class="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-2xl border border-neutral-800">
+						<div class="relative {showLyricsDrawer ? 'w-24 h-24 sm:w-28 sm:h-28' : 'w-36 h-36 sm:w-44 sm:h-44'} rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-2xl border border-neutral-800">
 							{#if selectedPlaylist.cover_url}
 								<img src={selectedPlaylist.cover_url} alt={selectedPlaylist.name} class="w-full h-full object-cover" />
 							{:else}
 								<div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-900 via-neutral-950 to-emerald-950/20 text-emerald-400">
-									<ListMusic class="w-16 h-16 opacity-40" />
+									<ListMusic class={showLyricsDrawer ? 'w-10 h-10' : 'w-16 h-16'} opacity-40 />
 								</div>
 							{/if}
 						</div>
 
 						<!-- Playlist Metadata Header -->
-						<div class="flex-1 min-w-0 text-center sm:text-left space-y-2">
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+						<div class="flex-1 min-w-0 text-center sm:text-left space-y-1.5">
+							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
 								<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-800/50">
 									Playlist
 								</span>
 
 								{#if selectedPlaylist.is_public}
-									<span class="text-[10px] font-medium text-emerald-300 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-600/50 flex items-center gap-1">
+									<span class="text-[10px] font-medium text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-600/50 flex items-center gap-1">
 										<Globe class="w-3 h-3 text-emerald-400" />
 										Public
 									</span>
 								{:else}
-									<span class="text-[10px] font-medium text-neutral-400 bg-neutral-900/80 px-2.5 py-0.5 rounded-full border border-neutral-700/60 flex items-center gap-1">
+									<span class="text-[10px] font-medium text-neutral-400 bg-neutral-900/80 px-2 py-0.5 rounded-full border border-neutral-700/60 flex items-center gap-1">
 										<Lock class="w-3 h-3 text-neutral-400" />
 										Private
 									</span>
 								{/if}
 							</div>
 
-							<h1 class="text-xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight leading-tight line-clamp-2">
+							<h1 class="{showLyricsDrawer ? 'text-lg sm:text-xl font-bold' : 'text-xl sm:text-3xl lg:text-4xl font-extrabold'} text-white tracking-tight leading-tight line-clamp-2">
 								{selectedPlaylist.name}
 							</h1>
 
-							{#if selectedPlaylist.comment}
+							{#if selectedPlaylist.comment && !showLyricsDrawer}
 								<p class="text-xs text-neutral-300 line-clamp-2 max-w-xl">
 									{selectedPlaylist.comment}
 								</p>
 							{/if}
 
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-neutral-400">
+							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 text-xs text-neutral-400">
 								<span class="text-neutral-200 font-semibold">{selectedPlaylist.tracks.length} songs</span>
 								<span>&bull;</span>
 								<span>{formatTotalAlbumDuration(selectedPlaylist.tracks)}</span>
 							</div>
 
 							<!-- Playlist Action Bar -->
-							<div class="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-3">
+							<div class="pt-1.5 flex flex-wrap items-center justify-center sm:justify-start gap-2">
 								<!-- Play Button -->
 								<button
 									type="button"
 									onclick={playPlaylistAll}
 									disabled={selectedPlaylist.tracks.length === 0}
-									class="px-5 py-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 disabled:opacity-40 transition-all flex items-center gap-2 cursor-pointer"
+									class="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 disabled:opacity-40 transition-all flex items-center gap-1.5 cursor-pointer"
 								>
 									{#if player.currentAlbum?.id === -selectedPlaylist.id && player.isPlaying}
-										<Pause class="w-4 h-4 fill-current" />
+										<Pause class="w-3.5 h-3.5 fill-current" />
 										<span>Pause</span>
 									{:else}
-										<Play class="w-4 h-4 fill-current ml-0.5" />
-										<span>Play Playlist</span>
+										<Play class="w-3.5 h-3.5 fill-current ml-0.5" />
+										<span>Play</span>
 									{/if}
 								</button>
 
@@ -1243,7 +1340,7 @@
 									type="button"
 									onclick={playPlaylistShuffle}
 									disabled={selectedPlaylist.tracks.length === 0}
-									class="p-2 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold disabled:opacity-40 transition flex items-center gap-1.5"
+									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold disabled:opacity-40 transition flex items-center gap-1"
 									title="Shuffle Play"
 								>
 									<Shuffle class="w-3.5 h-3.5" />
@@ -1260,7 +1357,7 @@
 										editPlaylistError = null;
 										showEditPlaylistModal = true;
 									}}
-									class="p-2 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1.5"
+									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
 									title="Edit Playlist Details"
 								>
 									<Pencil class="w-3.5 h-3.5 text-neutral-300" />
@@ -1271,7 +1368,7 @@
 								<button
 									type="button"
 									onclick={() => (showDeletePlaylistModal = true)}
-									class="p-2 rounded-xl bg-rose-950/20 border border-rose-900/40 text-rose-300 hover:bg-rose-950/50 hover:text-rose-200 text-xs font-semibold transition flex items-center gap-1.5"
+									class="p-1.5 rounded-xl bg-rose-950/20 border border-rose-900/40 text-rose-300 hover:bg-rose-950/50 hover:text-rose-200 text-xs font-semibold transition flex items-center gap-1"
 									title="Delete Playlist"
 								>
 									<Trash2 class="w-3.5 h-3.5" />
@@ -1279,13 +1376,13 @@
 								</button>
 
 								<!-- Search in Playlist -->
-								<div class="relative ml-auto hidden md:block w-48">
+								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-32' : 'w-48'}">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
 										bind:value={albumTrackSearch}
-										placeholder="Filter songs..."
-										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-7 pr-2.5 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
+										placeholder="Filter..."
+										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-7 pr-2.5 py-1 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
 									/>
 								</div>
 							</div>
@@ -1301,8 +1398,8 @@
 								<tr class="h-8">
 									<th class="w-10 text-center font-semibold">#</th>
 									<th class="font-semibold">Title & Artist</th>
-									<th class="font-semibold hidden md:table-cell">Album</th>
-									<th class="font-semibold hidden sm:table-cell">Quality</th>
+									<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'}">Album</th>
+									<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'}">Quality</th>
 									<th class="w-14 text-right pr-2 font-semibold"><Clock class="w-3.5 h-3.5 inline text-neutral-500" /></th>
 									<th class="w-24 text-right pr-3 font-semibold">Order</th>
 								</tr>
@@ -1346,7 +1443,7 @@
 										</td>
 
 										<!-- Album Title Link -->
-										<td class="hidden md:table-cell pr-3">
+										<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'} pr-3">
 											{#if track.album_id}
 												<a
 													href="/album/{track.album_id}"
@@ -1361,7 +1458,7 @@
 										</td>
 
 										<!-- Quality Badge -->
-										<td class="hidden sm:table-cell pr-3">
+										<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'} pr-3">
 											<div class="flex items-center gap-1.5 flex-wrap">
 												<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
 													? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
@@ -1460,27 +1557,22 @@
 			{/if}
 		</main>
 
-		<!-- RIGHT PANEL: Studio Synced Lyrics & Queue Drawer -->
-		{#if showLyricsDrawer || showQueueDrawer}
-			<aside class="w-80 lg:w-96 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-2xl animate-in slide-in-from-right duration-200 min-h-0">
+		<!-- RIGHT PANEL: Play Queue Drawer (When Open) -->
+		{#if showQueueDrawer}
+			<aside class="order-3 w-80 lg:w-96 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-2xl animate-in slide-in-from-right duration-200 min-h-0">
 				<!-- Header -->
 				<div class="p-3.5 border-b border-neutral-800/60 flex items-center justify-between shrink-0">
 					<div class="flex items-center gap-2">
-						{#if showLyricsDrawer}
-							<Mic class="w-4 h-4 text-emerald-400" />
-							<h3 class="font-bold text-xs text-white">Live Synced Lyrics</h3>
-						{:else}
-							<ListMusic class="w-4 h-4 text-emerald-400" />
-							<h3 class="font-bold text-xs text-white">Play Queue</h3>
-						{/if}
+						<ListMusic class="w-4 h-4 text-emerald-400" />
+						<h3 class="font-bold text-xs text-white">Play Queue</h3>
 					</div>
 					<button
 						type="button"
 						onclick={() => {
-							showLyricsDrawer = false;
 							showQueueDrawer = false;
 						}}
-						class="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800"
+						class="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 cursor-pointer"
+						title="Close Queue"
 					>
 						<X class="w-4 h-4" />
 					</button>
@@ -1488,99 +1580,47 @@
 
 				<!-- Drawer Scrollable Body -->
 				<div class="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
-					{#if showLyricsDrawer}
-						{#if lyricsLoading}
-							<div class="flex-1 flex items-center justify-center text-xs text-neutral-500">
-								Loading synced lyrics...
-							</div>
-						{:else if isInstrumentalLyrics}
-							<div class="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
-								<div class="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center justify-center text-3xl font-serif shadow-lg">
-									♪
+					<div class="space-y-2">
+						<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-2">
+							Now Playing
+						</span>
+						{#if player.currentTrack}
+							<div class="p-2.5 rounded-xl bg-neutral-800/60 border border-neutral-700/40 flex items-center gap-3">
+								<div class="min-w-0 flex-1">
+									<div class="text-xs font-bold text-emerald-300 truncate">{player.currentTrack.title}</div>
+									<div class="text-[10px] text-neutral-400 truncate">{player.currentTrack.artist || player.currentAlbum?.artist}</div>
 								</div>
-								<div>
-									<h4 class="text-base font-bold text-white">Instrumental Track</h4>
-									<p class="text-xs text-purple-300/80 mt-1">This song contains no vocal lyrics</p>
+								<div class="text-right shrink-0">
+									<div class="text-xs font-mono text-neutral-400">{formatDurationMs(player.currentTrack.duration_ms)}</div>
+									{#if player.currentTrack.bitrate_kbps}
+										<div class="text-[9px] font-mono text-emerald-400 font-semibold">{player.currentTrack.bitrate_kbps.toLocaleString()} kbps</div>
+									{/if}
 								</div>
-								<div class="text-[11px] font-mono text-neutral-400 bg-neutral-950 px-3 py-1.5 rounded-xl border border-neutral-800">
-									[00:00.00]{instrumentalMarker}
-								</div>
-							</div>
-						{:else if lyricsLines.length > 0}
-							<div bind:this={lyricsContainerEl} class="space-y-2 py-8 px-1">
-								{#each lyricsLines as line, i}
-									{@const isActive = activeLyricLineIndex === i}
-									<button
-										type="button"
-										id={`lyrics-line-${i}`}
-										onclick={() => line.time !== null && player.seekTo(line.time)}
-										class="w-full text-left cursor-pointer rounded-xl px-3 py-2 text-[16px] font-semibold leading-relaxed border transition-colors duration-200 {isActive
-											? 'text-emerald-300 bg-emerald-950/40 border-emerald-500/30 drop-shadow-[0_0_12px_rgba(16,185,129,0.35)]'
-											: i < activeLyricLineIndex
-											? 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-neutral-800/30'
-											: 'text-neutral-300 border-transparent hover:text-white hover:bg-neutral-800/30'}"
-									>
-										{line.text}
-									</button>
-								{/each}
-							</div>
-						{:else}
-							<div class="flex-1 flex flex-col items-center justify-center text-center p-6 text-neutral-500 space-y-3">
-								<Mic class="w-10 h-10 opacity-30" />
-								<p class="text-xs">No lyrics found for this song.</p>
-								{#if player.currentTrack}
-									<a
-										href="/lrc-maker?trackId={player.currentTrack.id}"
-										class="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-xs font-semibold transition"
-									>
-										Create Synced Lyrics &rarr;
-									</a>
-								{/if}
 							</div>
 						{/if}
-					{:else if showQueueDrawer}
-						<div class="space-y-2">
-							<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-2">
-								Now Playing
-							</span>
-							{#if player.currentTrack}
-								<div class="p-2.5 rounded-xl bg-neutral-800/60 border border-neutral-700/40 flex items-center gap-3">
-									<div class="min-w-0 flex-1">
-										<div class="text-xs font-bold text-emerald-300 truncate">{player.currentTrack.title}</div>
-										<div class="text-[10px] text-neutral-400 truncate">{player.currentTrack.artist || player.currentAlbum?.artist}</div>
-									</div>
-									<div class="text-right shrink-0">
-										<div class="text-xs font-mono text-neutral-400">{formatDurationMs(player.currentTrack.duration_ms)}</div>
-										{#if player.currentTrack.bitrate_kbps}
-											<div class="text-[9px] font-mono text-emerald-400 font-semibold">{player.currentTrack.bitrate_kbps.toLocaleString()} kbps</div>
-										{/if}
-									</div>
-								</div>
-							{/if}
 
-							<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block pt-3 mb-2">
-								Next Up ({Math.max(0, player.activeQueue.length - player.queueIndex - 1)})
-							</span>
-							{#each player.activeQueue.slice(player.queueIndex + 1) as nextTr}
-								<button
-									type="button"
-									onclick={() => player.playTrack(nextTr, player.currentAlbum || undefined, player.activeQueue)}
-									class="w-full text-left p-2 rounded-xl hover:bg-neutral-800/40 flex items-center justify-between gap-3 text-xs text-neutral-300 transition cursor-pointer"
-								>
-									<div class="min-w-0 flex-1">
-										<div class="font-medium text-white truncate">{nextTr.title}</div>
-										<div class="text-[10px] text-neutral-400 truncate">{nextTr.artist || player.currentAlbum?.artist}</div>
-									</div>
-									<div class="text-right shrink-0">
-										<span class="text-[10px] font-mono text-neutral-500 block">{formatDurationMs(nextTr.duration_ms)}</span>
-										{#if nextTr.bitrate_kbps}
-											<span class="text-[9px] font-mono text-neutral-400">{nextTr.bitrate_kbps} kbps</span>
-										{/if}
-									</div>
-								</button>
-							{/each}
-						</div>
-					{/if}
+						<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block pt-3 mb-2">
+							Next Up ({Math.max(0, player.activeQueue.length - player.queueIndex - 1)})
+						</span>
+						{#each player.activeQueue.slice(player.queueIndex + 1) as nextTr}
+							<button
+								type="button"
+								onclick={() => player.playTrack(nextTr, player.currentAlbum || undefined, player.activeQueue)}
+								class="w-full text-left p-2 rounded-xl hover:bg-neutral-800/40 flex items-center justify-between gap-3 text-xs text-neutral-300 transition cursor-pointer"
+							>
+								<div class="min-w-0 flex-1">
+									<div class="font-medium text-white truncate">{nextTr.title}</div>
+									<div class="text-[10px] text-neutral-400 truncate">{nextTr.artist || player.currentAlbum?.artist}</div>
+								</div>
+								<div class="text-right shrink-0">
+									<span class="text-[10px] font-mono text-neutral-500 block">{formatDurationMs(nextTr.duration_ms)}</span>
+									{#if nextTr.bitrate_kbps}
+										<span class="text-[9px] font-mono text-neutral-400">{nextTr.bitrate_kbps} kbps</span>
+									{/if}
+								</div>
+							</button>
+						{/each}
+					</div>
 				</div>
 			</aside>
 		{/if}
