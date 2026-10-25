@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { scanLibraryDirectory, getMusicDirectory } from '$lib/server/scanner.js';
+import { scanLibraryDirectory, getMusicDirectory, syncLibraryFromDisk } from '$lib/server/scanner.js';
 
 function isPathWithin(targetPath: string, rootPath: string): boolean {
 	const relative = path.relative(rootPath, targetPath);
@@ -76,5 +76,15 @@ export const GET: RequestHandler = async ({ url }) => {
 			},
 			{ status: 500 }
 		);
+	}
+};
+
+export const POST: RequestHandler = async () => {
+	try {
+		const result = await syncLibraryFromDisk();
+		return json({ success: true, ...result });
+	} catch (err: any) {
+		console.error('Library sync error:', err);
+		return json({ error: err.message }, { status: 500 });
 	}
 };

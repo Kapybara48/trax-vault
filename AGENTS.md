@@ -322,6 +322,26 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added amber `CD X` badges in the Play Queue drawer (`Now Playing` and `Next Up` tracks) for tracks on non-primary discs (`disc_number > 1`).
       - Added `CD X` badge to the persistent bottom floating audio dock and `GlobalMiniPlayer.svelte` fidelity bar.
 
+34. **Automated Library Disk Synchronization & Symfonium Subsonic Compatibility**:
+    - **Automated Library Sync Engine (`src/lib/server/scanner.ts`)**:
+      - Implemented `syncLibraryFromDisk()`: automatically scans `./music`, imports unimported albums into the database without requiring manual web UI interactions, and checks existing vault albums for new tracks on disk adding them via `addTrackToAlbum()`.
+      - Added `getLibraryScanStatus()` tracking live scanning execution state (`scanning: boolean`, `lastScan: number`).
+    - **Startup Auto-Sync (`src/hooks.server.ts`)**:
+      - Connected non-blocking background `syncLibraryFromDisk()` on server startup, ensuring any albums or tracks added while the server was offline or during updates are imported immediately.
+    - **Subsonic `startScan.view` & `getScanStatus.view` Endpoints (`src/lib/server/subsonic/handlers.ts`)**:
+      - Connected `startScan.view` to launch `syncLibraryFromDisk()` in the background and immediately report `scanning: true`.
+      - Updated `getScanStatus.view` to return live scanning state (`scanning: true/false`), updated `count` of tracks, `folderCount`, and `lastScan` UTC timestamp.
+    - **Symfonium Strict ISO-8601 UTC Date Compliance**:
+      - Created `formatIsoDate(dateStr)` converting SQLite `YYYY-MM-DD HH:MM:SS` UTC dates into strict ISO-8601 strings (`YYYY-MM-DDTHH:mm:ss.sssZ`).
+      - Resolved Symfonium Android Kotlin crashes where `Instant.parse` failed on raw SQLite timestamps.
+      - Applied strict ISO dates to `trackToSubsonicSong` (`created`), `albumToSubsonicAlbum` (`created`), and `getIndexes` (`lastModified`).
+    - **Subsonic ID Prefix Resilience & Routing**:
+      - Defensively stripped prefixes (`al-`, `tr-`, `art-`) across `getAlbum`, `getSong`, `getArtist`, `getSimilarSongs`, `getSimilarSongs2`, `scrobble`, `getLyricsBySongId`, `stream`, and `getCoverArt`.
+      - Disambiguated root directory `id=0` and `id=root` in `getMusicDirectory` from numeric album ID `1`.
+      - Fixed doubled artist cover art prefix (`art-art_...` -> clean `art_...`).
+    - **Scan API Sync Endpoint**:
+      - Added `POST /api/library/scan` triggering server library synchronization and returning detailed counts (`importedAlbums`, `newTracks`, `totalAlbums`, `totalTracks`).
+
 ---
 
 

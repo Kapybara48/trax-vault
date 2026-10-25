@@ -1,9 +1,11 @@
 import { redirect, json, type RequestEvent } from '@sveltejs/kit';
 import { isAuthDisabled, hasAnyUser, validateSession, SESSION_COOKIE_NAME } from '$lib/server/auth.js';
-import { backfillTrackBitrates } from '$lib/server/scanner.js';
+import { backfillTrackBitrates, syncLibraryFromDisk } from '$lib/server/scanner.js';
 
-// Trigger non-blocking bitrate backfill for imported tracks on startup
-backfillTrackBitrates().catch((err) => console.warn('Bitrate backfill error:', err));
+// Trigger non-blocking automated library sync and bitrate backfill on startup
+syncLibraryFromDisk()
+	.then(() => backfillTrackBitrates())
+	.catch((err) => console.warn('Startup library sync/backfill error:', err));
 
 export async function handle({
 	event,

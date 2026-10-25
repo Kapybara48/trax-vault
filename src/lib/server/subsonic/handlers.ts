@@ -28,30 +28,40 @@ import {
 	getPlayQueue,
 	savePlayQueue
 } from '$lib/server/db.js';
-import { findCompanionLyricsFile, resolveTrackFilePath } from '$lib/server/scanner.js';
+import { findCompanionLyricsFile, resolveTrackFilePath, getLibraryScanStatus, syncLibraryFromDisk } from '$lib/server/scanner.js';
 import type { Album, Track } from '$lib/types/index.js';
 import type { User } from '$lib/server/auth.js';
 import { SubsonicErrorCode } from './types.js';
+
+export function formatIsoDate(dateStr?: string | null): string {
+	if (!dateStr) return new Date().toISOString();
+	if (dateStr.includes('T') && (dateStr.endsWith('Z') || dateStr.includes('+'))) return dateStr;
+	const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
+	const withZ = normalized.endsWith('Z') ? normalized : normalized + 'Z';
+	const parsed = new Date(withZ);
+	return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
 
 export function encodeArtistId(name: string): string {
 	return 'art_' + Buffer.from(name, 'utf8').toString('hex');
 }
 
 export function decodeArtistId(id: string): string {
-	if (id.startsWith('art_')) {
+	const cleanId = id.replace(/^art-/, '');
+	if (cleanId.startsWith('art_')) {
 		try {
-			return Buffer.from(id.substring(4), 'hex').toString('utf8');
+			return Buffer.from(cleanId.substring(4), 'hex').toString('utf8');
 		} catch {
-			return id;
+			return cleanId;
 		}
 	}
 	// Fallback: check if an album exists with this ID and use its artist
-	const numericId = parseInt(id, 10);
+	const numericId = parseInt(cleanId, 10);
 	if (!isNaN(numericId)) {
 		const row = db.prepare('SELECT artist FROM albums WHERE id = ?').get(numericId) as { artist: string } | undefined;
 		if (row?.artist) return row.artist;
 	}
-	return id;
+	return cleanId;
 }
 
 function getContentType(format?: string, filePath?: string): string {
@@ -112,7 +122,7 @@ export function trackToSubsonicSong(
 		bitRate: track.bitrate_kbps || 0,
 		path: track.file_path || `${artistName}/${albumTitle}/${track.track_number} ${track.title}.${ext}`,
 		playCount: track.play_count || 0,
-		created: track.created_at || new Date().toISOString(),
+		created: formatIsoDate(track.created_at),
 		type: 'music',
 		albumId,
 		artistId,
@@ -159,7 +169,7 @@ export function albumToSubsonicAlbum(
 		coverArt: `al-${album.id}`,
 		songCount: songCount,
 		duration: durationSeconds,
-		created: album.created_at || new Date().toISOString(),
+		created: formatIsoDate(album.created_at),
 		isDir: true,
 		isVideo: false,
 		parent: artistId,
@@ -268,24 +278,40 @@ export const subsonicHandlers: Record<
 	getScanStatus: async () => {
 		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number } | undefined;
 		const albumRow = db.prepare('SELECT COUNT(*) as count FROM albums').get() as { count: number } | undefined;
+		const { scanning, lastScan } = getLibraryScanStatus();
+		const lastRow = db.prepare(`
+			SELECT MAX(m) as last_updated FROM (
+				SELECT MAX(updated_at) as m FROM tracks
+				UNION
+				SELECT MAX(created_at) as m FROM tracks
+				UNION
+				SELECT MAX(updated_at) as m FROM albums
+				UNION
+				SELECT MAX(created_at) as m FROM albums
+			)
+		`).get() as any;
+		const dbLastModified = lastRow?.last_updated ? new Date(formatIsoDate(lastRow.last_updated)).getTime() : Date.now();
+
 		return {
 			data: {
 				scanStatus: {
-					scanning: false,
+					scanning,
 					count: row?.count || 0,
-					folderCount: albumRow?.count || 1
+					folderCount: albumRow?.count || 1,
+					lastScan: lastScan || dbLastModified
 				}
 			}
 		};
 	},
 
 	startScan: async () => {
+		syncLibraryFromDisk().catch((err) => console.error('[Subsonic] startScan background sync error:', err));
 		const row = db.prepare('SELECT COUNT(*) as count FROM tracks').get() as { count: number } | undefined;
 		const albumRow = db.prepare('SELECT COUNT(*) as count FROM albums').get() as { count: number } | undefined;
 		return {
 			data: {
 				scanStatus: {
-					scanning: false,
+					scanning: true,
 					count: row?.count || 0,
 					folderCount: albumRow?.count || 1
 				}
@@ -330,7 +356,7 @@ export const subsonicHandlers: Record<
 				id: encodeArtistId(art.name),
 				name: art.name,
 				albumCount: String(art.album_count || 1),
-				coverArt: `art-${encodeArtistId(art.name)}`,
+				coverArt: encodeArtistId(art.name),
 				roles: ['artist']
 			};
 			if (isStarred) artObj.starred = new Date().toISOString();
@@ -342,8 +368,18 @@ export const subsonicHandlers: Record<
 			.sort(([a], [b]) => a.localeCompare(b))
 			.map(([name, artist]) => ({ name, artist }));
 
-		const lastRow = db.prepare('SELECT MAX(updated_at) as last_updated FROM tracks').get() as any;
-		const lastModified = lastRow?.last_updated ? new Date(lastRow.last_updated).getTime() : Date.now();
+		const lastRow = db.prepare(`
+			SELECT MAX(m) as last_updated FROM (
+				SELECT MAX(updated_at) as m FROM tracks
+				UNION
+				SELECT MAX(created_at) as m FROM tracks
+				UNION
+				SELECT MAX(updated_at) as m FROM albums
+				UNION
+				SELECT MAX(created_at) as m FROM albums
+			)
+		`).get() as any;
+		const lastModified = lastRow?.last_updated ? new Date(formatIsoDate(lastRow.last_updated)).getTime() : Date.now();
 
 		return {
 			data: {
@@ -364,8 +400,30 @@ export const subsonicHandlers: Record<
 			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'id' is required" } };
 		}
 
-		// 1. Artist directory (art_...) -> list albums as child dirs
-		if (rawId.startsWith('art_')) {
+		// 1. Root directory (folder id 0 or "root") -> list all artists as dirs
+		if (rawId === '0' || rawId === 'root') {
+			const artists = getDistinctArtists();
+			return {
+				data: {
+					directory: {
+						id: rawId,
+						name: 'Trax Vault Music',
+						child: artists.map((art) => ({
+							id: encodeArtistId(art.name),
+							parent: rawId,
+							isDir: true,
+							title: art.name,
+							name: art.name,
+							artist: art.name,
+							albumCount: art.album_count
+						}))
+					}
+				}
+			};
+		}
+
+		// 2. Artist directory (art_... or art-...) -> list albums as child dirs
+		if (rawId.startsWith('art_') || rawId.startsWith('art-')) {
 			const artistName = decodeArtistId(rawId);
 			const albums = getAlbumsByArtist(artistName);
 			return {
@@ -388,10 +446,10 @@ export const subsonicHandlers: Record<
 			};
 		}
 
-		// 2. Album directory (numeric id or al-...) -> list songs as files
-		const cleanId = rawId.replace(/^al-/, '');
+		// 3. Album directory (numeric id or al-...) -> list songs as files
+		const cleanId = rawId.replace(/^[a-z]+-/, '');
 		const albumId = parseInt(cleanId, 10);
-		if (!isNaN(albumId) && rawId !== '0' && rawId !== 'root') {
+		if (!isNaN(albumId)) {
 			const result = getAlbumById(albumId);
 			if (result) {
 				const isStarred = isItemStarred(user.id, 'album', albumId);
@@ -410,28 +468,6 @@ export const subsonicHandlers: Record<
 					}
 				};
 			}
-		}
-
-		// 3. Root directory (folder id 0, "root", or fallback) -> list all artists as dirs
-		if (rawId === '0' || rawId === 'root' || rawId === '1') {
-			const artists = getDistinctArtists();
-			return {
-				data: {
-					directory: {
-						id: rawId,
-						name: 'Trax Vault Music',
-						child: artists.map((art) => ({
-							id: encodeArtistId(art.name),
-							parent: rawId,
-							isDir: true,
-							title: art.name,
-							name: art.name,
-							artist: art.name,
-							albumCount: art.album_count
-						}))
-					}
-				}
-			};
 		}
 
 		return { error: { code: SubsonicErrorCode.DATA_NOT_FOUND, message: 'Directory not found' } };
@@ -455,7 +491,7 @@ export const subsonicHandlers: Record<
 				id: encodeArtistId(art.name),
 				name: art.name,
 				albumCount: String(art.album_count || 1),
-				coverArt: `art-${encodeArtistId(art.name)}`,
+				coverArt: encodeArtistId(art.name),
 				roles: ['artist']
 			};
 			if (isStarred) artObj.starred = new Date().toISOString();
@@ -478,7 +514,7 @@ export const subsonicHandlers: Record<
 	},
 
 	getArtist: async (params, user) => {
-		const rawId = params.id;
+		const rawId = (params.id || '').toString();
 		if (!rawId) {
 			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'id' is required" } };
 		}
@@ -491,7 +527,7 @@ export const subsonicHandlers: Record<
 			id: encodeArtistId(artistName),
 			name: artistName,
 			albumCount: String(albums.length),
-			coverArt: `art-${encodeArtistId(artistName)}`,
+			coverArt: encodeArtistId(artistName),
 			roles: ['artist'],
 			album: albums.map((a) => {
 				const isAlbumStarred = isItemStarred(user.id, 'album', a.id);
@@ -577,7 +613,8 @@ export const subsonicHandlers: Record<
 	},
 
 	getAlbum: async (params, user) => {
-		const albumId = parseInt(params.id, 10);
+		const rawId = (params.id || '').toString().replace(/^[a-z]+-/, '');
+		const albumId = parseInt(rawId, 10);
 		if (isNaN(albumId)) {
 			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Valid 'id' is required" } };
 		}
@@ -597,7 +634,8 @@ export const subsonicHandlers: Record<
 	},
 
 	getSong: async (params, user) => {
-		const songId = parseInt(params.id, 10);
+		const rawId = (params.id || '').toString().replace(/^[a-z]+-/, '');
+		const songId = parseInt(rawId, 10);
 		if (isNaN(songId)) {
 			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Valid 'id' is required" } };
 		}
@@ -726,7 +764,8 @@ export const subsonicHandlers: Record<
 
 	getSimilarSongs: async (params, user) => {
 		const count = parseInt(params.count, 10) || 50;
-		const songId = parseInt(params.id, 10);
+		const rawId = (params.id || '').toString().replace(/^[a-z]+-/, '');
+		const songId = parseInt(rawId, 10);
 		let tracks: Track[] = [];
 		if (!isNaN(songId)) {
 			const source = getTrackById(songId);
@@ -751,7 +790,8 @@ export const subsonicHandlers: Record<
 
 	getSimilarSongs2: async (params, user) => {
 		const count = parseInt(params.count, 10) || 50;
-		const songId = parseInt(params.id, 10);
+		const rawId = (params.id || '').toString().replace(/^[a-z]+-/, '');
+		const songId = parseInt(rawId, 10);
 		let tracks: Track[] = [];
 		if (!isNaN(songId)) {
 			const source = getTrackById(songId);
@@ -1014,7 +1054,8 @@ export const subsonicHandlers: Record<
 	},
 
 	scrobble: async (params) => {
-		const songId = parseInt(params.id, 10);
+		const rawId = (params.id || '').toString().replace(/^[a-z]+-/, '');
+		const songId = parseInt(rawId, 10);
 		const submission = params.submission === 'true' || params.submission === true || params.submission === '1';
 
 		if (!isNaN(songId) && submission) {
@@ -1185,7 +1226,8 @@ export const subsonicHandlers: Record<
 	},
 
 	getLyricsBySongId: async (params) => {
-		const songId = parseInt(params.id, 10);
+		const rawId = (params.id || '').toString().replace(/^[a-z]+-/, '');
+		const songId = parseInt(rawId, 10);
 		if (isNaN(songId)) {
 			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Valid 'id' is required" } };
 		}

@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseFile } from 'music-metadata';
-import { db } from '$lib/server/db.js';
-import { createAlbum } from '$lib/server/db.js';
+import { db, createAlbum, addTrackToAlbum } from '$lib/server/db.js';
 import type {
 	ScannedAlbum,
 	ScannedTrack,
@@ -826,4 +825,103 @@ export async function backfillTrackBitrates(): Promise<number> {
 		console.warn('Track bitrate backfill notice:', err);
 		return 0;
 	}
+}
+
+let isLibraryScanning = false;
+let lastLibraryScanTimestamp = 0;
+
+export function getLibraryScanStatus(): { scanning: boolean; lastScan: number } {
+	return { scanning: isLibraryScanning, lastScan: lastLibraryScanTimestamp };
+}
+
+/**
+ * Scan configured music directory, automatically import any new albums or missing tracks,
+ * and report real-time scanning status for Subsonic clients (Symfonium/Feishin/DSub).
+ */
+export async function syncLibraryFromDisk(): Promise<{
+	importedAlbums: number;
+	newTracks: number;
+	totalAlbums: number;
+	totalTracks: number;
+}> {
+	if (isLibraryScanning) {
+		console.log('[Scanner] Scan is already running in background, skipping duplicate invocation.');
+		const trackCount = (db.prepare('SELECT COUNT(*) as count FROM tracks').get() as any)?.count || 0;
+		const albumCount = (db.prepare('SELECT COUNT(*) as count FROM albums').get() as any)?.count || 0;
+		return { importedAlbums: 0, newTracks: 0, totalAlbums: albumCount, totalTracks: trackCount };
+	}
+
+	isLibraryScanning = true;
+	console.log('[Scanner] Starting automated library synchronization from disk...');
+
+	let importedAlbums = 0;
+	let newTracksCount = 0;
+
+	try {
+		const scanResult = await scanLibraryDirectory();
+
+		for (const scannedAlb of scanResult.albums) {
+			if (!scannedAlb.already_in_vault) {
+				try {
+					await importScannedAlbum(scannedAlb);
+					importedAlbums++;
+					console.log(`[Scanner] Auto-imported new album: ${scannedAlb.artist} - ${scannedAlb.title} (${scannedAlb.tracks.length} tracks)`);
+				} catch (importErr) {
+					console.error(`[Scanner] Failed to auto-import ${scannedAlb.title}:`, importErr);
+				}
+			} else {
+				// Check if existing album in vault has new tracks on disk that were not previously imported
+				const existingRow = scannedAlb.musicbrainz_id
+					? (db.prepare('SELECT id FROM albums WHERE musicbrainz_id = ?').get(scannedAlb.musicbrainz_id) as { id: number } | undefined)
+					: (db.prepare('SELECT id FROM albums WHERE LOWER(title) = LOWER(?) AND LOWER(artist) = LOWER(?)').get(scannedAlb.title, scannedAlb.artist) as { id: number } | undefined);
+
+				if (existingRow?.id) {
+					const albumId = existingRow.id;
+					const existingTracks = db.prepare('SELECT file_path, track_number, disc_number FROM tracks WHERE album_id = ?').all(albumId) as Array<{ file_path: string | null; track_number: number; disc_number: number }>;
+					const existingFilePaths = new Set(existingTracks.map((t) => (t.file_path ? path.resolve(t.file_path) : '')));
+
+					const missingTracks = scannedAlb.tracks.filter((t) => !existingFilePaths.has(path.resolve(t.file_path)));
+
+					if (missingTracks.length > 0) {
+						for (const t of missingTracks) {
+							try {
+								addTrackToAlbum(albumId, {
+									disc_number: t.disc_number,
+									track_number: t.track_number,
+									title: t.title,
+									artist: t.artist !== scannedAlb.artist ? t.artist : null,
+									duration_ms: t.duration_ms,
+									format: t.format,
+									bitrate_kbps: t.bitrate_kbps,
+									sample_rate: t.sample_rate,
+									bits_per_sample: t.bits_per_sample,
+									quality_rating: t.quality_rating,
+									censorship: t.censorship,
+									lyrics: t.lyrics,
+									file_path: t.file_path,
+									lyrics_text: t.lyrics_content ?? null,
+									notes: `Auto-synced from: ${path.basename(t.file_path)}`
+								});
+								newTracksCount++;
+							} catch (err) {
+								console.warn(`[Scanner] Could not add track ${t.title} to album ${albumId}:`, err);
+							}
+						}
+						console.log(`[Scanner] Added ${missingTracks.length} new tracks to existing album: ${scannedAlb.title}`);
+					}
+				}
+			}
+		}
+
+		lastLibraryScanTimestamp = Date.now();
+		console.log(`[Scanner] Library synchronization complete. Auto-imported ${importedAlbums} albums and ${newTracksCount} new tracks.`);
+	} catch (scanErr) {
+		console.error('[Scanner] Error during library synchronization:', scanErr);
+	} finally {
+		isLibraryScanning = false;
+	}
+
+	const trackCount = (db.prepare('SELECT COUNT(*) as count FROM tracks').get() as any)?.count || 0;
+	const albumCount = (db.prepare('SELECT COUNT(*) as count FROM albums').get() as any)?.count || 0;
+	return { importedAlbums, newTracks: newTracksCount, totalAlbums: albumCount, totalTracks: trackCount };
 }

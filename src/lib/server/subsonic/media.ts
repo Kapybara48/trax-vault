@@ -34,7 +34,8 @@ export async function handleSubsonicStream(
 	params: Record<string, any>,
 	requestHeaders: Headers
 ): Promise<Response> {
-	const trackId = parseInt(params.id, 10);
+	const rawId = (params.id || '').toString().replace(/^[a-z]+-/, '');
+	const trackId = parseInt(rawId, 10);
 	if (isNaN(trackId)) {
 		return new Response('Invalid track ID', { status: 400 });
 	}
@@ -221,8 +222,9 @@ export async function handleSubsonicCoverArt(params: Record<string, any>): Promi
 				}
 			}
 		}
-	} else if (rawId.startsWith('art-')) {
-		const artistName = decodeArtistId(rawId.substring(4));
+	} else if (rawId.startsWith('art-') || rawId.startsWith('art_')) {
+		const artToken = rawId.replace(/^art-/, '');
+		const artistName = decodeArtistId(artToken);
 		const album = db.prepare('SELECT id, cover_url FROM albums WHERE artist = ? AND cover_url IS NOT NULL LIMIT 1').get(artistName) as any;
 		if (album) {
 			imageDiskPath = parseCoverUrlToDiskPath(album.cover_url);
