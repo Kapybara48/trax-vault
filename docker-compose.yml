@@ -14,24 +14,7 @@ services:
       - MUSIC_DIR=/music
       # Set to your server URL or domain (e.g. http://my-server.lan:3000 or http://localhost:3000)
       - ORIGIN=http://localhost:3000
-      - PICARD_URL=${PICARD_URL:-http://localhost:5800}
     volumes:
       - ./data:/app/data
-      # Mount your existing music library folder here (read-write for companion lyrics files)
+      # Mount your existing music library folder here (read-write for companion lyrics files and tagger)
       - ${MUSIC_PATH:-./music}:/music
-
-  picard:
-    image: jlesage/musicbrainz-picard:latest
-    container_name: track-vault-picard
-    restart: unless-stopped
-    environment:
-      - USER_ID=1000
-      - GROUP_ID=1000
-      - TZ=Etc/UTC
-    volumes:
-      - ./data/picard-config:/config
-      # Mount music library folder here (read-write for Picard to tag and organize files)
-      - ${MUSIC_PATH:-./music}:/storage
-      - ${MUSIC_PATH:-./music}:/music
-    ports:
-      - "5800:5800"

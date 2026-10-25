@@ -29,6 +29,7 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
+		"@dantheman827/taglib-ts": "^0.1.5",
 		"@lucide/svelte": "^1.61.0",
 		"better-sqlite3": "^13.0.3",
 		"music-metadata": "^12.2.3"

@@ -691,6 +691,8 @@ export function getAlbumById(id: number): { album: Album; tracks: Track[] } | nu
 	return { album, tracks };
 }
 
+export const getAlbumWithTracks = getAlbumById;
+
 export function createAlbum(
 	albumData: {
 		title: string;
@@ -959,6 +961,92 @@ export function batchUpdateAlbumTracks(
 	});
 
 	transaction();
+}
+
+export function updateAlbumAndTracksFromMusicBrainz(
+	albumId: number,
+	albumData: {
+		title?: string;
+		artist?: string;
+		release_year?: number | null;
+		genre?: string | null;
+		cover_url?: string | null;
+		musicbrainz_id?: string | null;
+	},
+	trackUpdates: Array<{
+		id: number;
+		title: string;
+		artist?: string | null;
+		track_number: number;
+		disc_number?: number;
+	}>
+): { album: Album; tracks: Track[] } | null {
+	const albumRes = getAlbumWithTracks(albumId);
+	if (!albumRes) return null;
+
+	const rules = getAlbumFixerRules(albumId);
+
+	const transaction = db.transaction(() => {
+		// 1. Update album
+		const albumSets: string[] = ["updated_at = datetime('now')"];
+		const albumParams: any[] = [];
+		if (albumData.title !== undefined) {
+			albumSets.push('title = ?');
+			albumParams.push(albumData.title.trim());
+		}
+		if (albumData.artist !== undefined) {
+			albumSets.push('artist = ?');
+			albumParams.push(albumData.artist.trim());
+		}
+		if (albumData.release_year !== undefined) {
+			albumSets.push('release_year = ?');
+			albumParams.push(albumData.release_year);
+		}
+		if (albumData.genre !== undefined) {
+			albumSets.push('genre = ?');
+			albumParams.push(albumData.genre?.trim() ?? null);
+		}
+		if (albumData.cover_url !== undefined) {
+			albumSets.push('cover_url = ?');
+			albumParams.push(albumData.cover_url?.trim() ?? null);
+		}
+		if (albumData.musicbrainz_id !== undefined) {
+			albumSets.push('musicbrainz_id = ?');
+			albumParams.push(albumData.musicbrainz_id?.trim() ?? null);
+		}
+
+		albumParams.push(albumId);
+		db.prepare(`UPDATE albums SET ${albumSets.join(', ')} WHERE id = ?`).run(...albumParams);
+
+		// 2. Update each track
+		const updateTrackStmt = db.prepare(`
+			UPDATE tracks SET
+				title = ?,
+				artist = ?,
+				track_number = ?,
+				disc_number = ?,
+				manually_checked = 1,
+				needs_attention = ?,
+				updated_at = datetime('now')
+			WHERE id = ? AND album_id = ?
+		`);
+
+		for (const t of trackUpdates) {
+			const existing = db.prepare('SELECT * FROM tracks WHERE id = ? AND album_id = ?').get(t.id, albumId) as Track | undefined;
+			if (!existing) continue;
+
+			const discNumber = t.disc_number ?? existing.disc_number;
+			const trackNumber = t.track_number ?? existing.track_number;
+			const title = t.title.trim();
+			const artist = t.artist?.trim() ?? existing.artist;
+			const needsAtt = computeNeedsAttention(existing.quality_rating, existing.censorship, existing.lyrics, existing.format, rules);
+
+			updateTrackStmt.run(title, artist, trackNumber, discNumber, needsAtt, t.id, albumId);
+		}
+	});
+
+	transaction();
+	return getAlbumWithTracks(albumId);
 }
 
 export function addTrackToAlbum(

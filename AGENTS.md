@@ -177,6 +177,31 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added `csrf: { trustedOrigins: ['*'] }` in `vite.config.ts` allowing external Subsonic clients to send `POST` requests without triggering SvelteKit's `Cross-site POST form submissions are forbidden`.
       - Enhanced `extractParams` in `src/routes/rest/[...endpoint]/+server.ts` to parse `application/x-www-form-urlencoded` POST bodies using `request.clone().text()` and `URLSearchParams`.
 
+25. **Native MusicBrainz Tagger Studio (Picard Container Removal)**:
+    - Completely removed the secondary `picard` Docker service (`jlesage/musicbrainz-picard:latest` on port 5800) and `PICARD_URL` environment configuration, reducing host footprint and resource consumption.
+    - Added `@dantheman827/taglib-ts` for pure TypeScript cross-platform audio tag reading and writing (`.flac`, `.mp3`, `.m4a`, `.ogg`, `.wav`) without native compilation.
+    - Implemented core tagger engine (`src/lib/server/tagger.ts`):
+      - `alignTracks()`: Multi-factor fuzzy track alignment scoring position, normalized string similarity (Levenshtein & token Dice coefficient), and duration delta.
+      - `writeTagsToAudioFile()`: Safe TagLib buffer mutation preserving audio streams while writing verified track, title, artist, album, and year tags.
+      - `downloadAndSaveCover()`: Automatically downloads high-resolution front artwork from Cover Art Archive into the album folder (`cover.jpg`).
+      - `applyAlbumTags()`: Orchestrates file tag writing, cover downloading, and SQLite database persistence.
+    - Added serialized rate-limiting queue with 503 backoff in `src/lib/server/musicbrainz.ts` preventing MusicBrainz IP rate limit rejections.
+    - Added SQLite database helper `updateAlbumAndTracksFromMusicBrainz` updating metadata, recomputing fixer rules, and marking songs as manually checked.
+    - Added REST API endpoints:
+      - `GET /api/tagger/search`: MusicBrainz release queries with artist/album parameters.
+      - `GET /api/tagger/release/[mbid]`: Full release tracklist and Cover Art Archive thumbnails.
+      - `GET / POST /api/tagger/albums/[id]/match`: Automatic candidate lookup and side-by-side track alignment diff with confidence scores.
+      - `POST /api/tagger/albums/[id]/apply`: Batch file tagging and library synchronization.
+    - Built native interactive Tagger Studio (`/tagger`, `src/routes/tagger/+page.svelte` & `+page.server.ts`):
+      - Library album drawer with search and verification filters.
+      - MusicBrainz candidate release grid with cover art, release date, format, and country.
+      - Side-by-side interactive diff table with match pills (`100% Match`, `Title Diff`, `Duration Diff`) and dropdown remap selection.
+      - Cover art and metadata toggle switches with live progress indicator.
+    - Deep UI integrations:
+      - Replaced Picard external links in Navbar desktop & 7-tab mobile navigation with direct `/tagger` links.
+      - Updated album detail page (`/album/[id]`) with "Auto-Tag with MusicBrainz" shortcut.
+      - Updated Scanner warning banner and Settings system cards to point to native `/tagger`.
+
 ---
 
 

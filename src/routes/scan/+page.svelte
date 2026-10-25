@@ -366,33 +366,30 @@
 		</div>
 	</div>
 
-	<!-- MusicBrainz Picard Helper Banner -->
-	<div class="mb-6 rounded-2xl border border-indigo-900/60 bg-gradient-to-r from-indigo-950/40 via-neutral-900/50 to-neutral-900/40 p-4 sm:p-5 backdrop-blur-md shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+	<!-- MusicBrainz Tagger Studio Helper Banner -->
+	<div class="mb-6 rounded-2xl border border-emerald-900/60 bg-gradient-to-r from-emerald-950/40 via-neutral-900/50 to-neutral-900/40 p-4 sm:p-5 backdrop-blur-md shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 		<div class="flex items-start gap-3.5">
-			<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-950/80 border border-indigo-500/40 text-indigo-400">
+			<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400">
 				<Tag class="h-5 w-5" />
 			</div>
 			<div class="text-xs leading-relaxed">
 				<div class="flex items-center gap-2">
 					<h3 class="font-bold text-white text-sm">Need to tag or identify unknown audio files?</h3>
-					<span class="rounded-md bg-indigo-900/60 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
-						Picard Web GUI
+					<span class="rounded-md bg-emerald-900/60 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
+						Tagger Studio
 					</span>
 				</div>
 				<p class="text-neutral-400 mt-1">
-					Use MusicBrainz Picard to run AcoustID audio fingerprinting, cluster tracks into releases, and write embedded tags directly to your library. When finished, hit "Rescan Library" to index the fresh metadata.
+					Use Track Vault's native MusicBrainz Tagger to search official releases, align tracks, download high-res artwork, and write embedded tags directly to your library.
 				</p>
 			</div>
 		</div>
 		<a
-			href={data.picardUrl || 'http://localhost:5800'}
-			target="_blank"
-			rel="noopener noreferrer"
-			class="shrink-0 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition active:scale-95"
+			href="/tagger"
+			class="shrink-0 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 hover:bg-emerald-500 transition active:scale-95"
 		>
 			<Tag class="h-4 w-4" />
-			<span>Open Picard Tagger</span>
-			<ExternalLink class="h-3.5 w-3.5 text-indigo-200" />
+			<span>Open Tagger Studio</span>
 		</a>
 	</div>
 

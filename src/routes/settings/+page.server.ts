@@ -19,7 +19,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		: null;
 
 	const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number })?.count || 0;
-	const defaultPicardUrl = `http://${url.hostname || 'localhost'}:5800`;
 	const subsonicUrl = `${url.protocol}//${url.host}/rest`;
 	const serverBaseUrl = `${url.protocol}//${url.host}`;
 
@@ -34,8 +33,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		env: {
 			dataDir: process.env.DATA_DIR || './data',
 			musicDir: process.env.MUSIC_DIR || process.env.MUSIC_PATH || './music',
-			nodeEnv: process.env.NODE_ENV || 'development',
-			picardUrl: process.env.PICARD_URL || defaultPicardUrl
+			nodeEnv: process.env.NODE_ENV || 'development'
 		}
 	};
 };

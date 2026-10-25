@@ -18,14 +18,12 @@
 		issuesCount?: number;
 		user?: { id: number; username: string; role: string } | null;
 		authDisabled?: boolean;
-		picardUrl?: string;
 	}
 
 	let {
 		issuesCount = 0,
 		user = null,
-		authDisabled = false,
-		picardUrl = 'http://localhost:5800'
+		authDisabled = false
 	}: Props = $props();
 
 	const currentPath = $derived(page.url.pathname);
@@ -105,15 +103,11 @@
 				</a>
 
 				<a
-					href={picardUrl}
-					target="_blank"
-					rel="noopener noreferrer"
-					class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200 transition"
-					title="Open MusicBrainz Picard Web GUI ({picardUrl})"
+					href="/tagger"
+					class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium transition {currentPath.startsWith('/tagger') ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 shadow-sm' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'}"
 				>
-					<Tag class="h-3.5 w-3.5 text-indigo-400" />
-					<span>Picard</span>
-					<ExternalLink class="h-3 w-3 text-neutral-500" />
+					<Tag class="h-4 w-4 text-emerald-400" />
+					<span>Tagger</span>
 				</a>
 			</nav>
 		</div>
@@ -152,11 +146,11 @@
 		</div>
 	</div>
 
-	<!-- Mobile Navigation Bottom Bar (Clean 6-tab bar) -->
-	<div class="grid grid-cols-6 md:hidden border-t border-neutral-800/80 px-1 py-2 bg-neutral-950 text-center">
+	<!-- Mobile Navigation Bottom Bar (7-tab bar) -->
+	<div class="grid grid-cols-7 md:hidden border-t border-neutral-800/80 px-1 py-1.5 bg-neutral-950 text-center">
 		<a
 			href="/"
-			class="flex flex-col items-center gap-1 py-1 text-[11px] font-medium {currentPath === '/' ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath === '/' ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Library class="h-4 w-4" />
 			<span>Vault</span>
@@ -164,7 +158,7 @@
 
 		<a
 			href="/player"
-			class="flex flex-col items-center gap-1 py-1 text-[11px] font-medium {currentPath.startsWith('/player') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/player') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Disc3 class="h-4 w-4 {currentPath.startsWith('/player') ? 'text-emerald-400 animate-spin-slow' : ''}" />
 			<span>Player</span>
@@ -172,7 +166,7 @@
 
 		<a
 			href="/issues"
-			class="flex flex-col items-center gap-1 py-1 text-[11px] font-medium relative {currentPath.startsWith('/issues') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium relative {currentPath.startsWith('/issues') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<div class="relative">
 				<TriangleAlert class="h-4 w-4 {issuesCount > 0 ? 'text-amber-400' : ''}" />
@@ -186,8 +180,16 @@
 		</a>
 
 		<a
+			href="/tagger"
+			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/tagger') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+		>
+			<Tag class="h-4 w-4 {currentPath.startsWith('/tagger') ? 'text-emerald-400' : ''}" />
+			<span>Tagger</span>
+		</a>
+
+		<a
 			href="/lrc-maker"
-			class="flex flex-col items-center gap-1 py-1 text-[11px] font-medium {currentPath.startsWith('/lrc-maker') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/lrc-maker') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Mic class="h-4 w-4" />
 			<span>LRC</span>
@@ -195,7 +197,7 @@
 
 		<a
 			href="/scan"
-			class="flex flex-col items-center gap-1 py-1 text-[11px] font-medium {currentPath.startsWith('/scan') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/scan') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<FolderSync class="h-4 w-4" />
 			<span>Scan</span>
@@ -203,7 +205,7 @@
 
 		<a
 			href="/settings"
-			class="flex flex-col items-center gap-1 py-1 text-[11px] font-medium {currentPath.startsWith('/settings') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/settings') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<SettingsIcon class="h-4 w-4" />
 			<span>Settings</span>

@@ -28,10 +28,17 @@
     - Synchronize lyrics line-by-line using keyboard hotkeys (`Space` / `Enter`).
     - Millisecond fine-tuning (`+/- 0.1s`), step-back navigation, and real-time live karaoke preview.
     - Save `.lrc` companion files directly to server disk in the song's folder, persist in SQLite database, download `.lrc`, or copy to clipboard.
-- **Sleek, Decluttered Navigation**:
-  - Clean primary desktop tabs: **Vault**, **Fixer**, **Scan**, and a **Tools** dropdown containing **LRC Maker Studio** and **Picard Tagger**.
-  - User Profile pill with direct access to Account Settings and Password Change.
-  - Streamlined 5-tab mobile bottom bar (`Vault`, `Fixer`, `Scan`, `LRC`, `Settings`).
+- **Native MusicBrainz Tagger Studio (`/tagger`)**:
+  - Direct built-in MusicBrainz tagger embedded directly inside the Track Vault web interface (no external Docker containers or extra ports needed!).
+  - Search releases worldwide by artist or album with automated match candidate scoring.
+  - Interactive side-by-side diff table: preview local tags vs official MusicBrainz tags with match confidence pill badges.
+  - Write verified ID3/Vorbis tags directly into audio files (`.flac`, `.mp3`, `.m4a`, `.ogg`, `.wav`) on disk.
+  - Automatically download high-resolution front cover artwork from the Cover Art Archive.
+  - 1-click apply to write audio tags to disk, download cover art, and persist clean metadata into SQLite.
+- **Sleek, Responsive Navigation**:
+  - Clean primary desktop tabs: **Vault**, **Player**, **Fixer**, **Tagger**, **LRC Maker**, and **Scan**.
+  - User Profile pill with direct access to Account Settings, Subsonic credentials, and Password Change.
+  - Streamlined mobile bottom bar with instant access across devices.
 - **Local Music Library Scanner**:
   - Point Track Vault to your server's music library directory.
   - Automatically reads audio metadata (**FLAC, MP3, M4A, OGG, WAV, etc.**).
@@ -76,47 +83,24 @@ services:
       - DATA_DIR=/app/data
       - MUSIC_DIR=/music
       - ORIGIN=http://localhost:3000
-      - PICARD_URL=http://localhost:5800
       # Optional: set to true if you want to bypass login on a local network
       # - AUTH_DISABLED=false
     volumes:
       # Persistent SQLite database & album covers
       - ./data:/app/data
-      # Mount your music collection (read-write for companion lyrics files)
-      - ${MUSIC_PATH:-./music}:/music
-    depends_on:
-      - picard
-
-  # MusicBrainz Picard Web GUI (tags audio files, AcoustID fingerprints)
-  picard:
-    image: jlesage/musicbrainz-picard:latest
-    container_name: track-vault-picard
-    restart: unless-stopped
-    ports:
-      - "5800:5800"
-    environment:
-      - USER_ID=1000
-      - GROUP_ID=1000
-      - TZ=Etc/UTC
-    volumes:
-      - ./data/picard-config:/config
-      # Mount music read-write so Picard can write embedded tags
-      - ${MUSIC_PATH:-./music}:/storage
+      # Mount your music collection (read-write for companion lyrics and tagger)
       - ${MUSIC_PATH:-./music}:/music
 ```
 
-> **Note**: Both Track Vault and Picard have write access to `/music`. Track Vault strictly modifies companion `.lrc` and `.txt` files when requested and never alters audio binaries. Picard manages audio tags and AcoustID fingerprints.
-
-### 3. Start Containers
+### 3. Start Container
 ```bash
 docker compose up -d --build
 ```
 
-Access Track Vault and Picard in your browser:
-- **Track Vault**: `http://localhost:3000` (auditing, library scanner, issue tracking)
-- **MusicBrainz Picard**: `http://localhost:5800` (browser-based GUI to tag files with AcoustID)
+Access Track Vault in your browser:
+- **Track Vault**: `http://localhost:3000` (library scanner, music player, issues fixer, tagger studio, lyrics maker)
 
-On your first visit to Track Vault, you will be greeted with a **First-Run Admin Setup** screen to create your admin credentials. After setup, standard login is enforced unless `AUTH_DISABLED=true` is set in your environment. You can quickly launch Picard at any time from the Navbar, the Library Scanner, album pages, or Settings.
+On your first visit to Track Vault, you will be greeted with a **First-Run Admin Setup** screen to create your admin credentials. After setup, standard login is enforced unless `AUTH_DISABLED=true` is set in your environment. You can access the **Tagger Studio** at any time from the Navbar, the Library Scanner, album pages, or Settings.
 
 ---
 

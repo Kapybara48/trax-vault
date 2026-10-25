@@ -5,24 +5,47 @@ import type {
 } from '$lib/types/index.js';
 
 const USER_AGENT = 'TrackVault/1.0.0 ( mailto:daniel.krejci44@gmail.com )';
-let lastRequestTime = 0;
+let lastRequestEndTime = 0;
+let requestQueue: Promise<any> = Promise.resolve();
 
 /**
- * Throttle requests to respect MusicBrainz rate limit (1 request/sec)
+ * Throttle requests to respect MusicBrainz rate limit (1 request/sec) with serialized queue and 503 retry
  */
-async function rateLimitedFetch(url: string): Promise<Response> {
-	const now = Date.now();
-	const elapsed = now - lastRequestTime;
-	if (elapsed < 1100) {
-		await new Promise((resolve) => setTimeout(resolve, 1100 - elapsed));
-	}
-	lastRequestTime = Date.now();
+async function rateLimitedFetch(url: string, retries = 2): Promise<Response> {
+	return new Promise((resolve, reject) => {
+		requestQueue = requestQueue.then(async () => {
+			try {
+				const now = Date.now();
+				const elapsed = now - lastRequestEndTime;
+				if (elapsed < 1200) {
+					await new Promise((r) => setTimeout(r, 1200 - elapsed));
+				}
 
-	return fetch(url, {
-		headers: {
-			'User-Agent': USER_AGENT,
-			Accept: 'application/json'
-		}
+				let res = await fetch(url, {
+					headers: {
+						'User-Agent': USER_AGENT,
+						Accept: 'application/json'
+					}
+				});
+
+				if (res.status === 503 && retries > 0) {
+					console.warn(`MusicBrainz 503 rate limit hit, backing off 1.5s (retries left: ${retries})...`);
+					await new Promise((r) => setTimeout(r, 1500));
+					res = await fetch(url, {
+						headers: {
+							'User-Agent': USER_AGENT,
+							Accept: 'application/json'
+						}
+					});
+				}
+
+				lastRequestEndTime = Date.now();
+				resolve(res);
+			} catch (err) {
+				lastRequestEndTime = Date.now();
+				reject(err);
+			}
+		});
 	});
 }
 
@@ -125,6 +148,7 @@ export async function searchMusicBrainz(query: string, artist?: string): Promise
 				track_count: trackCount,
 				media_format: mediaFormat,
 				cover_url: coverUrl,
+				barcode: rel.barcode || null,
 				disambiguation: rel.disambiguation
 			};
 		});
@@ -195,6 +219,7 @@ export async function getMusicBrainzRelease(releaseId: string): Promise<MusicBra
 			release_year: isNaN(year!) ? null : year,
 			cover_url: coverUrl,
 			media_type: mediaType,
+			barcode: rel.barcode || null,
 			tracks
 		};
 	} catch (err) {

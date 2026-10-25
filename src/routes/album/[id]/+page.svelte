@@ -601,15 +601,12 @@
 				</button>
 
 				<a
-					href={data.picardUrl || 'http://localhost:5800'}
-					target="_blank"
-					rel="noopener noreferrer"
+					href={`/tagger?albumId=${album.id}`}
 					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 hover:text-white px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
-					title="Open MusicBrainz Picard Web Tagger to acoustic fingerprint and tag files"
+					title="Auto-tag album and download cover artwork with MusicBrainz"
 				>
-					<Tag class="h-3.5 w-3.5 text-indigo-400" />
-					<span>Tag in Picard</span>
-					<ExternalLink class="h-3 w-3 text-neutral-500" />
+					<Sparkles class="h-3.5 w-3.5 text-emerald-400" />
+					<span>Auto-Tag with MusicBrainz</span>
 				</a>
 			</div>
 

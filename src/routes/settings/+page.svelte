@@ -277,41 +277,30 @@
 				</div>
 			</div>
 
-			<!-- MusicBrainz Picard Card -->
+			<!-- MusicBrainz Tagger Studio Card -->
 			<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-xl shadow-xl text-xs space-y-4">
 				<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-4 mb-2">
-					<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-950/80 border border-indigo-500/40 text-indigo-400">
+					<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400">
 						<Tag class="h-5 w-5" />
 					</div>
 					<div>
-						<h2 class="text-sm font-bold text-white">MusicBrainz Picard</h2>
-						<p class="text-[11px] text-neutral-400">AcoustID & Tagging Web GUI</p>
+						<h2 class="text-sm font-bold text-white">MusicBrainz Tagger Studio</h2>
+						<p class="text-[11px] text-neutral-400">Native Embedded Tagging</p>
 					</div>
 				</div>
 
 				<div class="space-y-3">
 					<p class="text-neutral-400 leading-relaxed text-[11px]">
-						Official Picard desktop tagger running in Docker with an in-browser web GUI on port 5800.
+						Track Vault's built-in tagger studio queries MusicBrainz directly, aligns songs with releases, downloads official cover art, and writes verified ID3/Vorbis tags directly to audio files on disk.
 					</p>
-
-					<div>
-						<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-0.5">Web Interface URL</span>
-						<div class="flex items-center gap-1.5 font-mono text-[11px] text-neutral-300 bg-neutral-950 p-2 rounded-lg border border-neutral-800 break-all">
-							<ExternalLink class="h-3.5 w-3.5 shrink-0 text-indigo-400" />
-							<span>{data.env.picardUrl}</span>
-						</div>
-					</div>
 
 					<div class="pt-2 border-t border-neutral-800/60">
 						<a
-							href={data.env.picardUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/30 hover:bg-indigo-500 transition active:scale-95"
+							href="/tagger"
+							class="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-emerald-600/30 hover:bg-emerald-500 transition active:scale-95"
 						>
 							<Tag class="h-3.5 w-3.5" />
-							<span>Launch Picard GUI</span>
-							<ExternalLink class="h-3 w-3 text-indigo-200" />
+							<span>Open Tagger Studio</span>
 						</a>
 					</div>
 				</div>

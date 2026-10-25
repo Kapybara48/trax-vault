@@ -151,6 +151,7 @@ export interface MusicBrainzReleaseItem {
 	track_count?: number;
 	media_format?: string;
 	cover_url?: string | null;
+	barcode?: string | null;
 	disambiguation?: string;
 }
 
@@ -171,7 +172,26 @@ export interface MusicBrainzReleaseDetail {
 	genre?: string | null;
 	cover_url: string | null;
 	media_type: string | null;
+	barcode?: string | null;
 	tracks: MusicBrainzReleaseTrack[];
+}
+
+export interface TrackMatch {
+	local_track: Track;
+	mb_track: MusicBrainzReleaseTrack | null;
+	score: number;
+	match_type: 'exact' | 'high' | 'medium' | 'low' | 'unmatched';
+	title_diff: boolean;
+	artist_diff: boolean;
+	number_diff: boolean;
+	duration_diff: boolean;
+}
+
+export interface AlbumMatchResult {
+	album: Album;
+	release: MusicBrainzReleaseDetail;
+	matches: TrackMatch[];
+	overall_score: number;
 }
 
 export interface ScannedTrack {
