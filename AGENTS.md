@@ -246,6 +246,21 @@ This document preserves persistent context, architectural conventions, recent ch
       - Integrated "Add to Playlist" across Track Vault: Album detail hero action bar (`/album/[id]`), individual song rows (`TrackRow.svelte`), and Audiophile Player studio (`/player` hero and track rows).
       - Added `Playlists` navigation link to desktop navbar and 8-tab mobile bottom bar.
 
+28. **Unified Audiophile Player Studio with Integrated Playlists**:
+    - **User-Requested UX Consolidation**: Eliminated separate "Playlists" navigation tab to avoid clutter and unified library browsing into the Audiophile Player Studio (`/player`).
+    - **Navbar Streamlining**:
+      - Reverted desktop navigation to 6 clean links: `Vault`, `Player`, `Fixer`, `Tagger`, `LRC Maker`, `Scan`.
+      - Reverted mobile bottom navigation to 7 clean tabs: `Vault`, `Player`, `Fixer`, `Tagger`, `LRC`, `Scan`, `Settings`.
+    - **Player Studio Library Drawer (`/player`)**:
+      - Added Spotify-style segmented switcher: `[ 💿 Albums (X) ]  [ 📋 Playlists (Y) ]` with instant "+ Playlist" creation trigger.
+      - Integrated interactive playlists list showing cover art previews, track counts, formatted duration, public/private indicators, and hover play.
+      - Added dedicated Playlist Hero banner displaying dynamic artwork, track count, total playback time, Play All, Shuffle Play, Edit Details, and Delete buttons.
+      - Integrated in-player playlist track table with active equalizer indicators, exact bitrate badges, dragless Move Up / Move Down song reordering, and 1-click track removal.
+      - Built inline modal dialogs for "Create Playlist", "Edit Playlist", and "Delete Playlist" directly inside `/player`.
+      - Connected `AddToPlaylistModal` callback refreshing local playlist state without page reloads.
+    - **Legacy URL Redirection**:
+      - Added HTTP 303 redirects in `src/hooks.server.ts` routing `/playlists` -> `/player?view=playlists` and `/playlist/:id` -> `/player?playlistId=:id`.
+      - Removed legacy route folders `src/routes/playlists` and `src/routes/playlist`.
 
 ---
 

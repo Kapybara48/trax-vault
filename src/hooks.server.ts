@@ -22,6 +22,15 @@ export async function handle({
 		return resolve(event);
 	}
 
+	// Redirect legacy playlists paths into the unified Audiophile Studio Player
+	if (path === '/playlists' || path === '/playlists/') {
+		throw redirect(303, '/player?view=playlists');
+	}
+	const playlistMatch = path.match(/^\/playlist\/(\d+)\/?$/);
+	if (playlistMatch) {
+		throw redirect(303, `/player?playlistId=${playlistMatch[1]}`);
+	}
+
 	// Allow Subsonic REST API (authenticates via Subsonic protocol params u/t/s/p)
 	if (path.startsWith('/rest')) {
 		return resolve(event);
