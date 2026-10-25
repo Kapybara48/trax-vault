@@ -1178,8 +1178,10 @@
 							<tr class="h-8">
 								<th class="w-10 text-center font-semibold">#</th>
 								<th class="font-semibold">Title</th>
-								<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'}">Quality</th>
-								<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'}">Lyrics</th>
+								{#if !showLyricsDrawer}
+									<th class="font-semibold hidden sm:table-cell">Quality</th>
+									<th class="font-semibold hidden md:table-cell">Lyrics</th>
+								{/if}
 								<th class="w-14 text-right pr-2 font-semibold"><Clock class="w-3.5 h-3.5 inline text-neutral-500" /></th>
 								<th class="w-8 text-center pr-3 font-semibold"></th>
 							</tr>
@@ -1192,7 +1194,7 @@
 
 								{#if showDiscHeader}
 									<tr class="bg-neutral-900/95 border-y border-neutral-800/80 sticky top-8 z-[5] backdrop-blur-md group/disc">
-										<td colspan="6" class="py-2 px-3 text-left sticky top-8 bg-neutral-900/95 backdrop-blur-md z-[5]">
+										<td colspan={showLyricsDrawer ? 4 : 6} class="py-2 px-3 text-left sticky top-8 bg-neutral-900/95 backdrop-blur-md z-[5]">
 											<div class="flex items-center justify-between">
 												<div class="flex items-center gap-2">
 													<div class="w-5 h-5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-xs">
@@ -1258,47 +1260,49 @@
 										</div>
 									</td>
 
-									<!-- Quality Badge -->
-									<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'} pr-3">
-										<div class="flex items-center gap-1.5 flex-wrap">
-											<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
-												? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
-												: 'bg-neutral-800 text-neutral-300 border border-neutral-700/40'}">
-												{track.format}
-											</span>
-											{#if track.bitrate_kbps}
-												<span class="text-[10px] font-mono text-neutral-400 bg-neutral-950/70 px-1.5 py-0.5 rounded border border-neutral-800/80">
-													{track.bitrate_kbps.toLocaleString()} kbps
+									{#if !showLyricsDrawer}
+										<!-- Quality Badge -->
+										<td class="hidden sm:table-cell pr-3">
+											<div class="flex items-center gap-1.5 flex-wrap">
+												<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
+													? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
+													: 'bg-neutral-800 text-neutral-300 border border-neutral-700/40'}">
+													{track.format}
+												</span>
+												{#if track.bitrate_kbps}
+													<span class="text-[10px] font-mono text-neutral-400 bg-neutral-950/70 px-1.5 py-0.5 rounded border border-neutral-800/80">
+														{track.bitrate_kbps.toLocaleString()} kbps
+													</span>
+												{/if}
+											</div>
+										</td>
+
+										<!-- Lyrics Indicator Button -->
+										<td class="hidden md:table-cell pr-3">
+											{#if track.lyrics === 'instrumental'}
+												<span class="px-2 py-0.5 rounded text-[10px] bg-purple-950/60 text-purple-300 border border-purple-800/50 font-serif">
+													♪ Instrumental
+												</span>
+											{:else if track.lyrics === 'synced_lrc'}
+												<button
+													type="button"
+													onclick={(e) => {
+														e.stopPropagation();
+														player.playTrack(track, selectedAlbum!, selectedAlbum!.tracks);
+														showLyricsDrawer = true;
+													}}
+													class="px-2 py-0.5 rounded text-[10px] bg-emerald-950/50 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 cursor-pointer transition"
+													title="View Synced Lyrics"
+												>
+													Synced LRC
+												</button>
+											{:else}
+												<span class="text-neutral-500 text-[10px]">
+													{track.lyrics || 'plain'}
 												</span>
 											{/if}
-										</div>
-									</td>
-
-									<!-- Lyrics Indicator Button -->
-									<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'} pr-3">
-										{#if track.lyrics === 'instrumental'}
-											<span class="px-2 py-0.5 rounded text-[10px] bg-purple-950/60 text-purple-300 border border-purple-800/50 font-serif">
-												♪ Instrumental
-											</span>
-										{:else if track.lyrics === 'synced_lrc'}
-											<button
-												type="button"
-												onclick={(e) => {
-													e.stopPropagation();
-													player.playTrack(track, selectedAlbum!, selectedAlbum!.tracks);
-													showLyricsDrawer = true;
-												}}
-												class="px-2 py-0.5 rounded text-[10px] bg-emerald-950/50 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 cursor-pointer transition"
-												title="View Synced Lyrics"
-											>
-												Synced LRC
-											</button>
-										{:else}
-											<span class="text-neutral-500 text-[10px]">
-												{track.lyrics || 'plain'}
-											</span>
-										{/if}
-									</td>
+										</td>
+									{/if}
 
 									<!-- Duration -->
 									<td class="text-right pr-2 font-mono tabular-nums text-xs text-neutral-400">
@@ -1456,8 +1460,10 @@
 								<tr class="h-8">
 									<th class="w-10 text-center font-semibold">#</th>
 									<th class="font-semibold">Title & Artist</th>
-									<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'}">Album</th>
-									<th class="font-semibold hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'}">Quality</th>
+									{#if !showLyricsDrawer}
+										<th class="font-semibold hidden md:table-cell">Album</th>
+										<th class="font-semibold hidden sm:table-cell">Quality</th>
+									{/if}
 									<th class="w-14 text-right pr-2 font-semibold"><Clock class="w-3.5 h-3.5 inline text-neutral-500" /></th>
 									<th class="w-24 text-right pr-3 font-semibold">Order</th>
 								</tr>
@@ -1500,36 +1506,38 @@
 											</div>
 										</td>
 
-										<!-- Album Title Link -->
-										<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'md:table-cell'} pr-3">
-											{#if track.album_id}
-												<a
-													href="/album/{track.album_id}"
-													class="text-neutral-400 hover:text-emerald-400 hover:underline truncate block"
-													title={track.album_title || 'Album'}
-												>
-													{track.album_title || 'Album'}
-												</a>
-											{:else}
-												<span class="text-neutral-500">&mdash;</span>
-											{/if}
-										</td>
-
-										<!-- Quality Badge -->
-										<td class="hidden {showLyricsDrawer ? '2xl:table-cell' : 'sm:table-cell'} pr-3">
-											<div class="flex items-center gap-1.5 flex-wrap">
-												<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
-													? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
-													: 'bg-neutral-800 text-neutral-300 border border-neutral-700/40'}">
-													{track.format}
-												</span>
-												{#if track.bitrate_kbps}
-													<span class="text-[10px] font-mono text-neutral-400 bg-neutral-950/70 px-1.5 py-0.5 rounded border border-neutral-800/80">
-														{track.bitrate_kbps.toLocaleString()} kbps
-													</span>
+										{#if !showLyricsDrawer}
+											<!-- Album Title Link -->
+											<td class="hidden md:table-cell pr-3">
+												{#if track.album_id}
+													<a
+														href="/album/{track.album_id}"
+														class="text-neutral-400 hover:text-emerald-400 hover:underline truncate block"
+														title={track.album_title || 'Album'}
+													>
+														{track.album_title || 'Album'}
+													</a>
+												{:else}
+													<span class="text-neutral-500">&mdash;</span>
 												{/if}
-											</div>
-										</td>
+											</td>
+
+											<!-- Quality Badge -->
+											<td class="hidden sm:table-cell pr-3">
+												<div class="flex items-center gap-1.5 flex-wrap">
+													<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
+														? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
+														: 'bg-neutral-800 text-neutral-300 border border-neutral-700/40'}">
+														{track.format}
+													</span>
+													{#if track.bitrate_kbps}
+														<span class="text-[10px] font-mono text-neutral-400 bg-neutral-950/70 px-1.5 py-0.5 rounded border border-neutral-800/80">
+															{track.bitrate_kbps.toLocaleString()} kbps
+														</span>
+													{/if}
+												</div>
+											</td>
+										{/if}
 
 										<!-- Duration -->
 										<td class="text-right pr-2 font-mono tabular-nums text-xs text-neutral-400">

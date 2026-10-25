@@ -305,8 +305,10 @@ This document preserves persistent context, architectural conventions, recent ch
       - **Left (`order-1 w-72 lg:w-80`)**: Your Library (Albums & Playlists).
       - **Middle (`order-2 flex-1`)**: Live Synced Lyrics Studio taking center stage with spacious karaoke lines, smooth auto-follow vertical scrolling, instrumental track indicators, and top-right close action.
       - **Right (`order-3 flex-1 min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]`)**: Songs & Hero dock displaying album/playlist details, playback controls, and tracklist table.
-    - Added responsive hero banner compaction (slimmer cover and action bar) and column adaptation (hiding non-essential quality/lyrics columns on narrower widths) when lyrics are active.
-    - When lyrics are closed, the songs panel seamlessly transitions back to full center stage (`order-2 flex-1 min-w-0`).
+    - Added responsive hero banner compaction (slimmer cover and action bar) and column decluttering:
+      - Completely removes "Quality" and "Lyrics" columns from the song list table when lyrics are open, providing maximum space for song titles and artists in the right dock.
+      - Automatically adjusts multi-disc divider `colspan` between 4 and 6 columns.
+    - When lyrics are closed, the songs panel seamlessly transitions back to full center stage (`order-2 flex-1 min-w-0`), restoring full Quality and Lyrics columns.
     - Dedicated Play Queue drawer retained on the right (`order-3 w-80 lg:w-96`) when opened independently.
 
 33. **Multi-Disc Separators & CD Management in Audiophile Player Studio**:
