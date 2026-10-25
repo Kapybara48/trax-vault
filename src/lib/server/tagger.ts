@@ -347,8 +347,11 @@ export async function applyAlbumTags(
 	let newCoverUrl = album.cover_url;
 	if (options.updateCover && release.cover_url && albumFolder) {
 		const coverRes = await downloadAndSaveCover(albumFolder, release.cover_url);
-		if (coverRes.success) {
-			newCoverUrl = `/api/albums/${albumId}/cover?t=${Date.now()}`;
+		if (coverRes.success && coverRes.coverPath) {
+			const musicDir = getMusicDirectory();
+			const relPath = path.relative(musicDir, coverRes.coverPath);
+			const containerPath = `/music/${relPath.replace(/^\/+/, '')}`;
+			newCoverUrl = `/api/library/cover?path=${encodeURIComponent(containerPath)}&t=${Date.now()}`;
 		}
 	}
 

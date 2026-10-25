@@ -202,6 +202,11 @@ This document preserves persistent context, architectural conventions, recent ch
       - Updated album detail page (`/album/[id]`) with "Auto-Tag with MusicBrainz" shortcut.
       - Updated Scanner warning banner and Settings system cards to point to native `/tagger`.
 
+26. **Album Cover Serving Endpoint & Tagger Cover Path Resolution**:
+    - Created dedicated REST endpoint `GET /api/albums/[id]/cover` (`src/routes/api/albums/[id]/cover/+server.ts`) resolving album artwork from `cover_url`, track directory candidate search (`cover.jpg`, `cover.png`, `folder.jpg`, `front.jpg`), or external URL redirect.
+    - Updated `applyAlbumTags` in `src/lib/server/tagger.ts` to map downloaded cover art into container-compatible `/api/library/cover?path=...` URLs.
+    - Repaired database record for existing tagged albums to point to verified local cover images.
+
 ---
 
 
