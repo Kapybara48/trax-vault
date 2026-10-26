@@ -21,6 +21,9 @@ jobs:
   build-and-push:
     name: Build & Push Container
     runs-on: docker
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -58,7 +61,9 @@ jobs:
 
       - name: Log in to Forgejo Container Registry
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ github.actor }}" --password-stdin
+          AUTH_TOKEN="${{ secrets.PACKAGE_TOKEN || secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}"
+          AUTH_USER="${{ secrets.REGISTRY_USER || github.actor }}"
+          echo "$AUTH_TOKEN" | docker login ${{ env.REGISTRY }} -u "$AUTH_USER" --password-stdin
 
       - name: Build Docker image
         run: |
