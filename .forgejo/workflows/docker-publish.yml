@@ -15,7 +15,7 @@ concurrency:
 env:
   REGISTRY: git.kapyhub.cz
   IMAGE_NAME: kapybara/trax-vault
-  DOCKER_HOST: tcp://docker-in-docker:2375
+  DOCKER_HOST: tcp://172.21.0.2:2375
 
 jobs:
   build-and-push:
@@ -34,7 +34,7 @@ jobs:
 
           echo "Detecting Docker daemon connection..."
           DETECTED=""
-          for candidate in "${DOCKER_HOST:-}" "tcp://docker-in-docker:2375" "tcp://docker:2375" "tcp://localhost:2375" "unix:///var/run/docker.sock"; do
+          for candidate in "${DOCKER_HOST:-}" "tcp://172.21.0.2:2375" "tcp://docker-in-docker:2375" "tcp://docker:2375" "unix:///var/run/docker.sock"; do
             echo "Checking: $candidate"
             if [ -n "$candidate" ] && DOCKER_HOST="$candidate" docker info >/dev/null 2>&1; then
               DETECTED="$candidate"
@@ -49,7 +49,7 @@ jobs:
             docker version
           else
             echo "::error::Could not connect to Docker daemon. Probing candidates:"
-            for candidate in "tcp://docker-in-docker:2375" "tcp://docker:2375" "tcp://localhost:2375" "unix:///var/run/docker.sock"; do
+            for candidate in "tcp://172.21.0.2:2375" "tcp://docker-in-docker:2375" "tcp://docker:2375" "unix:///var/run/docker.sock"; do
               echo "--- Probing candidate: $candidate ---"
               DOCKER_HOST="$candidate" docker info || true
             done
