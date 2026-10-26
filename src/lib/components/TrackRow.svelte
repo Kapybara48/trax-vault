@@ -66,7 +66,13 @@
 	}
 
 	async function handleDelete() {
-		if (!confirm(`Delete track "${track.title}"?`)) return;
+		if (
+			!confirm(
+				`Remove song "${track.title}" from Vault?\n\nAudio file on disk will NOT be deleted, and can be re-scanned at any time.`
+			)
+		) {
+			return;
+		}
 		try {
 			const res = await fetch(`/api/tracks/${track.id}`, { method: 'DELETE' });
 			if (res.ok && onTrackDeleted) {

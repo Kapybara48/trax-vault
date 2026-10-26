@@ -28,7 +28,8 @@
 		Search,
 		Filter,
 		RotateCcw,
-		Tag
+		Tag,
+		Trash2
 	} from '@lucide/svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
@@ -47,6 +48,7 @@
 	let importedAlbumIds = $state<{ [key: string]: number }>({});
 	let isBatchImporting = $state(false);
 	let batchProgress = $state({ current: 0, total: 0 });
+	let isUnvaulting = $state<string | null>(null);
 
 	const selectedAlbumsToImport = $derived(
 		scannedAlbums.filter((a) => !a.already_in_vault && a.tracks.some((t) => t.selected))
@@ -242,6 +244,79 @@
 		}
 	}
 
+	async function unvaultAlbum(album: ScannedAlbum) {
+		const albumId = album.existing_album_id || importedAlbumIds[album.album_key];
+		if (!albumId) {
+			alert('Could not determine album ID in Vault to remove.');
+			return;
+		}
+
+		if (!confirm(`Remove album "${album.title}" from Vault?\n\nAudio files on disk will NOT be deleted, and the album will remain here in the Scanner ready to be imported or re-tagged whenever you want.`)) {
+			return;
+		}
+
+		isUnvaulting = album.album_key;
+		try {
+			const res = await fetch(`/api/albums/${albumId}`, { method: 'DELETE' });
+			if (res.ok) {
+				const orig = scannedAlbums.find((a) => a.album_key === album.album_key) || album;
+				orig.already_in_vault = false;
+				orig.existing_album_id = null;
+				orig.selected = true;
+				for (const t of orig.tracks) {
+					t.selected = true;
+				}
+				album.already_in_vault = false;
+				album.existing_album_id = null;
+				album.selected = true;
+				for (const t of album.tracks) {
+					t.selected = true;
+				}
+				delete importedAlbumIds[album.album_key];
+			} else {
+				const errData = await res.json().catch(() => ({}));
+				alert(`Failed to remove album: ${errData.error || res.statusText}`);
+			}
+		} catch (err: any) {
+			console.error('Failed to unvault album:', err);
+			alert(`Failed to remove album: ${err.message}`);
+		} finally {
+			isUnvaulting = null;
+		}
+	}
+
+	async function unvaultAllFiltered() {
+		const albumsToUnvault = displayedAlbums.filter((a) => a.already_in_vault && (a.existing_album_id || importedAlbumIds[a.album_key]));
+		if (albumsToUnvault.length === 0) return;
+
+		if (!confirm(`Remove all ${albumsToUnvault.length} filtered albums from the Vault?\n\nAudio files on disk will NOT be deleted and will remain in Library Scanner.`)) {
+			return;
+		}
+
+		for (const alb of albumsToUnvault) {
+			const albumId = alb.existing_album_id || importedAlbumIds[alb.album_key];
+			if (albumId) {
+				try {
+					await fetch(`/api/albums/${albumId}`, { method: 'DELETE' });
+					alb.already_in_vault = false;
+					alb.existing_album_id = null;
+					alb.selected = true;
+					for (const t of alb.tracks) t.selected = true;
+					const orig = scannedAlbums.find((a) => a.album_key === alb.album_key);
+					if (orig) {
+						orig.already_in_vault = false;
+						orig.existing_album_id = null;
+						orig.selected = true;
+						for (const t of orig.tracks) t.selected = true;
+					}
+					delete importedAlbumIds[alb.album_key];
+				} catch (err) {
+					console.error(`Failed to unvault ${alb.title}:`, err);
+				}
+			}
+		}
+	}
+
 	// Filtered view of scanned albums & tracks
 	const displayedAlbums = $derived.by(() => {
 		const query = scanSearch.trim().toLowerCase();
@@ -273,13 +348,20 @@
 						if (t.quality_rating !== 'bad' && t.quality_rating !== 'needs_upgrade') return false;
 					} else if (scanFilter === 'not_in_vault') {
 						if (album.already_in_vault) return false;
+					} else if (scanFilter === 'in_vault') {
+						if (!album.already_in_vault) return false;
 					}
 
 					return true;
 				});
 
 				// Include album if it has matching tracks, or if no category filter and album title matched
-				const includeAlbum = matchingTracks.length > 0 || (albumMatchesQuery && scanFilter === 'all');
+				const includeAlbum =
+					matchingTracks.length > 0 ||
+					(albumMatchesQuery &&
+						(scanFilter === 'all' ||
+							(scanFilter === 'in_vault' && album.already_in_vault) ||
+							(scanFilter === 'not_in_vault' && !album.already_in_vault)));
 
 				return {
 					...album,
@@ -537,6 +619,13 @@
 						>
 							Not In Vault
 						</button>
+						<button
+							type="button"
+							onclick={() => (scanFilter = 'in_vault')}
+							class="rounded-lg px-2.5 py-1 text-xs font-semibold transition {scanFilter === 'in_vault' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-400 hover:text-white'}"
+						>
+							In Vault
+						</button>
 					</div>
 
 					<!-- Selection shortcuts -->
@@ -563,7 +652,15 @@
 					<span>
 						Showing <strong class="text-white font-bold">{displayedAlbums.length}</strong> of {scannedAlbums.length} albums
 					</span>
-					{#if selectedAlbumsToImport.length > 0}
+					{#if scanFilter === 'in_vault' && displayedAlbums.some((a) => a.already_in_vault)}
+						<button
+							type="button"
+							onclick={unvaultAllFiltered}
+							class="text-xs font-bold text-rose-400 hover:text-rose-300 transition"
+						>
+							Remove All Filtered from Vault ({displayedAlbums.filter((a) => a.already_in_vault).length} albums) →
+						</button>
+					{:else if selectedAlbumsToImport.length > 0}
 						<button
 							type="button"
 							onclick={importAllSelected}
@@ -705,19 +802,34 @@
 							</button>
 
 							{#if album.already_in_vault}
-								{#if importedAlbumIds[album.album_key]}
-									<a
-										href="/album/{importedAlbumIds[album.album_key]}"
-										class="flex items-center gap-1 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow shadow-emerald-600/30"
+								{@const vaultId = album.existing_album_id || importedAlbumIds[album.album_key]}
+								<div class="flex items-center gap-1.5">
+									{#if vaultId}
+										<a
+											href="/album/{vaultId}"
+											class="flex items-center gap-1 rounded-xl bg-neutral-800/80 px-3 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 hover:text-white transition border border-neutral-700/60"
+											title="View album in Vault"
+										>
+											<span>In Vault</span>
+											<ArrowRight class="h-3 w-3 text-emerald-400" />
+										</a>
+									{:else}
+										<span class="rounded-xl bg-neutral-800/80 px-3 py-2 text-xs font-semibold text-neutral-400 border border-neutral-700/60">
+											In Vault
+										</span>
+									{/if}
+
+									<button
+										type="button"
+										onclick={() => unvaultAlbum(album)}
+										disabled={isUnvaulting === album.album_key}
+										class="flex items-center gap-1 rounded-xl bg-rose-950/40 hover:bg-rose-950/80 px-3 py-2 text-xs font-semibold text-rose-300 border border-rose-800/50 hover:border-rose-600 transition disabled:opacity-50"
+										title="Remove album from Vault (keeps audio files on disk)"
 									>
-										<span>View Album</span>
-										<ArrowRight class="h-3.5 w-3.5" />
-									</a>
-								{:else}
-									<span class="rounded-xl bg-neutral-800 px-3 py-2 text-xs text-neutral-500">
-										Already Tracked
-									</span>
-								{/if}
+										<Trash2 class="h-3.5 w-3.5 text-rose-400" />
+										<span>{isUnvaulting === album.album_key ? 'Removing...' : 'Remove'}</span>
+									</button>
+								</div>
 							{:else}
 								<button
 									type="button"

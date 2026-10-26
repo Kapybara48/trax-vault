@@ -111,8 +111,8 @@ export function trackToSubsonicSong(
 		artist: artistName,
 		track: track.track_number || 1,
 		discNumber: track.disc_number || 1,
-		year: track.album_year || album?.release_year || undefined,
-		genre: album?.genre || undefined,
+		year: track.album_year || (track as any).year || album?.release_year || undefined,
+		genre: (track as any).album_genre || (track as any).genre || album?.genre || undefined,
 		coverArt: `tr-${track.id}`,
 		size: sizeBytes,
 		contentType: getContentType(track.format, track.file_path || undefined),
@@ -131,7 +131,7 @@ export function trackToSubsonicSong(
 	};
 
 	if (isStarred) {
-		song.starred = true;
+		song.starred = formatIsoDate(track.created_at) || new Date().toISOString();
 	}
 
 	return song;
@@ -178,7 +178,7 @@ export function albumToSubsonicAlbum(
 	};
 
 	if (isStarred) {
-		alb.starred = true;
+		alb.starred = formatIsoDate(album.created_at) || new Date().toISOString();
 	}
 
 	if (tracks && tracks.length > 0) {
@@ -214,7 +214,7 @@ export const subsonicHandlers: Record<
 		return {
 			data: {
 				musicFolders: {
-					musicFolder: [{ id: 1, name: 'Trax Vault Music' }]
+					musicFolder: [{ id: 0, name: 'Trax Vault Music' }]
 				}
 			}
 		};
@@ -240,7 +240,7 @@ export const subsonicHandlers: Record<
 					jukeboxRole: true,
 					shareRole: true,
 					videoConversionRole: false,
-					folder: [1]
+					folder: [0]
 				}
 			}
 		};
@@ -267,7 +267,7 @@ export const subsonicHandlers: Record<
 							jukeboxRole: true,
 							shareRole: true,
 							videoConversionRole: false,
-							folder: [1]
+							folder: [0]
 						}
 					]
 				}
@@ -400,29 +400,7 @@ export const subsonicHandlers: Record<
 			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'id' is required" } };
 		}
 
-		// 1. Root directory (folder id 0, 1, "root", "folder-1", or "mf-1") -> list all artists as dirs
-		if (rawId === '0' || rawId === '1' || rawId === 'root' || rawId === 'folder-1' || rawId === 'mf-1') {
-			const artists = getDistinctArtists();
-			return {
-				data: {
-					directory: {
-						id: rawId,
-						name: 'Trax Vault Music',
-						child: artists.map((art) => ({
-							id: encodeArtistId(art.name),
-							parent: rawId,
-							isDir: true,
-							title: art.name,
-							name: art.name,
-							artist: art.name,
-							albumCount: art.album_count || 1
-						}))
-					}
-				}
-			};
-		}
-
-		// 2. Artist directory (art_... or art-...) -> list albums as child dirs
+		// 1. Artist directory (art_... or art-...) -> list albums as child dirs
 		if (rawId.startsWith('art_') || rawId.startsWith('art-')) {
 			const artistName = decodeArtistId(rawId);
 			const albums = getAlbumsByArtist(artistName);
@@ -430,7 +408,7 @@ export const subsonicHandlers: Record<
 				data: {
 					directory: {
 						id: rawId,
-						parent: '1',
+						parent: '0',
 						name: artistName,
 						child: albums.map((a) => {
 							const isStarred = isItemStarred(user.id, 'album', a.id);
@@ -447,10 +425,10 @@ export const subsonicHandlers: Record<
 			};
 		}
 
-		// 3. Album directory (numeric id or al-...) -> list songs as files
+		// 2. Album directory (explicit al-... or numeric id matching an existing album) -> list songs as files
 		const cleanId = rawId.replace(/^[a-z]+-/, '');
 		const albumId = parseInt(cleanId, 10);
-		if (!isNaN(albumId)) {
+		if (!isNaN(albumId) && (rawId.startsWith('al-') || (rawId !== '0' && rawId !== 'root' && getAlbumById(albumId)))) {
 			const result = getAlbumById(albumId);
 			if (result) {
 				const isStarred = isItemStarred(user.id, 'album', albumId);
@@ -471,7 +449,25 @@ export const subsonicHandlers: Record<
 			}
 		}
 
-		return { error: { code: SubsonicErrorCode.DATA_NOT_FOUND, message: 'Directory not found' } };
+		// 3. Root directory (folder id 0, "root", "folder-0", "mf-0", etc.) -> list all artists as dirs
+		const artists = getDistinctArtists();
+		return {
+			data: {
+				directory: {
+					id: rawId,
+					name: 'Trax Vault Music',
+					child: artists.map((art) => ({
+						id: encodeArtistId(art.name),
+						parent: rawId,
+						isDir: true,
+						title: art.name,
+						name: art.name,
+						artist: art.name,
+						albumCount: art.album_count || 1
+					}))
+				}
+			}
+		};
 	},
 
 	getArtists: async (_params, user) => {
@@ -869,8 +865,20 @@ export const subsonicHandlers: Record<
 	},
 
 	search3: async (params, user) => {
-		let query = params.query?.trim() || '';
-		if (query === '*') query = '';
+		let rawQuery = (params.query ?? '').toString().trim();
+		if (
+			rawQuery === '*' ||
+			rawQuery === '""' ||
+			rawQuery === "''" ||
+			rawQuery === '""' ||
+			rawQuery === "''"
+		) {
+			rawQuery = '';
+		}
+		if (rawQuery.startsWith('"') && rawQuery.endsWith('"') && rawQuery.length >= 2) {
+			rawQuery = rawQuery.slice(1, -1).trim();
+		}
+		const query = rawQuery;
 
 		const artistCount = params.artistCount !== undefined ? parseInt(params.artistCount, 10) : 20;
 		const artistOffset = params.artistOffset !== undefined ? parseInt(params.artistOffset, 10) : 0;
@@ -1209,10 +1217,6 @@ export const subsonicHandlers: Record<
 		return {
 			data: {
 				openSubsonicExtensions: [
-					{
-						name: 'lyrics',
-						versions: [1]
-					},
 					{
 						name: 'songLyrics',
 						versions: [1]

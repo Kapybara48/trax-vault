@@ -264,6 +264,7 @@ export interface ScannedAlbum {
 	has_flac: boolean;
 	has_lrc: boolean;
 	already_in_vault: boolean;
+	existing_album_id?: number | null;
 	tracks: ScannedTrack[];
 	selected: boolean;
 }

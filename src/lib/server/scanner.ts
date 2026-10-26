@@ -671,15 +671,22 @@ export async function scanLibraryDirectory(targetDir?: string): Promise<{
 
 		// Check if already in vault SQLite DB
 		let alreadyInVault = false;
+		let existingAlbumId: number | null = null;
 		if (mbId) {
-			const row = db.prepare('SELECT id FROM albums WHERE musicbrainz_id = ?').get(mbId);
-			if (row) alreadyInVault = true;
+			const row = db.prepare('SELECT id FROM albums WHERE musicbrainz_id = ?').get(mbId) as { id: number } | undefined;
+			if (row) {
+				alreadyInVault = true;
+				existingAlbumId = row.id;
+			}
 		}
 		if (!alreadyInVault) {
 			const row = db.prepare(
 				'SELECT id FROM albums WHERE LOWER(title) = LOWER(?) AND LOWER(artist) = LOWER(?)'
-			).get(albumTitle, albumArtist);
-			if (row) alreadyInVault = true;
+			).get(albumTitle, albumArtist) as { id: number } | undefined;
+			if (row) {
+				alreadyInVault = true;
+				existingAlbumId = row.id;
+			}
 		}
 
 		const hasFlac = group.tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC');
@@ -697,6 +704,7 @@ export async function scanLibraryDirectory(targetDir?: string): Promise<{
 			has_flac: hasFlac,
 			has_lrc: hasLrc,
 			already_in_vault: alreadyInVault,
+			existing_album_id: existingAlbumId,
 			tracks: group.tracks,
 			selected: !alreadyInVault
 		});

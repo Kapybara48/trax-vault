@@ -13,8 +13,9 @@ services:
       - PORT=3000
       - DATA_DIR=/app/data
       - MUSIC_DIR=/music
-      # Automatically syncs newly placed albums from disk on startup (set to false to manage manually via /scan)
-      - AUTO_SYNC_LIBRARY=true
+      # Set to true if you want Trax Vault to automatically import all albums found in /music into the Vault on startup
+      # Default is false so you can preview, tag, and import albums manually via /scan
+      - AUTO_SYNC_LIBRARY=false
       # Set to your server URL or domain (e.g. http://my-server.lan:3000 or http://localhost:3000)
       - ORIGIN=http://localhost:3000
     volumes:

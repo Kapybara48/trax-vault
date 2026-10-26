@@ -28,7 +28,8 @@
 		Music,
 		Grid,
 		ListMusic,
-		Filter
+		Filter,
+		Trash2
 	} from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -135,6 +136,30 @@
 			}
 		} catch (err) {
 			console.error('Failed to quick fix track:', err);
+		}
+	}
+
+	async function removeTrackFromVault(trackId: number, title: string) {
+		if (
+			!confirm(
+				`Remove song "${title}" from Vault?\n\nAudio file on disk will NOT be deleted, and can be re-scanned at any time.`
+			)
+		) {
+			return;
+		}
+
+		try {
+			const res = await fetch(`/api/tracks/${trackId}`, { method: 'DELETE' });
+			if (res.ok) {
+				tracksList = tracksList.filter((t) => t.id !== trackId);
+				await invalidateAll();
+			} else {
+				const errData = await res.json().catch(() => ({}));
+				alert(`Failed to remove track: ${errData.error || res.statusText}`);
+			}
+		} catch (err: any) {
+			console.error('Failed to delete track:', err);
+			alert(`Failed to remove track: ${err.message}`);
 		}
 	}
 </script>
@@ -405,7 +430,7 @@
 		{#if data.albums.length > 0}
 			<section class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
 				{#each data.albums as album (album.id)}
-					<AlbumCard {album} />
+					<AlbumCard {album} onAlbumDeleted={() => invalidateAll()} />
 				{/each}
 			</section>
 		{:else}
@@ -603,6 +628,15 @@
 									>
 										<ArrowRight class="h-3.5 w-3.5" />
 									</a>
+
+									<button
+										type="button"
+										onclick={() => removeTrackFromVault(track.id, track.title)}
+										class="rounded-lg bg-neutral-800 p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-neutral-700 transition"
+										title="Remove song from Vault (keeps audio file on disk)"
+									>
+										<Trash2 class="h-3.5 w-3.5" />
+									</button>
 								</div>
 							</div>
 						</div>

@@ -1,18 +1,49 @@
 <script lang="ts">
 	import type { Album } from '$lib/types/index.js';
-	import { Disc, AlertTriangle, CheckCircle2, Music } from '@lucide/svelte';
+	import { Disc, AlertTriangle, CheckCircle2, Music, Trash2 } from '@lucide/svelte';
+	import { invalidateAll } from '$app/navigation';
 
 	interface Props {
 		album: Album;
+		onAlbumDeleted?: (id: number) => void;
 	}
 
-	let { album }: Props = $props();
+	let { album, onAlbumDeleted }: Props = $props();
 
 	const hasIssues = $derived(
 		(album.bad_quality_count || 0) > 0 ||
 		(album.censored_count || 0) > 0 ||
 		(album.missing_lyrics_count || 0) > 0
 	);
+
+	async function handleDelete(e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (
+			!confirm(
+				`Remove album "${album.title}" from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the album will return to the Library Scanner.`
+			)
+		) {
+			return;
+		}
+
+		try {
+			const res = await fetch(`/api/albums/${album.id}`, { method: 'DELETE' });
+			if (res.ok) {
+				if (onAlbumDeleted) {
+					onAlbumDeleted(album.id);
+				} else {
+					await invalidateAll();
+				}
+			} else {
+				const errData = await res.json().catch(() => ({}));
+				alert(`Failed to remove album: ${errData.error || res.statusText}`);
+			}
+		} catch (err: any) {
+			console.error('Failed to remove album from vault:', err);
+			alert(`Failed to remove album: ${err.message}`);
+		}
+	}
 </script>
 
 <a
@@ -21,6 +52,16 @@
 >
 	<!-- Cover Art / Thumbnail -->
 	<div class="relative aspect-square w-full overflow-hidden rounded-xl bg-neutral-950 shadow-inner">
+		<!-- Quick Unvault / Remove button on hover -->
+		<button
+			type="button"
+			onclick={handleDelete}
+			class="absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-neutral-400 opacity-0 backdrop-blur-md transition duration-200 hover:bg-rose-950 hover:text-rose-300 group-hover:opacity-100 border border-neutral-700/60 shadow-md"
+			title="Remove from Vault (keeps audio files on disk)"
+		>
+			<Trash2 class="h-3.5 w-3.5" />
+		</button>
+
 		{#if album.cover_url}
 			<img
 				src={album.cover_url}

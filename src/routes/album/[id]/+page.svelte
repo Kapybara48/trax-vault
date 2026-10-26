@@ -403,7 +403,11 @@
 	}
 
 	async function handleDeleteAlbum() {
-		if (!confirm(`Are you sure you want to delete album "${album.title}" and all its tracks?`)) {
+		if (
+			!confirm(
+				`Remove album "${album.title}" from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the album will return to the Library Scanner.`
+			)
+		) {
 			return;
 		}
 

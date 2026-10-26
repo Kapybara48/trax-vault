@@ -368,6 +368,29 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Startup Library Auto-Sync Toggle**:
       - Added `AUTO_SYNC_LIBRARY` environment variable in `src/hooks.server.ts` and `docker-compose.yml` allowing users to disable automated disk-to-vault synchronization if they prefer manual curation via `/scan`.
 
+37. **Symfonium Moshi `starred` Deserialization Fix, Vault Deletion & Opt-In Auto-Sync**:
+    - **`starred` Attribute ISO-8601 Serialization Bug (Root Cause of Symfonium 0 Songs)**:
+      - In `src/lib/server/subsonic/handlers.ts`, `trackToSubsonicSong` (line 134) and `albumToSubsonicAlbum` (line 181) were returning boolean `song.starred = true` / `alb.starred = true`.
+      - In Subsonic XSD schema (`subsonic-rest-api.xsd`), `starred` is defined as `xs:dateTime`. Feishin (TypeScript / Zod) accepted boolean `true`, but Symfonium (Android Kotlin / Moshi) parsed `starred` as a Date/String and crashed with `JsonDataException: Expected a string but was true`, silently discarding songs/albums and resulting in 0 songs.
+      - Fixed `song.starred` and `alb.starred` to serialize strictly as ISO-8601 UTC date strings (`formatIsoDate(...) || new Date().toISOString()`).
+      - Stripped wrapping quotes from `search3.view?query=""` empty sync queries.
+      - Removed unrecognized proprietary `lyrics` entry from `getOpenSubsonicExtensions` (retaining standard `songLyrics` and `topSongsByArtistId`).
+      - Standardized root music folder ID to `0` and disambiguated root directory browsing from album ID `1`.
+    - **Opt-In Startup Sync (Preventing Unwanted Auto-Import)**:
+      - Changed `shouldAutoSync` in `src/hooks.server.ts` to strictly opt-in (`process.env.AUTO_SYNC_LIBRARY === 'true'`).
+      - Defaulted `AUTO_SYNC_LIBRARY=false` in `docker-compose.yml` so users can curate, preview, and tag albums in `/scan` before importing without them being automatically shoved into the Vault on reboot.
+    - **1-Click Album & Song Removal from Vault back to Scanner**:
+      - Added `existing_album_id` to `ScannedAlbum` in `src/lib/types/index.ts` and populated it in `scanLibraryDirectory`.
+      - On `/scan` (`src/routes/scan/+page.svelte`):
+        - Added `In Vault` filter pill to isolate tracked albums.
+        - Replaced static `Already Tracked` label with an `In Vault` badge and a prominent `Remove from Vault` button (calls `DELETE /api/albums/{id}`, returns album to unvaulted state with checkboxes, and preserves audio files on disk).
+        - Added `Remove All Filtered from Vault` batch action when filtered to `In Vault`.
+      - On main Vault page (`/` and `src/lib/components/AlbumCard.svelte`):
+        - Added a hover trash action button on the top-left of each album card allowing instant unvaulting with confirmation.
+        - Connected `onAlbumDeleted` callback calling `invalidateAll()`.
+        - Added quick delete action for individual songs in the `tracks` table view.
+      - Clarified confirmation dialogs across `/album/[id]` and `TrackRow.svelte` assuring users that audio files on disk in `./music` remain completely untouched.
+
 ---
 
 
