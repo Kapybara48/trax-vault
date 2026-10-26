@@ -411,6 +411,19 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added floating batch actions dock with count pill and "Remove from Vault" button positioned dynamically to prevent overlapping the persistent mini-player.
       - Guaranteed audio files on disk in `./music` remain completely untouched when removing albums from the Vault.
 
+40. **LRCGET-Style Multi-Candidate LRCLIB Search & Preview Selector**:
+    - **Multi-Candidate Search Backend**:
+      - Upgraded `GET /api/lyrics/search` (`src/routes/api/lyrics/search/+server.ts`) to query both exact `/api/get` and query-based `/api/search` endpoints on `lrclib.net`.
+      - Deduplicates results by ID, flags exact matches (`isExactMatch: true`), and returns an array of candidates (`candidates: LrcLibCandidate[]`) alongside backwards-compatible legacy fields.
+      - Added `LrcLibCandidate` interface in `src/lib/types/index.ts`.
+    - **Reusable Candidate Selector Modal (`src/lib/components/LrcLibModal.svelte`)**:
+      - 2-pane responsive modal inspired by LRCGET:
+        - Left pane: Live search bar with instant re-query, candidate cards showing track name, artist, album, track duration, and duration delta compared to target audio (color-coded $\le \pm 2\text{s}$ green, $\le \pm 8\text{s}$ amber, $> 8\text{s}$ rose), and badge indicators (`Synced LRC`, `Plain TXT`, `Instrumental`).
+        - Right pane: Full lyrics preview with tabs to toggle between synced lyrics (with formatted millisecond timestamps) and plain text, empty state, and 1-click action buttons: "Use Synced LRC", "Use Plain Text", and "Apply as Instrumental".
+    - **Integration Across Studio & Album Views**:
+      - Integrated `<LrcLibModal>` in LRC Maker Studio (`src/routes/lrc-maker/+page.svelte`), replacing the legacy 1-result picker with full candidate search, preview, and application into editor lines.
+      - Integrated "Fetch LRCLIB" button into Quick Lyrics File Editor toolbar in Album Detail view (`src/routes/album/[id]/+page.svelte`), allowing users to search and import lyrics into companion files directly from the album page.
+
 ---
 
 

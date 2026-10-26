@@ -33,6 +33,8 @@
 		Square,
 		Sliders
 	} from '@lucide/svelte';
+	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
+	import type { LrcLibCandidate, LyricsStatus } from '$lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -78,14 +80,6 @@
 	let albumTitle = $state(data.track?.album_title || '');
 
 	// LRCLIB & Status State
-	let isFetchingLrcLib = $state(false);
-	let lrcLibResult = $state<{
-		plainLyrics: string | null;
-		syncedLyrics: string | null;
-		instrumental: boolean;
-		trackName: string;
-		artistName: string;
-	} | null>(null);
 	let showLrcLibModal = $state(false);
 
 	let saveStatus = $state<{
@@ -557,55 +551,24 @@
 		}
 	}
 
-	// LRCLIB Fetch
-	async function fetchFromLrcLib() {
-		if (!trackTitle.trim()) {
-			saveStatus = { type: 'error', message: 'Enter a track title first to search LRCLIB' };
-			return;
-		}
-
-		isFetchingLrcLib = true;
-		saveStatus = null;
-
-		try {
-			const params = new URLSearchParams();
-			params.set('track', trackTitle.trim());
-			if (trackArtist.trim()) params.set('artist', trackArtist.trim());
-			if (albumTitle.trim()) params.set('album', albumTitle.trim());
-			if (duration > 0) params.set('duration', Math.round(duration).toString());
-
-			const res = await fetch(`/api/lyrics/search?${params.toString()}`);
-			const json = await res.json();
-
-			if (json.success) {
-				lrcLibResult = json;
-				showLrcLibModal = true;
-			} else {
-				saveStatus = {
-					type: 'info',
-					message: json.message || 'No lyrics found on LRCLIB for this song'
-				};
-			}
-		} catch (err: any) {
-			saveStatus = { type: 'error', message: `LRCLIB error: ${err.message}` };
-		} finally {
-			isFetchingLrcLib = false;
-		}
-	}
-
-	function applyLrcLibLyrics(type: 'synced' | 'plain') {
-		if (!lrcLibResult) return;
-		const text = type === 'synced' ? lrcLibResult.syncedLyrics : lrcLibResult.plainLyrics;
-		if (text) {
-			rawLyricsText = text;
-			lyricLines = parseLyrics(text);
+	// LRCLIB Selection Handler
+	function handleLrcLibSelect(result: {
+		text: string;
+		status: LyricsStatus;
+		candidate: LrcLibCandidate;
+	}) {
+		if (result.status === 'instrumental') {
+			setAsInstrumental('note');
+		} else {
+			rawLyricsText = result.text;
+			lyricLines = parseLyrics(result.text);
 			activeLineIndex = 0;
-			showLrcLibModal = false;
-			saveStatus = {
-				type: 'success',
-				message: `Loaded ${type === 'synced' ? 'synced .lrc' : 'plain'} lyrics from LRCLIB!`
-			};
 		}
+		showLrcLibModal = false;
+		saveStatus = {
+			type: 'success',
+			message: `Loaded ${result.status === 'synced_lrc' ? 'synced .lrc' : result.status === 'instrumental' ? 'instrumental' : 'plain'} lyrics for "${result.candidate.trackName}" from LRCLIB!`
+		};
 	}
 
 	// Switch from Text Mode to Sync Mode
@@ -836,12 +799,12 @@
 
 				<button
 					type="button"
-					onclick={fetchFromLrcLib}
-					disabled={isFetchingLrcLib}
-					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 transition text-xs font-medium cursor-pointer disabled:opacity-50"
+					onclick={() => (showLrcLibModal = true)}
+					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 transition text-xs font-medium cursor-pointer"
+					title="Search and select lyrics candidates from LRCLIB"
 				>
-					<Sparkles class="w-3.5 h-3.5 text-indigo-400 {isFetchingLrcLib ? 'animate-spin' : ''}" />
-					{isFetchingLrcLib ? 'Searching...' : 'Fetch from LRCLIB'}
+					<Sparkles class="w-3.5 h-3.5 text-indigo-400" />
+					<span>Fetch from LRCLIB</span>
 				</button>
 
 				{#if data.track}
@@ -1551,97 +1514,13 @@
 	</main>
 </div>
 
-<!-- LRCLIB Results Modal -->
-{#if showLrcLibModal && lrcLibResult}
-	<div class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-			<div class="flex items-center justify-between border-b border-neutral-800 pb-3">
-				<div class="flex items-center gap-2">
-					<Sparkles class="w-5 h-5 text-indigo-400" />
-					<h3 class="font-bold text-white text-base">LRCLIB Results Found</h3>
-				</div>
-				<button
-					type="button"
-					onclick={() => (showLrcLibModal = false)}
-					class="text-neutral-400 hover:text-white"
-				>
-					✕
-				</button>
-			</div>
-
-			<div class="text-xs text-neutral-300 space-y-2">
-				<p>
-					Found lyrics for: <strong class="text-white">{lrcLibResult.artistName} - {lrcLibResult.trackName}</strong>
-				</p>
-
-				{#if lrcLibResult.instrumental}
-					<div class="p-3 rounded-xl border border-purple-500/40 bg-purple-950/25 flex items-center justify-between gap-3">
-						<div class="flex items-center gap-2.5">
-							<span class="text-xl font-serif text-purple-400">♪</span>
-							<div>
-								<span class="font-semibold text-purple-300 block text-xs">Flagged as Instrumental on LRCLIB</span>
-								<p class="text-[11px] text-neutral-400">LRCLIB reports this track contains no vocals</p>
-							</div>
-						</div>
-						<button
-							type="button"
-							onclick={() => {
-								setAsInstrumental('note');
-								showLrcLibModal = false;
-							}}
-							class="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs transition cursor-pointer"
-						>
-							Apply Instrumental
-						</button>
-					</div>
-				{/if}
-
-				<div class="grid grid-cols-2 gap-2 pt-2">
-					<div class="p-3 rounded-xl border border-neutral-800 bg-neutral-950 flex flex-col justify-between gap-3">
-						<div>
-							<span class="font-semibold text-white block mb-1">Plain Lyrics</span>
-							<p class="text-[11px] text-neutral-400">
-								{lrcLibResult.plainLyrics ? 'Available to synchronize freshly with audio' : 'Not available'}
-							</p>
-						</div>
-						<button
-							type="button"
-							onclick={() => applyLrcLibLyrics('plain')}
-							disabled={!lrcLibResult.plainLyrics}
-							class="w-full py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs transition cursor-pointer disabled:opacity-40"
-						>
-							Load Plain Lyrics
-						</button>
-					</div>
-
-					<div class="p-3 rounded-xl border border-indigo-500/30 bg-indigo-950/20 flex flex-col justify-between gap-3">
-						<div>
-							<span class="font-semibold text-indigo-300 block mb-1">Synced LRC</span>
-							<p class="text-[11px] text-neutral-400">
-								{lrcLibResult.syncedLyrics ? 'Ready-to-use timestamps included' : 'Not available'}
-							</p>
-						</div>
-						<button
-							type="button"
-							onclick={() => applyLrcLibLyrics('synced')}
-							disabled={!lrcLibResult.syncedLyrics}
-							class="w-full py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition cursor-pointer disabled:opacity-40"
-						>
-							Load Synced Lyrics
-						</button>
-					</div>
-				</div>
-			</div>
-
-			<div class="pt-2 flex justify-end">
-				<button
-					type="button"
-					onclick={() => (showLrcLibModal = false)}
-					class="px-4 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white text-xs font-medium"
-				>
-					Cancel
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
+<!-- LRCLIB Candidates Modal -->
+<LrcLibModal
+	open={showLrcLibModal}
+	{trackTitle}
+	{trackArtist}
+	{albumTitle}
+	durationSeconds={duration}
+	onSelectLyrics={handleLrcLibSelect}
+	onClose={() => (showLrcLibModal = false)}
+/>

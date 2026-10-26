@@ -31,6 +31,8 @@
 		ListPlus
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
+	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
+	import type { LrcLibCandidate } from '$lib/types/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 
 	let { data }: { data: PageData } = $props();
@@ -216,6 +218,21 @@
 	let lyricsModalStatus = $state<LyricsStatus>('missing');
 	let lyricsModalSaving = $state(false);
 	let lyricsModalMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
+	let showAlbumLrcLibModal = $state(false);
+
+	function handleAlbumLrcLibSelect(result: {
+		text: string;
+		status: LyricsStatus;
+		candidate: LrcLibCandidate;
+	}) {
+		lyricsModalText = result.text;
+		lyricsModalStatus = result.status;
+		showAlbumLrcLibModal = false;
+		lyricsModalMessage = {
+			type: 'success',
+			text: `Loaded ${result.status === 'synced_lrc' ? 'synced .lrc' : result.status === 'instrumental' ? 'instrumental' : 'plain'} lyrics for "${result.candidate.trackName}" from LRCLIB. Click Save to write to disk!`
+		};
+	}
 
 	async function openLyricsModal(track: Track) {
 		selectedLyricsTrack = track;
@@ -1396,6 +1413,15 @@
 					<div class="flex items-center gap-2">
 						<button
 							type="button"
+							onclick={() => (showAlbumLrcLibModal = true)}
+							class="px-2.5 py-0.5 rounded bg-indigo-950/70 border border-indigo-700/70 text-indigo-300 hover:bg-indigo-900/80 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 shadow-sm"
+							title="Search and select lyrics candidates from LRCLIB"
+						>
+							<Sparkles class="h-3 w-3 text-indigo-400" />
+							<span>Fetch LRCLIB</span>
+						</button>
+						<button
+							type="button"
 							onclick={() => {
 								lyricsModalStatus = 'instrumental';
 								lyricsModalText = '[00:00.00]♪';
@@ -1459,6 +1485,18 @@
 			</div>
 		</div>
 	</div>
+{/if}
+
+{#if selectedLyricsTrack}
+	<LrcLibModal
+		open={showAlbumLrcLibModal}
+		trackTitle={selectedLyricsTrack.title}
+		trackArtist={selectedLyricsTrack.artist || album.artist}
+		albumTitle={album.title}
+		durationSeconds={selectedLyricsTrack.duration_ms ? selectedLyricsTrack.duration_ms / 1000 : 0}
+		onSelectLyrics={handleAlbumLrcLibSelect}
+		onClose={() => (showAlbumLrcLibModal = false)}
+	/>
 {/if}
 
 <AddToPlaylistModal

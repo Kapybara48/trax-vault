@@ -269,3 +269,18 @@ export interface ScannedAlbum {
 	selected: boolean;
 }
 
+export interface LrcLibCandidate {
+	id: number;
+	name?: string;
+	trackName: string;
+	artistName: string;
+	albumName: string | null;
+	duration: number;
+	instrumental: boolean;
+	hasSynced: boolean;
+	hasPlain: boolean;
+	syncedLyrics: string | null;
+	plainLyrics: string | null;
+	isExactMatch?: boolean;
+}
+
