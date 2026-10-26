@@ -391,6 +391,10 @@ This document preserves persistent context, architectural conventions, recent ch
         - Added quick delete action for individual songs in the `tracks` table view.
       - Clarified confirmation dialogs across `/album/[id]` and `TrackRow.svelte` assuring users that audio files on disk in `./music` remain completely untouched.
 
+38. **CI/CD Path Filtering (`paths-ignore`)**:
+    - Added `paths-ignore` filter to `.forgejo/workflows/docker-publish.yml` covering `**.md`, `docs/**`, `.gitignore`, `.gitattributes`, `docker-compose.server.yml`, `.env.example`, `LICENSE*`, `.vscode/**`, and `.idea/**`.
+    - Skips Docker container image builds and registry pushes when updating documentation, README, agents instructions, or non-app configuration files, saving runner resources and build time.
+
 ---
 
 
