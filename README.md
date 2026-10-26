@@ -1,68 +1,82 @@
 # 💽 Trax Vault
 
-**Trax Vault** is a modern, self-hosted web application for music collectors and audiophiles to track and audit their music library's audio quality, format status, lyrics coverage, and censorship state.
-
-![Trax Vault](https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/disc-3.svg)
+**Trax Vault** is a modern, self-hosted web application, audiophile player studio, and Subsonic/OpenSubsonic streaming server built for music collectors. Audit audio fidelity, track censorship, create synchronized lyrics, tag files directly with MusicBrainz, and stream your lossless music library anywhere.
 
 ---
 
 ## 🚀 Key Features
 
-- **Audio Quality & Format Auditing**:
-  - Track whether you have lossless **FLAC / ALAC / WAV** or lossy encodes (**MP3 320**, **MP3 V0**, **MP3 128**, **AAC**, **OGG**).
-  - Rate audio encode quality (*Perfect*, *Good*, *Acceptable*, *Bad / Distorted*, *Needs Upgrade*).
-- **Censorship & Clean Edits Tracking**:
-  - Mark tracks as **Explicit / Uncensored Original**, **Clean Original**, or **Censored / Radio Edit**.
-  - Highlights censored tracks so you know which ones need replacing with their original uncensored releases.
-- **Lyrics Coverage Tracking & Studio**:
-  - Track whether songs have synchronized time-coded **Synced (.lrc)** lyrics, **Plain text (.txt)**, or are **Missing lyrics**.
-  - Flag instrumental tracks where vocals aren't needed.
-  - **Read & Write Directly in Song Folders**:
-    - Automatically discovers companion `.lrc` and `.txt` files in the exact same folder as the audio file.
-    - Quick Lyrics File Editor directly on the Album page for instant view and edits without navigating away.
-    - Non-destructive: audio files remain untouched, only companion lyric files are written.
-  - **Interactive LRC Maker Studio (`/lrc-maker`)**:
-    - Built-in audio player with Range-seeking server streaming or local drag-and-drop audio file loading.
-    - 1-click **LRCLIB.net** integration to fetch plain lyrics or ready-to-use synced lyrics.
-    - **Active Song Time Auto-Focus & Auto-Scroll**: Highlights the active line matching current song playback time with a pulsating indicator and smoothly centers the view as the song plays.
-    - Synchronize lyrics line-by-line using keyboard hotkeys (`Space` / `Enter`).
-    - Millisecond fine-tuning (`+/- 0.1s`), step-back navigation, and real-time live karaoke preview.
-    - Save `.lrc` companion files directly to server disk in the song's folder, persist in SQLite database, download `.lrc`, or copy to clipboard.
-- **Native MusicBrainz Tagger Studio (`/tagger`)**:
-  - Direct built-in MusicBrainz tagger embedded directly inside the Track Vault web interface (no external Docker containers or extra ports needed!).
-  - Search releases worldwide by artist or album with automated match candidate scoring.
-  - Interactive side-by-side diff table: preview local tags vs official MusicBrainz tags with match confidence pill badges.
-  - Write verified ID3/Vorbis tags directly into audio files (`.flac`, `.mp3`, `.m4a`, `.ogg`, `.wav`) on disk.
-  - Automatically download high-resolution front cover artwork from the Cover Art Archive.
-  - 1-click apply to write audio tags to disk, download cover art, and persist clean metadata into SQLite.
-- **Sleek, Responsive Navigation**:
-  - Clean primary desktop tabs: **Vault**, **Player**, **Fixer**, **Tagger**, **LRC Maker**, and **Scan**.
-  - User Profile pill with direct access to Account Settings, Subsonic credentials, and Password Change.
-  - Streamlined mobile bottom bar with instant access across devices.
-- **Local Music Library Scanner**:
-  - Point Track Vault to your server's music library directory.
-  - Automatically reads audio metadata (**FLAC, MP3, M4A, OGG, WAV, etc.**).
-  - **Reads embedded MusicBrainz tags** (`musicbrainz_albumid`, `musicbrainz_trackid`, etc.) already present in your files!
-  - Automatically detects companion **`.lrc`** or **`.txt`** lyrics files right next to your audio files.
-  - **Choose what songs to add and what not**: Select/unselect individual tracks or whole albums before adding to your vault.
-- **Online MusicBrainz Search & Import**:
-  - Search releases worldwide by artist or album.
-  - Pulls complete tracklists, track durations, discs, release year, media format, and official album covers from the Cover Art Archive.
-- **Fast Batch Operations**:
-  - Bulk update all tracks on an album with 1 click (e.g. set all to FLAC or all to Synced LRC).
-- **The Fixer / Issues Dashboard**:
-  - High-level **Vault Health Score** (% of pristine tracks).
-  - Filter and tackle low-bitrate rips, censored radio edits, and missing lyrics with instant 1-click upgrades.
+### 🎧 Audiophile Player Studio (`/player`)
+* **Spotify-Inspired Studio Experience**: Beautiful obsidian glassmorphic interface with reactive library drawer, album/playlist switcher, and responsive desktop/mobile views.
+* **Persistent Background Audio**: Centralized singleton audio engine mounted at the root layout. Music continues playing seamlessly as you navigate between pages (`/`, `/issues`, `/tagger`, `/scan`, `/settings`) or browse other tabs.
+* **Floating Global Mini-Player Dock**: Compact dock on non-player pages with vinyl artwork, title, playback controls, scrubber, volume, and fidelity indicators.
+* **Real-Time Synced Karaoke Lyrics**: Studio teleprompter panel with smooth vertical auto-scroll, glowing active line focus, and timestamp click-to-seek.
+* **Exact Bitrate & Audio Fidelity Extraction**: Differentiates standard CD lossless (16-bit / 44.1kHz) from Studio Hi-Res lossless (24-bit / 48–96kHz+). Displays exact bitrate extraction (e.g. `FLAC • 893 kbps • 16-bit / 48.0 kHz`).
+* **Multi-Disc Separators & CD Management**: Automatic multi-disc detection with sticky headers (`Disc 1`, `Disc 2`) and 1-click "Play Disc" shortcuts.
+* **Integrated Playlists Hub**: Create, edit, reorder, and delete playlists directly inside the player without navigating away.
+* **Keyboard Shortcuts & OS Integration**: Control playback with hotkeys (`Space`, `J`, `K`, `M`, arrow keys) and native MediaSession OS lockscreen integration.
+
+---
+
+### 📡 Subsonic & OpenSubsonic REST API Server
+Turn Trax Vault into a full-featured alternative to Navidrome, Airsonic, or Gonic! Trax Vault implements the native Subsonic REST protocol at `/rest/...`.
+
+* **100% Client Compatibility**:
+  * **Symfonium** (Android): Fast library sync via `search3` pagination, structured millisecond karaoke lyrics via OpenSubsonic `getLyricsBySongId`, offline caching, and playlist synchronization.
+  * **Feishin** (Desktop): Full schema compliance with `@ts-rest/core` and Zod client validation.
+  * **DSub**, **Ultrasonic**, **Audinaut**, **Ampr**, and other Subsonic clients.
+* **Modern Cryptographic Security**: MD5 token authentication (`token = MD5(password + salt)`) and legacy cleartext/hex parameter support with automatic password encryption and persistent AES-256 server secrets.
+* **Full Protocol Coverage**: Browsing (`getArtists`, `getIndexes`, `getMusicDirectory`, `getAlbum`, `getSong`), streaming with HTTP 206 Partial Content byte-range seeking, scrobbling, favorites/starring sync, and full playlist management.
+* **Instant Activation**: Connect mobile and desktop clients directly using your standard Trax Vault credentials.
+
+---
+
+### 🏷️ Native MusicBrainz Tagger Studio (`/tagger`)
+* **Zero Container Footprint**: Pure TypeScript tagger powered by `@dantheman827/taglib-ts` embedded directly in the web app—no secondary Picard Docker containers, extra ports, or native compilation required.
+* **Dual-Mode Tagging**:
+  * **Vault Albums**: Inspect and re-tag albums already imported into the database.
+  * **Scanned Folders**: Browse, search, and tag raw music folders on disk before adding them to your vault.
+* **Fuzzy Track Alignment**: Multi-factor scoring aligns local tracks against official MusicBrainz releases by track position, fuzzy string distance (Levenshtein & Dice coefficient), and duration delta.
+* **Missing Songs Detection**: Automatically detects when a MusicBrainz release contains tracks not present in your local folder and highlights missing tracks in an alert banner.
+* **Direct File Tag Writing**: Writes verified ID3v2, Vorbis, and MP4 tags directly into `.flac`, `.mp3`, `.m4a`, `.ogg`, and `.wav` files on disk.
+* **Cover Art Archive Integration**: Automatically downloads high-resolution front artwork into the album directory (`cover.jpg`).
+
+---
+
+### ✍️ Interactive LRC Maker Studio (`/lrc-maker`)
+* **Companion Lyrics Read & Write on Disk**: Automatically detects companion `.lrc` and `.txt` files in the exact same directory as your audio files and writes edits directly back to disk.
+* **1-Click LRCLIB Integration**: Query `lrclib.net` to instantly pull down plain lyrics or ready-to-use synced timestamps.
+* **Line-by-Line Synchronization**: Tap `Space` or `Enter` to record timestamps in real-time as the song plays.
+* **Live Singing Line Auto-Focus**: Reactive playback tracking highlights the active line with an emerald pulsating glow and smoothly auto-scrolls the view.
+* **Multi-Line Batch Time Shifting**: Select multiple lines (with Shift+Click range select) and shift timestamps by `±1.0s`, `±0.5s`, `±0.1s`, or custom offsets.
+* **Instrumental Track Support**: Mark instrumental tracks (`♪ Musical Note` or tag) with 1 click across the LRC Maker and Album editor.
+
+---
+
+### 🛡️ Audio Quality, Censorship & The Fixer
+* **Format & Fidelity Auditing**: Classify tracks as lossless (**FLAC**, **ALAC**, **WAV**, **AIFF**) or lossy (**MP3 320**, **MP3 V0**, **MP3 128**, **AAC**, **OGG**).
+* **Encode Quality Ratings**: Grade encodes as *Perfect (Studio Lossless)*, *Good (Clean / 320)*, *Acceptable*, *Bad / Distorted*, or *Needs Upgrade*.
+* **Censorship Tracking**: Tag tracks as **Explicit / Uncensored Original**, **Clean Original**, **Censored / Radio Edit**, or **Instrumental**.
+* **The Fixer Dashboard (`/issues`)**: High-level **Vault Health Score** highlighting low-bitrate rips, censored edits, and missing lyrics with 1-click batch upgrades.
+
+---
+
+### 🔍 Library Scanner & Curation (`/scan`)
+* **Flexible Audio Format Support**: Automatically indexes `.flac`, `.mp3`, `.m4a`, `.ogg`, `.wav`, `.ape`, `.wv`, `.dsf`, `.dff`, `.m4b`, `.mpc`, and `.aif`.
+* **Safe, Non-Destructive Curation**: Pick and choose exactly which albums or songs to import into the Vault.
+* **Opt-In Startup Sync**: Auto-import on boot is strictly opt-in (`AUTO_SYNC_LIBRARY=false` by default) so unwanted albums are never forcibly re-added.
+* **1-Click Unvault / Remove**: Remove any album or track from the Vault back to the Scanner with a single click. Audio files on disk in `./music` remain completely untouched!
+* **Filter Pills**: Filter discovered albums by *All*, *In Vault*, *Not In Vault*, *Censored*, *Missing Lyrics*, *Unsynced LRC*, or *Bad Quality*.
 
 ---
 
 ## 🐳 Self-Hosting with Docker
 
-Trax Vault publishes automated Docker images to the **Forgejo Container Registry** (`git.kapyhub.cz/kapybara/trax-vault:latest`) on every push to `main`.
+Trax Vault publishes automated Docker container images to the Forgejo Container Registry (`git.kapyhub.cz/kapybara/trax-vault:latest`) on every push to `main`.
 
 ### Quick Start (No Git Clone Required)
 
-On your server, you don't even need to clone the repository or install Node.js. All you need is a single `docker-compose.yml` file:
+On your server, you do not need to clone the repository or install Node.js. All you need is a single `docker-compose.yml` file:
 
 ```bash
 # 1. Create a directory for Trax Vault
@@ -80,7 +94,7 @@ docker compose up -d
 
 ### Updating to the Latest Version
 
-Whenever a new commit is pushed or a new version is released:
+To update your server when a new version is published:
 
 ```bash
 cd trax-vault
@@ -92,40 +106,75 @@ docker compose up -d
 
 ### Alternative: Build from Source with Docker
 
-If you prefer building directly from source on your local machine:
+To build directly from source using HTTPS:
 
 ```bash
-git clone ssh://git@git-ssh.kapyhub.cz:222/kapybara/trax-vault.git
+# Clone the repository via HTTPS
+git clone https://git.kapyhub.cz/kapybara/trax-vault.git
 cd trax-vault
+
+# Build and start container
 docker compose up -d --build
 ```
 
 ---
 
-### Accessing Trax Vault
+## 📱 Subsonic Mobile & Desktop Setup
 
-Access Trax Vault in your browser:
-- **Trax Vault**: `http://localhost:3000` (or `http://<your-server-ip>:3000`)
+Connect your favorite music player to Trax Vault using the Subsonic / OpenSubsonic protocol:
 
-On your first visit to Trax Vault, you will be greeted with a **First-Run Admin Setup** screen to create your admin credentials. After setup, standard login is enforced unless `AUTH_DISABLED=true` is set in your environment. You can access the **Tagger Studio** at any time from the Navbar, the Library Scanner, album pages, or Settings.
+| Setting | Value |
+| :--- | :--- |
+| **Server URL** | `http://<your-server-ip>:3000` (or `https://your-domain.com`) |
+| **Username** | Your Trax Vault username (e.g. `kapybara` or `admin`) |
+| **Password** | Your Trax Vault password |
+
+### Client Highlights:
+* **Symfonium (Android)**:
+  1. Add provider → select **Subsonic / OpenSubsonic**.
+  2. Enter your server URL and credentials.
+  3. Symfonium performs an efficient fast sync and pulls structured karaoke lyrics for offline playback.
+* **Feishin (Desktop - Linux / macOS / Windows)**:
+  1. Add server → select **Subsonic / OpenSubsonic**.
+  2. Enter server URL, username, and password.
+  3. Enjoy high-fidelity desktop playback and playlist synchronization.
+
+---
+
+## ⚙️ Configuration & Environment Variables
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `PORT` | `3000` | Port on which Trax Vault listens |
+| `DATA_DIR` | `/app/data` (or `./data`) | Directory storing SQLite database (`traxvault.db`) and secrets |
+| `MUSIC_DIR` | `/music` (or `./music`) | Directory containing your music library (read-write for tagger & lyrics) |
+| `AUTO_SYNC_LIBRARY` | `false` | When set to `true`, automatically imports all albums found in `/music` on boot |
+| `ORIGIN` | `http://localhost:3000` | Public URL or IP address for CSRF form handling |
+| `AUTH_DISABLED` | `false` | Set to `true` to bypass login on private local networks (warns on startup) |
+| `COOKIE_SECURE` | Auto (`production`/HTTPS) | Enforces HTTPS-only session cookies when behind a reverse proxy |
 
 ---
 
 ## 🛠️ Local Development (Without Docker)
 
 ### Prerequisites
-- Node.js 20+ or 22+ (v24 supported)
-- npm
+* **Node.js**: v20+, v22+, or v24+
+* **npm**: v10+
 
-### Installation & Run
+### Setup & Run
 ```bash
-# 1. Install dependencies
+# 1. Clone repository via HTTPS
+git clone https://git.kapyhub.cz/kapybara/trax-vault.git
+cd trax-vault
+
+# 2. Install dependencies
 npm install
 
-# 2. Start development server
+# 3. Start development server with live reload
 npm run dev
 
-# 3. Or create production build
+# 4. Type-check & Production build
+npm run check
 npm run build
 PORT=3000 MUSIC_DIR=/path/to/music node build
 ```
@@ -136,21 +185,24 @@ PORT=3000 MUSIC_DIR=/path/to/music node build
 
 Trax Vault uses an **N-1 Stepping-Stone Upgrade Policy** to ensure zero data loss across major architectural transitions:
 
-- **v1.6 (Legacy `trackvault.db`)**: Legacy database format.
-- **v1.7 (Bridge Release - Current)**:
-  - Automatically migrates existing `trackvault.db` to `traxvault.db`.
-  - Performs WAL checkpointing (`PRAGMA wal_checkpoint(TRUNCATE)`), creates a timestamped safety backup (`trackvault.db.v1.6.<timestamp>.bak`), and stamps schema version `170`.
-- **v2.0+ (Future Releases)**:
-  - Direct upgrades from v1.6 are rejected with an informative fatal error to protect against data corruption.
-  - Users running v1.6 must upgrade to v1.7 first before upgrading to v2.0.
+* **v1.6 (Legacy `trackvault.db`)**: Legacy database format.
+* **v1.7 (Bridge Release - Current)**:
+  * Automatically detects legacy `trackvault.db` and migrates to `traxvault.db`.
+  * Performs WAL checkpointing (`PRAGMA wal_checkpoint(TRUNCATE)`), creates a timestamped safety backup (`trackvault.db.v1.6.<timestamp>.bak`), and stamps schema version `170`.
+* **v2.0+ (Future Releases)**:
+  * Direct upgrades from v1.6 are rejected with an informative fatal error to protect against data corruption.
+  * Users running v1.6 must upgrade to v1.7 first before upgrading to v2.0.
 
 ---
 
 ## 🗄️ Tech Stack
 
-- **Framework**: [SvelteKit 5](https://svelte.dev) + TypeScript
-- **Styling**: [Tailwind CSS 4](https://tailwindcss.com)
-- **Database**: [SQLite](https://sqlite.org) via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) with WAL mode enabled
-- **Metadata Parsing**: [music-metadata](https://github.com/Borewit/music-metadata) (FLAC, ID3v2, Vorbis, MP4)
-- **Metadata Database**: [MusicBrainz API](https://musicbrainz.org) & [Cover Art Archive](https://coverartarchive.org)
-- **Icons**: [@lucide/svelte](https://lucide.dev)
+* **Framework**: [SvelteKit 5](https://svelte.dev) (Runes: `$state`, `$derived`, `$props`)
+* **Language**: TypeScript
+* **Styling**: [Tailwind CSS 4](https://tailwindcss.com)
+* **Database**: [SQLite](https://sqlite.org) via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) (WAL mode enabled)
+* **Audio Tagging**: [@dantheman827/taglib-ts](https://github.com/dantheman827/taglib-ts) (Pure TypeScript TagLib)
+* **Metadata Extraction**: [music-metadata](https://github.com/Borewit/music-metadata)
+* **Metadata API**: [MusicBrainz API](https://musicbrainz.org) & [Cover Art Archive](https://coverartarchive.org)
+* **Icons**: [@lucide/svelte](https://lucide.dev)
+* **Container**: Docker + Docker Compose with `@sveltejs/adapter-node`

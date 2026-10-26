@@ -10,6 +10,8 @@ services:
       - PORT=3000
       - DATA_DIR=/app/data
       - MUSIC_DIR=/music
+      # Set to true to automatically import all albums found in /music on startup (default: false)
+      # - AUTO_SYNC_LIBRARY=false
       # Set to your server URL or domain (e.g. http://my-server.lan:3000 or http://192.168.1.50:3000)
       - ORIGIN=http://localhost:3000
       # Optional: set to true to bypass login on private local network
