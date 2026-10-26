@@ -40,7 +40,8 @@ const VALID_LYRICS = new Set([
 	'unsynced_lrc',
 	'plain_txt',
 	'missing',
-	'instrumental'
+	'instrumental',
+	'censored_lrc'
 ]);
 
 function isPathWithin(targetPath: string, rootPath: string): boolean {

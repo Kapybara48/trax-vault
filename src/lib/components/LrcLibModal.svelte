@@ -13,6 +13,7 @@
 		Music,
 		RotateCw
 	} from '@lucide/svelte';
+	import { isCensoredLyrics } from '$lib/utils.js';
 
 	interface Props {
 		open: boolean;
@@ -155,7 +156,7 @@
 		}
 	}
 
-	function applyChosen(type: 'synced' | 'plain' | 'instrumental') {
+	function applyChosen(type: 'synced' | 'plain' | 'instrumental' | 'censored') {
 		if (!selectedCandidate) return;
 
 		if (type === 'instrumental' || selectedCandidate.instrumental) {
@@ -167,10 +168,20 @@
 			return;
 		}
 
-		if (type === 'synced' && selectedCandidate.syncedLyrics) {
+		if (type === 'censored' && selectedCandidate.syncedLyrics) {
 			onSelectLyrics({
 				text: selectedCandidate.syncedLyrics,
-				status: 'synced_lrc',
+				status: 'censored_lrc',
+				candidate: selectedCandidate
+			});
+			return;
+		}
+
+		if (type === 'synced' && selectedCandidate.syncedLyrics) {
+			const isCensored = isCensoredLyrics(selectedCandidate.syncedLyrics);
+			onSelectLyrics({
+				text: selectedCandidate.syncedLyrics,
+				status: isCensored ? 'censored_lrc' : 'synced_lrc',
 				candidate: selectedCandidate
 			});
 			return;
@@ -376,6 +387,13 @@
 												Instrumental
 											</span>
 										{/if}
+
+										{#if (candidate.syncedLyrics && isCensoredLyrics(candidate.syncedLyrics)) || (candidate.plainLyrics && isCensoredLyrics(candidate.plainLyrics))}
+											<span class="inline-flex items-center gap-1 rounded bg-orange-950/80 px-1.5 py-0.5 text-[10px] font-semibold text-orange-300 border border-orange-700/60" title="Contains censored/bleeped lyrics">
+												<AlertTriangle class="h-3 w-3 text-orange-400" />
+												Censored
+											</span>
+										{/if}
 									</div>
 								</button>
 							{/each}
@@ -483,14 +501,27 @@
 									{/if}
 
 									{#if selectedCandidate.hasSynced}
-										<button
-											type="button"
-											onclick={() => applyChosen('synced')}
-											class="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-950/40 transition cursor-pointer"
-										>
-											<Check class="h-3.5 w-3.5" />
-											<span>Use Synced LRC</span>
-										</button>
+										{@const isCensored = isCensoredLyrics(selectedCandidate.syncedLyrics || '')}
+										{#if isCensored}
+											<button
+												type="button"
+												onclick={() => applyChosen('censored')}
+												class="flex items-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-orange-950/40 transition cursor-pointer"
+												title="Apply as Censored LRC (flags in Track Fixer for replacement)"
+											>
+												<AlertTriangle class="h-3.5 w-3.5" />
+												<span>Use Censored LRC</span>
+											</button>
+										{:else}
+											<button
+												type="button"
+												onclick={() => applyChosen('synced')}
+												class="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-950/40 transition cursor-pointer"
+											>
+												<Check class="h-3.5 w-3.5" />
+												<span>Use Synced LRC</span>
+											</button>
+										{/if}
 									{/if}
 								{/if}
 							</div>

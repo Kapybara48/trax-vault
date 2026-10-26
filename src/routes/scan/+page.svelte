@@ -342,6 +342,8 @@
 						if (t.censorship !== 'censored') return false;
 					} else if (scanFilter === 'missing_lyrics') {
 						if (t.lyrics !== 'missing') return false;
+					} else if (scanFilter === 'censored_lrc') {
+						if (t.lyrics !== 'censored_lrc') return false;
 					} else if (scanFilter === 'unsynced_lrc') {
 						if (t.lyrics !== 'unsynced_lrc') return false;
 					} else if (scanFilter === 'bad_quality') {
@@ -604,6 +606,13 @@
 							class="rounded-lg px-2.5 py-1 text-xs font-semibold transition {scanFilter === 'unsynced_lrc' ? 'bg-amber-700 text-white' : 'bg-neutral-800 text-neutral-400 hover:text-white'}"
 						>
 							Unsynced LRC
+						</button>
+						<button
+							type="button"
+							onclick={() => (scanFilter = 'censored_lrc')}
+							class="rounded-lg px-2.5 py-1 text-xs font-semibold transition {scanFilter === 'censored_lrc' ? 'bg-orange-600 text-white' : 'bg-neutral-800 text-neutral-400 hover:text-white'}"
+						>
+							Censored LRC
 						</button>
 						<button
 							type="button"

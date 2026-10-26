@@ -170,48 +170,8 @@ export interface CompanionLyricsResult {
 	isWritable: boolean;
 }
 
-/**
- * Detects whether lyrics text represents an instrumental track
- * (e.g. [00:00.00]♪, [00:00.00][instrumental], [au:Instrumental], etc.)
- */
-export function isInstrumentalLyrics(content: string): boolean {
-	if (!content || !content.trim()) return false;
-	const trimmed = content.trim();
-
-	// 1. Explicit [au:Instrumental] metadata tag
-	if (/^\[au:\s*instrumental\]/im.test(trimmed)) {
-		return true;
-	}
-
-	// 2. Timestamped instrumental indicator, e.g. [00:00.00]♪ or [00:00.00][instrumental]
-	if (/\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]\s*(♪|♫|\[instrumental\]|\(instrumental\)|instrumental)/i.test(trimmed)) {
-		return true;
-	}
-
-	// 3. File containing only non-vocal indicator line(s)
-	const nonHeaderLines = trimmed
-		.split('\n')
-		.map((l) => l.trim())
-		.filter((l) => l && !/^\[(ti|ar|al|length|by|offset|re|ve):/i.test(l));
-
-	if (nonHeaderLines.length === 1) {
-		const lineClean = nonHeaderLines[0]
-			.replace(/^\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/, '')
-			.trim()
-			.toLowerCase();
-		if (
-			lineClean === '♪' ||
-			lineClean === '♫' ||
-			lineClean === '[instrumental]' ||
-			lineClean === '(instrumental)' ||
-			lineClean === 'instrumental'
-		) {
-			return true;
-		}
-	}
-
-	return false;
-}
+import { isInstrumentalLyrics, isCensoredLyrics } from '$lib/utils.js';
+export { isInstrumentalLyrics, isCensoredLyrics };
 
 /**
  * Searches the directory of an audio file for matching companion .lrc or .txt files.
@@ -257,11 +217,12 @@ export function findCompanionLyricsFile(
 						isWritable = false;
 					}
 					const isInst = isInstrumentalLyrics(content);
+					const isCensored = !isInst && isCensoredLyrics(content);
 					return {
 						filePath: fullPath,
 						fileName: candidate,
 						ext,
-						type: isInst ? 'instrumental' : ext === '.lrc' || hasTimestamps ? 'synced_lrc' : 'plain_txt',
+						type: isInst ? 'instrumental' : isCensored ? 'censored_lrc' : ext === '.lrc' || hasTimestamps ? 'synced_lrc' : 'plain_txt',
 						content,
 						isWritable
 					};
@@ -314,11 +275,12 @@ export function findCompanionLyricsFile(
 						isWritable = false;
 					}
 					const isInst = isInstrumentalLyrics(content);
+					const isCensored = !isInst && isCensoredLyrics(content);
 					return {
 						filePath: fullPath,
 						fileName: f,
 						ext: fExt,
-						type: isInst ? 'instrumental' : fExt === '.lrc' || hasTimestamps ? 'synced_lrc' : 'plain_txt',
+						type: isInst ? 'instrumental' : isCensored ? 'censored_lrc' : fExt === '.lrc' || hasTimestamps ? 'synced_lrc' : 'plain_txt',
 						content,
 						isWritable
 					};
@@ -373,8 +335,9 @@ export function detectLyrics(
 		if (text.trim().length > 0) {
 			const hasTimestamps = /\[\d{1,2}:\d{2}/.test(text);
 			const isInst = isInstrumentalLyrics(text);
+			const isCensored = !isInst && isCensoredLyrics(text);
 			return {
-				status: isInst ? 'instrumental' : hasTimestamps ? 'synced_lrc' : 'plain_txt',
+				status: isInst ? 'instrumental' : isCensored ? 'censored_lrc' : hasTimestamps ? 'synced_lrc' : 'plain_txt',
 				hasLrc: false,
 				hasTxt: false,
 				hasEmbedded: true,
@@ -781,7 +744,7 @@ export async function scanLibraryDirectory(
 			}
 
 			const hasFlac = group.tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC');
-			const hasLrc = group.tracks.some((t) => t.lyrics === 'synced_lrc');
+			const hasLrc = group.tracks.some((t) => t.lyrics === 'synced_lrc' || t.lyrics === 'censored_lrc');
 
 			scannedAlbums.push({
 				album_key: key,

@@ -30,7 +30,8 @@ export type LyricsStatus =
 	| 'unsynced_lrc'  // Unsynced .lrc (timestamps shifted / out of sync)
 	| 'plain_txt'     // Plain unsynced text
 	| 'missing'       // Missing lyrics
-	| 'instrumental'; // No lyrics needed
+	| 'instrumental'  // No lyrics needed
+	| 'censored_lrc'; // Synced .lrc with censored/bleeped lyrics (needs uncensored replacement)
 
 export interface FixerRules {
 	flag_lossy?: boolean; // Flag any lossy format (MP3, AAC, OGG, WMA, OPUS)
@@ -42,6 +43,7 @@ export interface FixerRules {
 	flag_missing_lyrics?: boolean; // default true
 	flag_unsynced_lyrics?: boolean; // default true
 	flag_plain_lyrics?: boolean; // default false (require synced LRC)
+	flag_censored_lyrics?: boolean; // default true (require uncensored lyrics)
 }
 
 export interface SearchFilters {
@@ -136,6 +138,7 @@ export interface CollectionStats {
 	missing_lyrics_count: number;
 	synced_lyrics_count: number;
 	unsynced_lyrics_count: number;
+	censored_lyrics_count?: number;
 	plain_lyrics_count: number;
 	checked_tracks_count?: number;
 	total_needs_attention: number;

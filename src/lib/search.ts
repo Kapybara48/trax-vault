@@ -61,6 +61,8 @@ export function parseSearchQuery(query: string): SearchFilters {
 			filters.lyrics = 'unsynced_lrc';
 		} else if (token === 'plain' || token === 'plain_txt' || token === 'lyrics:plain') {
 			filters.lyrics = 'plain_txt';
+		} else if (token === 'censored_lrc' || token === 'lyrics:censored' || token === 'lyrics:censored_lrc') {
+			filters.lyrics = 'censored_lrc';
 		}
 		// Quality matches
 		else if (token === 'bad' || token === 'quality:bad') {

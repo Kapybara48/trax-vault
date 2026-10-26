@@ -424,6 +424,7 @@
 				>
 					<option value="all">All Lyrics</option>
 					<option value="missing">No Lyrics</option>
+					<option value="censored_lrc">Censored LRC</option>
 					<option value="unsynced_lrc">Unsynced LRC</option>
 					<option value="synced_lrc">Synced LRC</option>
 					<option value="plain_txt">Plain TXT</option>
@@ -710,12 +711,18 @@
 									{#if track.lyrics === 'synced_lrc'}
 										<CheckCircle2 class="h-3 w-3 text-emerald-400" />
 										<span>Synced LRC</span>
+									{:else if track.lyrics === 'censored_lrc'}
+										<TriangleAlert class="h-3 w-3 text-orange-400" />
+										<span>Censored LRC</span>
 									{:else if track.lyrics === 'unsynced_lrc'}
 										<FileText class="h-3 w-3 text-amber-300" />
 										<span>Unsynced LRC</span>
 									{:else if track.lyrics === 'plain_txt'}
 										<FileText class="h-3 w-3 text-sky-400" />
 										<span>Plain TXT</span>
+									{:else if track.lyrics === 'instrumental'}
+										<span class="font-serif">♪</span>
+										<span>Instrumental</span>
 									{:else}
 										<TriangleAlert class="h-3 w-3 text-rose-400" />
 										<span>No Lyrics</span>

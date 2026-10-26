@@ -442,6 +442,24 @@ This document preserves persistent context, architectural conventions, recent ch
       - **Automatic Cache Invalidation**: Exposed `invalidateScanCache()`, invoked on album import (`importScannedAlbum`), album deletion (`deleteAlbum`, `deleteAlbums`), and manual rescan (`GET /api/library/scan?force=true`).
       - **Server Boot Warm-Up**: Added background warm-up of `scanLibraryDirectory()` in `src/hooks.server.ts` priming the cache 2 seconds after container boot.
       - **Client-Side Idle Preload**: Added background preloading in `src/lib/components/Navbar.svelte` via SvelteKit `preloadData('/scan')` after 1.2s of idle time and `data-sveltekit-preload-data="hover"` on navigation links, eliminating page transition delays.
+43. **Censored Synced Lyrics Tracking (`censored_lrc`) & Fixer Rules Integration**:
+    - **LyricsStatus & FixerRules Extensions**:
+      - Added `'censored_lrc'` to `LyricsStatus` union in `src/lib/types/index.ts` for time-synchronized `.lrc` files that contain clean radio edit / censored lyrics (e.g. `f***`, `sh*t`, `[censored]`, bleeps, asterisks).
+      - Added `flag_censored_lyrics?: boolean` (defaults to `true`) to `FixerRules`, automatically flagging tracks with `lyrics === 'censored_lrc'` as `needs_attention = 1` in `computeNeedsAttention()`.
+      - Added `censored_lyrics_count` tracking to `CollectionStats` and `getStats()`.
+    - **Isomorphic Lyrics Detection**:
+      - Implemented `isCensoredLyrics(content: string): boolean` in `src/lib/utils.ts` detecting explicit bleep tags (`[censored]`, `[bleep]`, `[muted]`, `[ __ ]`) and masked profanity patterns (`f***`, `b****`, `sh*t`, `a**`, `****`).
+      - Re-exported isomorphic `isInstrumentalLyrics` and `isCensoredLyrics` for cross-environment use across server routines and client components.
+      - Updated `findCompanionLyricsFile` and `detectLyrics` in `src/lib/server/scanner.ts` to automatically classify companion `.lrc` and embedded lyrics as `'censored_lrc'` when censored patterns are matched.
+      - Updated `GET / POST /api/tracks/[id]/lyrics` and library import endpoint to support `censored_lrc` and write companion `.lrc` files to disk.
+    - **Full UI & Workflow Integration**:
+      - **Main Vault View (`/+page.svelte`)**: Added `Censored LRC` filter dropdown option and distinctive orange badge in track row view.
+      - **The Fixer (`/issues`)**: Added top issue category tab `Censored LRC ({count})`, direct `censored_lrc` lyrics filter option, and quick-fix dropdown options.
+      - **Album Details (`/album/[id]`)**: Added `Flag censored lyrics` toggle in Fixer Rules modal, `Mark Censored` shortcut button in Quick Lyrics File Editor modal, and support in batch track updates.
+      - **Audiophile Player (`/player`)**: Rendered `Censored LRC` button in tracklist and prominent `CENSORED` status tag in Live Synced Lyrics header, while retaining real-time karaoke scrolling and timestamp seek capabilities.
+      - **LRC Maker Studio (`/lrc-maker`)**: Added direct `Flag Censored` / `Censored LRC` toggle button in studio top bar, auto-detection from existing track lyrics, and status persistence on save.
+      - **LRCLIB Candidate Modal (`LrcLibModal.svelte`)**: Auto-detected censored text on LRCLIB candidate cards with an orange `Censored` badge and provided a 1-click `Use Censored LRC` application button.
+      - **Search Parser (`src/lib/search.ts`)**: Supported queries like `censored_lrc`, `lyrics:censored`, and `lyrics:censored_lrc`.
 
 ---
 

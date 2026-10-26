@@ -763,7 +763,7 @@ export async function applyFolderTags(
 				cover_url: coverUrl || rescan.cover_url,
 				track_count: rescan.raw_tracks.length,
 				has_flac: rescan.raw_tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC'),
-				has_lrc: rescan.raw_tracks.some((t) => t.lyrics === 'synced_lrc'),
+				has_lrc: rescan.raw_tracks.some((t) => t.lyrics === 'synced_lrc' || t.lyrics === 'censored_lrc'),
 				already_in_vault: false,
 				tracks: rescan.raw_tracks,
 				selected: true

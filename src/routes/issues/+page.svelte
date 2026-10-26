@@ -199,6 +199,15 @@
 
 		<button
 			type="button"
+			onclick={() => setIssueType('censored_lyrics')}
+			class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition {data.activeType === 'censored_lyrics' ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/30' : 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
+		>
+			<FileText class="h-3.5 w-3.5 text-orange-300" />
+			Censored LRC ({data.stats.censored_lyrics_count || 0})
+		</button>
+
+		<button
+			type="button"
 			onclick={() => setIssueType('unverified')}
 			class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition {data.activeType === 'unverified' ? 'bg-amber-700 text-white shadow-sm shadow-amber-700/30' : 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
 			title="Show songs not yet manually checked"
@@ -251,6 +260,7 @@
 				>
 					<option value="all">All Lyrics</option>
 					<option value="missing">Missing Lyrics</option>
+					<option value="censored_lrc">Censored .LRC</option>
 					<option value="unsynced_lrc">Unsynced .LRC</option>
 					<option value="plain_txt">Plain TXT</option>
 					<option value="synced_lrc">Synced .LRC</option>

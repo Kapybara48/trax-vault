@@ -33,11 +33,13 @@
 		LocateFixed,
 		CheckSquare,
 		Square,
-		Sliders
+		Sliders,
+		AlertTriangle
 	} from '@lucide/svelte';
 	import { player } from '$lib/services/player.svelte.js';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
 	import type { LrcLibCandidate, LyricsStatus } from '$lib/types/index.js';
+	import { isCensoredLyrics } from '$lib/utils.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -74,6 +76,9 @@
 	let isInstrumental = $state(false);
 	let instrumentalFormat = $state<'note' | 'tag'>('note');
 	let showInstrumentalMenu = $state(false);
+
+	// Censored Lyrics State
+	let isCensored = $state(false);
 
 	// Multi-Line Selection State for Batch Shifting
 	let selectedLineIndices = $state<number[]>([]);
@@ -255,12 +260,15 @@
 			) {
 				isInstrumental = true;
 				instrumentalFormat = data.existingLyrics.includes('[instrumental]') ? 'tag' : 'note';
+			} else if (data.track?.lyrics === 'censored_lrc' || isCensoredLyrics(data.existingLyrics)) {
+				isCensored = true;
 			}
 		} else if (data.track?.lyrics === 'instrumental') {
 			isInstrumental = true;
 			rawLyricsText = '[00:00.00]♪';
 			lyricLines = [{ id: 'inst-1', time: 0, text: '♪' }];
-		} else {
+		} else if (data.track?.lyrics === 'censored_lrc') {
+			isCensored = true;
 			rawLyricsText = '';
 			lyricLines = [
 				{ id: '1', time: null, text: 'Click "Fetch from LRCLIB" or paste your lyrics in Edit Text mode' },
@@ -630,15 +638,17 @@
 	}) {
 		if (result.status === 'instrumental') {
 			setAsInstrumental('note');
+			isCensored = false;
 		} else {
 			rawLyricsText = result.text;
 			lyricLines = parseLyrics(result.text);
 			activeLineIndex = 0;
+			isCensored = result.status === 'censored_lrc' || isCensoredLyrics(result.text);
 		}
 		showLrcLibModal = false;
 		saveStatus = {
 			type: 'success',
-			message: `Loaded ${result.status === 'synced_lrc' ? 'synced .lrc' : result.status === 'instrumental' ? 'instrumental' : 'plain'} lyrics for "${result.candidate.trackName}" from LRCLIB!`
+			message: `Loaded ${result.status === 'instrumental' ? 'instrumental' : isCensored ? 'censored .lrc' : result.status === 'synced_lrc' ? 'synced .lrc' : 'plain'} lyrics for "${result.candidate.trackName}" from LRCLIB!`
 		};
 	}
 
@@ -669,7 +679,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					lyrics_text: content,
-					status: isInstrumental ? 'instrumental' : 'synced_lrc',
+					status: isInstrumental ? 'instrumental' : isCensored ? 'censored_lrc' : 'synced_lrc',
 					save_to_disk: true,
 					overwrite: true
 				})
@@ -685,6 +695,8 @@
 						type: 'success',
 						message: isInstrumental
 							? 'Saved as Instrumental track to database & companion .lrc file written to disk!'
+							: isCensored
+							? 'Saved as Censored Synced LRC to database & companion .lrc file written to disk!'
 							: 'Saved to Trax Vault database and companion .lrc file written to server!'
 					};
 				} else if (json.disk_error) {
@@ -697,6 +709,8 @@
 						type: 'success',
 						message: isInstrumental
 							? 'Saved to Trax Vault database! Lyrics status updated to Instrumental.'
+							: isCensored
+							? 'Saved to Trax Vault database! Lyrics status updated to Censored LRC.'
 							: 'Saved to Trax Vault database! Lyrics status updated to Synced LRC.'
 					};
 				}
@@ -878,6 +892,19 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- Censored Lyrics Toggle -->
+				{#if !isInstrumental}
+					<button
+						type="button"
+						onclick={() => (isCensored = !isCensored)}
+						class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition text-xs font-semibold cursor-pointer shadow-sm {isCensored ? 'bg-orange-600/25 border-orange-500/40 text-orange-300 hover:bg-orange-600/35 shadow-orange-950/40' : 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700 text-neutral-400'}"
+						title={isCensored ? 'Lyrics marked as censored (click to toggle uncensored)' : 'Click to flag lyrics as censored radio edit / masked words'}
+					>
+						<AlertTriangle class="w-3.5 h-3.5 {isCensored ? 'text-orange-400' : 'text-neutral-500'}" />
+						<span>{isCensored ? 'Censored LRC' : 'Flag Censored'}</span>
+					</button>
+				{/if}
 
 				<button
 					type="button"

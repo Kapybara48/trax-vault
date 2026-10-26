@@ -947,7 +947,14 @@
 							<Mic class="w-4 h-4" />
 						</div>
 						<div>
-							<h3 class="font-bold text-xs text-white">Live Synced Lyrics</h3>
+							<div class="flex items-center gap-1.5">
+								<h3 class="font-bold text-xs text-white">Live Synced Lyrics</h3>
+								{#if player.currentTrack?.lyrics === 'censored_lrc'}
+									<span class="px-1.5 py-0.2 rounded text-[9px] bg-orange-950/80 border border-orange-700/80 text-orange-300 font-semibold uppercase">
+										Censored
+									</span>
+								{/if}
+							</div>
 							{#if player.currentTrack}
 								<p class="text-[10px] text-neutral-400 truncate max-w-xs">{player.currentTrack.title} &bull; {player.currentTrack.artist || player.currentAlbum?.artist}</p>
 							{/if}
@@ -1295,6 +1302,19 @@
 													title="View Synced Lyrics"
 												>
 													Synced LRC
+												</button>
+											{:else if track.lyrics === 'censored_lrc'}
+												<button
+													type="button"
+													onclick={(e) => {
+														e.stopPropagation();
+														player.playTrack(track, selectedAlbum!, selectedAlbum!.tracks);
+														showLyricsDrawer = true;
+													}}
+													class="px-2 py-0.5 rounded text-[10px] bg-orange-950/50 hover:bg-orange-900/50 text-orange-300 border border-orange-800/40 cursor-pointer transition font-medium"
+													title="View Censored Synced Lyrics"
+												>
+													Censored LRC
 												</button>
 											{:else}
 												<span class="text-neutral-500 text-[10px]">

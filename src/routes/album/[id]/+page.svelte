@@ -54,10 +54,12 @@
 	let ruleFlagMissingLyrics = $state(data.album.parsed_fixer_rules?.flag_missing_lyrics ?? true);
 	let ruleFlagUnsyncedLyrics = $state(data.album.parsed_fixer_rules?.flag_unsynced_lyrics ?? true);
 	let ruleFlagPlainLyrics = $state(data.album.parsed_fixer_rules?.flag_plain_lyrics ?? false);
+	let ruleFlagCensoredLyrics = $state(data.album.parsed_fixer_rules?.flag_censored_lyrics ?? true);
 
 	const hasCustomFixerRules = $derived(
 		ruleFlagLossy || ruleFlagMp3 || !ruleFlagBadQuality || !ruleFlagNeedsUpgrade ||
-		!ruleFlagCensored || ruleFlagClean || !ruleFlagMissingLyrics || !ruleFlagUnsyncedLyrics || ruleFlagPlainLyrics
+		!ruleFlagCensored || ruleFlagClean || !ruleFlagMissingLyrics || !ruleFlagUnsyncedLyrics || ruleFlagPlainLyrics ||
+		!ruleFlagCensoredLyrics
 	);
 
 	// Keep state updated if data changes
@@ -73,6 +75,7 @@
 		ruleFlagMissingLyrics = data.album.parsed_fixer_rules?.flag_missing_lyrics ?? true;
 		ruleFlagUnsyncedLyrics = data.album.parsed_fixer_rules?.flag_unsynced_lyrics ?? true;
 		ruleFlagPlainLyrics = data.album.parsed_fixer_rules?.flag_plain_lyrics ?? false;
+		ruleFlagCensoredLyrics = data.album.parsed_fixer_rules?.flag_censored_lyrics ?? true;
 	});
 
 	// Modals and dialogs
@@ -163,7 +166,8 @@
 				flag_clean: ruleFlagClean,
 				flag_missing_lyrics: ruleFlagMissingLyrics,
 				flag_unsynced_lyrics: ruleFlagUnsyncedLyrics,
-				flag_plain_lyrics: ruleFlagPlainLyrics
+				flag_plain_lyrics: ruleFlagPlainLyrics,
+				flag_censored_lyrics: ruleFlagCensoredLyrics
 			};
 			const res = await fetch(`/api/albums/${album.id}/fixer-rules`, {
 				method: 'POST',
@@ -1254,6 +1258,14 @@
 							</div>
 							<CustomToggle checked={ruleFlagPlainLyrics} onchange={(v) => (ruleFlagPlainLyrics = v)} />
 						</div>
+
+						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
+							<div>
+								<div class="text-xs font-semibold text-neutral-200">Flag censored lyrics</div>
+								<div class="text-[11px] text-neutral-400">Flags synced .lrc with bleeped words/asterisks for uncensored replacement</div>
+							</div>
+							<CustomToggle checked={ruleFlagCensoredLyrics} onchange={(v) => (ruleFlagCensoredLyrics = v)} />
+						</div>
 					</div>
 				</div>
 
@@ -1431,6 +1443,17 @@
 						>
 							<span class="font-serif">♪</span>
 							<span>Mark Instrumental</span>
+						</button>
+						<button
+							type="button"
+							onclick={() => {
+								lyricsModalStatus = 'censored_lrc';
+							}}
+							class="px-2 py-0.5 rounded bg-orange-950/60 border border-orange-800/60 text-orange-300 hover:bg-orange-900/60 text-[11px] font-medium transition cursor-pointer flex items-center gap-1"
+							title="Mark lyrics as censored .lrc (requires uncensored replacement)"
+						>
+							<AlertTriangle class="h-3 w-3 text-orange-400" />
+							<span>Mark Censored</span>
 						</button>
 						<span class="text-[11px] text-neutral-500">Lyrics Status:</span>
 						<select

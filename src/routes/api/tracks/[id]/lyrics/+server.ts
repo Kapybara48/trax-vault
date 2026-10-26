@@ -7,6 +7,7 @@ import {
 	findCompanionLyricsFile,
 	resolveTrackFilePath,
 	isInstrumentalLyrics,
+	isCensoredLyrics,
 	getMusicDirectory,
 	isPathWithin
 } from '$lib/server/scanner.js';
@@ -93,11 +94,13 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	const lyricsText = typeof body.lyrics_text === 'string' ? body.lyrics_text : '';
 	
-	// Auto-detect status if not specified or verify synced vs plain vs instrumental
+	// Auto-detect status if not specified or verify synced vs plain vs instrumental vs censored
 	let status: LyricsStatus = body.status || 'synced_lrc';
 	if (!body.status) {
 		if (isInstrumentalLyrics(lyricsText) || track.lyrics === 'instrumental') {
 			status = 'instrumental';
+		} else if (isCensoredLyrics(lyricsText)) {
+			status = 'censored_lrc';
 		} else {
 			const hasTimestamps = /\[\d{1,2}:\d{2}/.test(lyricsText);
 			status = hasTimestamps ? 'synced_lrc' : 'plain_txt';
@@ -140,7 +143,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			diskPath = existingCompanion.filePath;
 		} else {
 			const base = path.basename(audioPath, path.extname(audioPath));
-			const ext = (status === 'synced_lrc' || status === 'instrumental' || /\[\d{1,2}:\d{2}/.test(lyricsText)) ? '.lrc' : '.txt';
+			const ext = (status === 'synced_lrc' || status === 'censored_lrc' || status === 'instrumental' || /\[\d{1,2}:\d{2}/.test(lyricsText)) ? '.lrc' : '.txt';
 			diskPath = path.join(dir, `${base}${ext}`);
 		}
 
