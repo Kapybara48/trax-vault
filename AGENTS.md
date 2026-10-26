@@ -424,6 +424,15 @@ This document preserves persistent context, architectural conventions, recent ch
       - Integrated `<LrcLibModal>` in LRC Maker Studio (`src/routes/lrc-maker/+page.svelte`), replacing the legacy 1-result picker with full candidate search, preview, and application into editor lines.
       - Integrated "Fetch LRCLIB" button into Quick Lyrics File Editor toolbar in Album Detail view (`src/routes/album/[id]/+page.svelte`), allowing users to search and import lyrics into companion files directly from the album page.
 
+41. **LRC Maker Audio Volume Slider, Mute Toggle & Persistence**:
+    - Added interactive volume controls to the Audio Player Toolbar in LRC Maker Studio (`src/routes/lrc-maker/+page.svelte`):
+      - Dynamic mute toggle button with state icons (`VolumeX` for muted, `Volume1` for <50%, `Volume2` for >=50%) and `KeyM` keyboard shortcut.
+      - Smooth range slider (`accent-emerald-500`) with mouse wheel adjustment (scroll up/down over control adjusts volume by ±5%).
+      - Tabular percentage readout (`70%`, `0%` when muted).
+      - Defaulted initial volume safely to 70% instead of 100% full blast, with persistent localStorage sync (`traxvault_lrc_volume`, `traxvault_player_volume`, `traxvault_lrc_muted`).
+      - Added reactive `$effect` and `onloadedmetadata` ensuring HTML5 audio element's volume and muted properties stay strictly synchronized with state.
+      - Added `pause()` method to `GlobalPlayer` (`src/lib/services/player.svelte.ts`) and automatically pause background playback from the global player when audio playback starts in LRC Maker.
+
 ---
 
 

@@ -27,12 +27,15 @@
 		Eye,
 		Edit3,
 		Volume2,
+		Volume1,
+		VolumeX,
 		FolderCheck,
 		LocateFixed,
 		CheckSquare,
 		Square,
 		Sliders
 	} from '@lucide/svelte';
+	import { player } from '$lib/services/player.svelte.js';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
 	import type { LrcLibCandidate, LyricsStatus } from '$lib/types/index.js';
 
@@ -50,6 +53,9 @@
 	let currentTime = $state(0);
 	let duration = $state(0);
 	let playbackRate = $state(1.0);
+	let volume = $state(0.7);
+	let isMuted = $state(false);
+	let previousVolume = $state(0.7);
 	let audioSrc = $state<string>('');
 	let audioFileName = $state<string>('');
 	let isUsingServerAudio = $state(false);
@@ -210,6 +216,25 @@
 
 	// Initial Setup on Mount
 	onMount(() => {
+		// Restore saved volume preference
+		try {
+			const saved =
+				localStorage.getItem('traxvault_lrc_volume') ||
+				localStorage.getItem('traxvault_player_volume') ||
+				localStorage.getItem('trackvault_player_volume');
+			if (saved !== null) {
+				const parsed = parseFloat(saved);
+				if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+					volume = parsed;
+					previousVolume = parsed > 0 ? parsed : 0.7;
+				}
+			}
+			const savedMuted = localStorage.getItem('traxvault_lrc_muted');
+			if (savedMuted === 'true') {
+				isMuted = true;
+			}
+		} catch {}
+
 		// 1. If server has audio, default to server stream
 		if (data.track && data.hasServerAudio) {
 			audioSrc = `/api/tracks/${data.track.id}/audio`;
@@ -374,6 +399,41 @@
 		if (audioEl) audioEl.playbackRate = speed;
 	}
 
+	function setVolume(val: number) {
+		volume = Math.max(0, Math.min(1, val));
+		if (volume > 0) {
+			isMuted = false;
+		}
+		if (audioEl) {
+			audioEl.volume = isMuted ? 0 : volume;
+			audioEl.muted = isMuted;
+		}
+		try {
+			localStorage.setItem('traxvault_lrc_volume', volume.toString());
+			localStorage.setItem('traxvault_player_volume', volume.toString());
+			localStorage.setItem('traxvault_lrc_muted', isMuted ? 'true' : 'false');
+		} catch {}
+	}
+
+	function toggleMute() {
+		if (isMuted) {
+			isMuted = false;
+			if (volume === 0) {
+				volume = previousVolume || 0.7;
+			}
+		} else {
+			previousVolume = volume > 0 ? volume : 0.7;
+			isMuted = true;
+		}
+		if (audioEl) {
+			audioEl.volume = isMuted ? 0 : volume;
+			audioEl.muted = isMuted;
+		}
+		try {
+			localStorage.setItem('traxvault_lrc_muted', isMuted ? 'true' : 'false');
+		} catch {}
+	}
+
 	// Local Audio File Upload
 	function handleLocalAudioUpload(e: Event) {
 		const target = e.target as HTMLInputElement;
@@ -479,6 +539,14 @@
 		}
 	});
 
+	// Keep audio element volume in sync
+	$effect(() => {
+		if (audioEl) {
+			audioEl.volume = isMuted ? 0 : volume;
+			audioEl.muted = isMuted;
+		}
+	});
+
 	// Reload lyrics from companion file on disk or database
 	async function reloadFromDisk() {
 		if (!data.track) return;
@@ -548,6 +616,9 @@
 		} else if (e.code === 'ArrowRight') {
 			e.preventDefault();
 			seekForward(3);
+		} else if (e.code === 'KeyM') {
+			e.preventDefault();
+			toggleMute();
 		}
 	}
 
@@ -683,7 +754,18 @@
 			src={audioSrc}
 			bind:currentTime
 			bind:duration
-			onplay={() => (isPlaying = true)}
+			onloadedmetadata={() => {
+				if (audioEl) {
+					audioEl.volume = isMuted ? 0 : volume;
+					audioEl.muted = isMuted;
+				}
+			}}
+			onplay={() => {
+				isPlaying = true;
+				if (player.isPlaying) {
+					player.pause();
+				}
+			}}
 			onpause={() => (isPlaying = false)}
 			onended={() => (isPlaying = false)}
 			preload="auto"
@@ -1056,6 +1138,46 @@
 							{spd}x
 						</button>
 					{/each}
+				</div>
+
+				<!-- Volume Control -->
+				<div
+					class="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1 text-xs"
+					onwheel={(e) => {
+						e.preventDefault();
+						const delta = e.deltaY < 0 ? 0.05 : -0.05;
+						setVolume(Math.round((volume + delta) * 100) / 100);
+					}}
+				>
+					<button
+						type="button"
+						onclick={toggleMute}
+						class="text-neutral-400 hover:text-white transition cursor-pointer p-0.5 rounded hover:bg-neutral-800"
+						title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
+					>
+						{#if isMuted || volume === 0}
+							<VolumeX class="w-4 h-4 text-rose-400" />
+						{:else if volume < 0.5}
+							<Volume1 class="w-4 h-4 text-neutral-300" />
+						{:else}
+							<Volume2 class="w-4 h-4 text-neutral-300" />
+						{/if}
+					</button>
+
+					<input
+						type="range"
+						min="0"
+						max="1"
+						step="0.01"
+						value={isMuted ? 0 : volume}
+						oninput={(e) => setVolume(parseFloat(e.currentTarget.value))}
+						class="w-16 sm:w-20 md:w-24 h-1.5 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+						title={`Volume: ${isMuted ? 0 : Math.round(volume * 100)}%`}
+					/>
+
+					<span class="font-mono text-[11px] text-neutral-400 w-8 text-right tabular-nums">
+						{isMuted ? '0%' : `${Math.round(volume * 100)}%`}
+					</span>
 				</div>
 
 				<!-- Mode Tabs -->

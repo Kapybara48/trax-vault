@@ -222,6 +222,13 @@ class GlobalPlayer {
 		}
 	}
 
+	pause() {
+		if (this.audioEl && this.isPlaying) {
+			this.audioEl.pause();
+			this.isPlaying = false;
+		}
+	}
+
 	private handleTrackEnded() {
 		if (this.repeatMode === 'one' && this.currentTrack) {
 			if (this.audioEl) {
