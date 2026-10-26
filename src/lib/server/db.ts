@@ -1715,6 +1715,9 @@ export function getAlbumList(
 	const limit = Math.min(Math.max(1, size), 500);
 	let orderBy = 'a.title COLLATE NOCASE ASC';
 
+	let whereClause = '';
+	const params: any[] = [];
+
 	switch (type) {
 		case 'random':
 			orderBy = 'RANDOM()';
@@ -1729,11 +1732,17 @@ export function getAlbumList(
 		case 'recent':
 			orderBy = '(SELECT MAX(last_played_at) FROM tracks WHERE album_id = a.id) DESC, a.updated_at DESC';
 			break;
+		case 'byName':
 		case 'alphabeticalByName':
 			orderBy = 'a.title COLLATE NOCASE ASC';
 			break;
+		case 'byArtist':
 		case 'alphabeticalByArtist':
 			orderBy = 'a.artist COLLATE NOCASE ASC, a.release_year DESC';
+			break;
+		case 'starred':
+			whereClause = "WHERE a.id IN (SELECT item_id FROM starred_items WHERE item_type = 'album')";
+			orderBy = 'a.title COLLATE NOCASE ASC';
 			break;
 		case 'byYear':
 			orderBy = 'a.release_year DESC, a.title COLLATE NOCASE ASC';
@@ -1743,10 +1752,8 @@ export function getAlbumList(
 			break;
 	}
 
-	let whereClause = '';
-	const params: any[] = [];
 	if (genre && genre.trim()) {
-		whereClause = 'WHERE a.genre = ?';
+		whereClause = whereClause ? `${whereClause} AND a.genre = ?` : 'WHERE a.genre = ?';
 		params.push(genre.trim());
 	}
 

@@ -2,10 +2,15 @@ import { redirect, json, type RequestEvent } from '@sveltejs/kit';
 import { isAuthDisabled, hasAnyUser, validateSession, SESSION_COOKIE_NAME } from '$lib/server/auth.js';
 import { backfillTrackBitrates, syncLibraryFromDisk } from '$lib/server/scanner.js';
 
-// Trigger non-blocking automated library sync and bitrate backfill on startup
-syncLibraryFromDisk()
-	.then(() => backfillTrackBitrates())
-	.catch((err) => console.warn('Startup library sync/backfill error:', err));
+// Trigger non-blocking automated library sync and bitrate backfill on startup (unless disabled via AUTO_SYNC_LIBRARY=false)
+const shouldAutoSync = process.env.AUTO_SYNC_LIBRARY !== 'false' && process.env.DISABLE_STARTUP_SYNC !== 'true';
+if (shouldAutoSync) {
+	syncLibraryFromDisk()
+		.then(() => backfillTrackBitrates())
+		.catch((err) => console.warn('Startup library sync/backfill error:', err));
+} else {
+	backfillTrackBitrates().catch((err) => console.warn('Startup bitrate backfill error:', err));
+}
 
 export async function handle({
 	event,

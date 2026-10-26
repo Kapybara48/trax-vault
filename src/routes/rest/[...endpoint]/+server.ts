@@ -108,10 +108,24 @@ async function handleSubsonic(endpoint: string, request: Request, url: URL): Pro
 		return handleSubsonicCoverArt(params);
 	}
 
-	// Authenticate for data endpoints
-	const auth = authenticateSubsonicRequest(params);
-	if (auth.error) {
-		return buildSubsonicError(auth.error.code, auth.error.message, format, jsonpCallback);
+	// OpenSubsonic specification mandates that getOpenSubsonicExtensions must be publicly accessible without auth.
+	// Similarly, unauthenticated probe ping.view should succeed so clients can verify server reachability.
+	const isPublicAction =
+		action.toLowerCase() === 'getopensubsonicextensions' ||
+		(action.toLowerCase() === 'ping' && !params.u);
+
+	let user: any = null;
+	if (!isPublicAction) {
+		const auth = authenticateSubsonicRequest(params);
+		if (auth.error) {
+			return buildSubsonicError(auth.error.code, auth.error.message, format, jsonpCallback);
+		}
+		user = auth.user;
+	} else if (params.u) {
+		const auth = authenticateSubsonicRequest(params);
+		if (!auth.error) {
+			user = auth.user;
+		}
 	}
 
 	let handler = subsonicHandlers[action];
@@ -134,7 +148,7 @@ async function handleSubsonic(endpoint: string, request: Request, url: URL): Pro
 	}
 
 	try {
-		const result = await handler(params, auth.user!);
+		const result = await handler(params, user || { id: 1, username: 'guest', role: 'guest' });
 		if (result.error) {
 			return buildSubsonicError(result.error.code, result.error.message, format, jsonpCallback);
 		}

@@ -19,9 +19,16 @@ export const AUDIO_EXTENSIONS = new Set([
 	'.ogg',
 	'.opus',
 	'.wav',
+	'.aif',
 	'.aiff',
 	'.wma',
-	'.alac'
+	'.alac',
+	'.ape',
+	'.wv',
+	'.dsf',
+	'.dff',
+	'.m4b',
+	'.mpc'
 ]);
 
 export function getMusicDirectory(): string {
@@ -607,7 +614,7 @@ export async function scanLibraryDirectory(targetDir?: string): Promise<{
 	for (const tr of scannedTracks) {
 		const trackFolder = path.dirname(tr.file_path);
 		const folderName = path.basename(trackFolder).toLowerCase();
-		const isDiscSubfolder = /^(cd|disc|disk)\s*\d+$/i.test(folderName);
+		const isDiscSubfolder = /^(cd|disc|disk)\s*\d+([_ -].*)?$/i.test(folderName) || /^(bonus|extra)\s*(cd|disc|disk)/i.test(folderName);
 		const albumFolder = isDiscSubfolder ? path.dirname(trackFolder) : trackFolder;
 
 		let key: string;

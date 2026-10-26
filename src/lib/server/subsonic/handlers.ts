@@ -214,7 +214,7 @@ export const subsonicHandlers: Record<
 		return {
 			data: {
 				musicFolders: {
-					musicFolder: [{ id: 0, name: 'Trax Vault Music' }]
+					musicFolder: [{ id: 1, name: 'Trax Vault Music' }]
 				}
 			}
 		};
@@ -240,7 +240,7 @@ export const subsonicHandlers: Record<
 					jukeboxRole: true,
 					shareRole: true,
 					videoConversionRole: false,
-					folder: [0]
+					folder: [1]
 				}
 			}
 		};
@@ -267,7 +267,7 @@ export const subsonicHandlers: Record<
 							jukeboxRole: true,
 							shareRole: true,
 							videoConversionRole: false,
-							folder: [0]
+							folder: [1]
 						}
 					]
 				}
@@ -355,7 +355,7 @@ export const subsonicHandlers: Record<
 			const artObj: Record<string, any> = {
 				id: encodeArtistId(art.name),
 				name: art.name,
-				albumCount: String(art.album_count || 1),
+				albumCount: art.album_count || 1,
 				coverArt: encodeArtistId(art.name),
 				roles: ['artist']
 			};
@@ -400,8 +400,8 @@ export const subsonicHandlers: Record<
 			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'id' is required" } };
 		}
 
-		// 1. Root directory (folder id 0 or "root") -> list all artists as dirs
-		if (rawId === '0' || rawId === 'root') {
+		// 1. Root directory (folder id 0, 1, "root", "folder-1", or "mf-1") -> list all artists as dirs
+		if (rawId === '0' || rawId === '1' || rawId === 'root' || rawId === 'folder-1' || rawId === 'mf-1') {
 			const artists = getDistinctArtists();
 			return {
 				data: {
@@ -415,7 +415,7 @@ export const subsonicHandlers: Record<
 							title: art.name,
 							name: art.name,
 							artist: art.name,
-							albumCount: art.album_count
+							albumCount: art.album_count || 1
 						}))
 					}
 				}
@@ -430,13 +430,14 @@ export const subsonicHandlers: Record<
 				data: {
 					directory: {
 						id: rawId,
-						parent: '0',
+						parent: '1',
 						name: artistName,
 						child: albums.map((a) => {
 							const isStarred = isItemStarred(user.id, 'album', a.id);
 							const albSub = albumToSubsonicAlbum(a, undefined, isStarred);
 							return {
 								...albSub,
+								id: `al-${a.id}`,
 								parent: rawId,
 								isDir: true
 							};
@@ -490,7 +491,7 @@ export const subsonicHandlers: Record<
 			const artObj: Record<string, any> = {
 				id: encodeArtistId(art.name),
 				name: art.name,
-				albumCount: String(art.album_count || 1),
+				albumCount: art.album_count || 1,
 				coverArt: encodeArtistId(art.name),
 				roles: ['artist']
 			};
@@ -526,7 +527,7 @@ export const subsonicHandlers: Record<
 		const artistObj: Record<string, any> = {
 			id: encodeArtistId(artistName),
 			name: artistName,
-			albumCount: String(albums.length),
+			albumCount: albums.length,
 			coverArt: encodeArtistId(artistName),
 			roles: ['artist'],
 			album: albums.map((a) => {
@@ -931,7 +932,7 @@ export const subsonicHandlers: Record<
 						const obj: Record<string, any> = {
 							id: encodeArtistId(art.name),
 							name: art.name,
-							albumCount: String(art.album_count || 1),
+							albumCount: art.album_count || 1,
 							coverArt: `art-${encodeArtistId(art.name)}`,
 							roles: ['artist']
 						};
@@ -972,7 +973,7 @@ export const subsonicHandlers: Record<
 						return {
 							id: encodeArtistId(name),
 							name,
-							albumCount: String(albums.length),
+							albumCount: albums.length,
 							coverArt: `art-${encodeArtistId(name)}`,
 							roles: ['artist'],
 							starred: new Date().toISOString()
@@ -995,7 +996,7 @@ export const subsonicHandlers: Record<
 						return {
 							id: encodeArtistId(name),
 							name,
-							albumCount: String(albums.length),
+							albumCount: albums.length,
 							coverArt: `art-${encodeArtistId(name)}`,
 							roles: ['artist'],
 							starred: new Date().toISOString()

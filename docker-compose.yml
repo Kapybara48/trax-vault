@@ -13,6 +13,8 @@ services:
       - PORT=3000
       - DATA_DIR=/app/data
       - MUSIC_DIR=/music
+      # Automatically syncs newly placed albums from disk on startup (set to false to manage manually via /scan)
+      - AUTO_SYNC_LIBRARY=true
       # Set to your server URL or domain (e.g. http://my-server.lan:3000 or http://localhost:3000)
       - ORIGIN=http://localhost:3000
     volumes:

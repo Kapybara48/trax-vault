@@ -351,6 +351,23 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Server Deployment Definition**:
       - Updated `docker-compose.server.yml` and `docker-compose.yml` to pull from `git.kapyhub.cz/kapybara/trax-vault:latest`.
 
+36. **Symfonium Subsonic Library Sync Fixes & Auto-Sync Configuration**:
+    - **OpenSubsonic Public Handshake**:
+      - Made `getOpenSubsonicExtensions.view` accessible without authentication credentials per OpenSubsonic specification, allowing Symfonium to probe extensions before authentication without receiving error code 10.
+      - Made unauthenticated `ping.view` return 200 OK so reachability probes succeed.
+    - **Integer `albumCount` Schema Alignment**:
+      - Restored `albumCount` as an integer (`xs:int`) across `getArtists`, `getArtist`, `getIndexes`, `search3`, `getStarred`, and `getStarred2` (was string `"10"`), resolving Android Kotlin/Moshi deserialization crashes (`Expected BEGIN_NUMBER but was STRING`) in Symfonium.
+    - **Music Folder Mapping (`id: 1`) & Directory Collision Fix**:
+      - Standardized `getMusicFolders.view` to return `[{ id: 1, name: 'Trax Vault Music' }]` and aligned `getUser` / `getUsers` to `folder: [1]`.
+      - In `getMusicDirectory.view`, disambiguated root folder IDs (`id=1`, `id=0`, `id=root`, `id=folder-1`) from album ID 1. Prefixed child albums in artist directory with `al-${a.id}` so clicking an album never collides with root folder `1`.
+    - **Query Type Support in `getAlbumList`**:
+      - Added support for `byName`, `byArtist`, and `starred` in `getAlbumList` in `src/lib/server/db.ts`.
+    - **Extended Audio Format & Disc Folder Recognition**:
+      - Expanded `AUDIO_EXTENSIONS` in `src/lib/server/scanner.ts` to include `.aif`, `.ape`, `.wv`, `.dsf`, `.dff`, `.m4b`, and `.mpc`.
+      - Enhanced multi-disc folder regex to recognize `CD1 - Title`, `Disc 01`, `Bonus Disc`, and `Extra CD`.
+    - **Startup Library Auto-Sync Toggle**:
+      - Added `AUTO_SYNC_LIBRARY` environment variable in `src/hooks.server.ts` and `docker-compose.yml` allowing users to disable automated disk-to-vault synchronization if they prefer manual curation via `/scan`.
+
 ---
 
 
