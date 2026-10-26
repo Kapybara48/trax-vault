@@ -62,7 +62,6 @@
 		selectedLyrics = data.activeLyrics || 'all';
 		currentView = data.activeView || 'albums';
 		tracksList = [...data.matchingTracks];
-		selectedAlbumIds = selectedAlbumIds.filter((id) => data.albums.some((a) => a.id === id));
 	});
 
 	function toggleAlbumSelect(id: number) {
