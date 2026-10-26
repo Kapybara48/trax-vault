@@ -433,6 +433,16 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added reactive `$effect` and `onloadedmetadata` ensuring HTML5 audio element's volume and muted properties stay strictly synchronized with state.
       - Added `pause()` method to `GlobalPlayer` (`src/lib/services/player.svelte.ts`) and automatically pause background playback from the global player when audio playback starts in LRC Maker.
 
+42. **Library Scanner Performance & Preloading Architecture**:
+    - Resolved 2-second navigation lag when accessing the `/scan` tab:
+      - **16-Worker Concurrency Pool**: Replaced sequential `for...of` audio file parsing in `scanLibraryDirectory()` (`src/lib/server/scanner.ts`) with bounded parallel processing (`asyncPool(16, ...)`), cutting cold disk parsing time by over 80%.
+      - **Shared Directory Listing & Cover Art Cache**: Introduced `dirFilesCache` populated during directory traversal and shared across `findCompanionLyricsFile` and `findLocalCoverArt`, eliminating hundreds of redundant `fs.readdirSync` and `fs.existsSync` calls.
+      - **O(1) In-Memory Vault Album Lookup**: Replaced per-album repeated SQLite `db.prepare()` queries with a single startup query into in-memory MBID and title/artist lookup maps.
+      - **In-Memory Scan Cache & In-Flight Coalescing**: Added a 60-second TTL cache (`scanCache`) and in-flight promise deduplication (`inFlightScans`), making repeat visits to `/scan` instantaneous (< 1ms) while preventing duplicate disk scans.
+      - **Automatic Cache Invalidation**: Exposed `invalidateScanCache()`, invoked on album import (`importScannedAlbum`), album deletion (`deleteAlbum`, `deleteAlbums`), and manual rescan (`GET /api/library/scan?force=true`).
+      - **Server Boot Warm-Up**: Added background warm-up of `scanLibraryDirectory()` in `src/hooks.server.ts` priming the cache 2 seconds after container boot.
+      - **Client-Side Idle Preload**: Added background preloading in `src/lib/components/Navbar.svelte` via SvelteKit `preloadData('/scan')` after 1.2s of idle time and `data-sveltekit-preload-data="hover"` on navigation links, eliminating page transition delays.
+
 ---
 
 

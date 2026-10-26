@@ -1,6 +1,6 @@
 import { redirect, json, type RequestEvent } from '@sveltejs/kit';
 import { isAuthDisabled, hasAnyUser, validateSession, SESSION_COOKIE_NAME } from '$lib/server/auth.js';
-import { backfillTrackBitrates, syncLibraryFromDisk } from '$lib/server/scanner.js';
+import { backfillTrackBitrates, syncLibraryFromDisk, scanLibraryDirectory } from '$lib/server/scanner.js';
 
 // Library sync on startup is strictly opt-in (AUTO_SYNC_LIBRARY=true) to prevent automatically
 // re-importing albums the user intentionally removed or has not yet tagged in the Scanner.
@@ -13,6 +13,11 @@ if (shouldAutoSync) {
 } else {
 	backfillTrackBitrates().catch((err) => console.warn('Startup bitrate backfill error:', err));
 }
+
+// Warm up scanner cache in background so initial visit to /scan is instantaneous
+setTimeout(() => {
+	scanLibraryDirectory().catch((err) => console.warn('Startup library scanner warm-up error:', err));
+}, 2000);
 
 export async function handle({
 	event,

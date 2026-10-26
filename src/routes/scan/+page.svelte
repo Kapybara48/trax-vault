@@ -38,7 +38,7 @@
 
 	let libraryPathInput = $state(data.libraryPath);
 	let isScanning = $state(false);
-	let scannedAlbums = $state<ScannedAlbum[]>(JSON.parse(JSON.stringify(data.albums)));
+	let scannedAlbums = $state<ScannedAlbum[]>(structuredClone(data.albums));
 	let totalFiles = $state(data.totalFiles);
 	let dirExists = $state(data.exists);
 
@@ -70,7 +70,7 @@
 
 	// Keep updated if server data changes
 	$effect(() => {
-		scannedAlbums = JSON.parse(JSON.stringify(data.albums));
+		scannedAlbums = structuredClone(data.albums);
 		totalFiles = data.totalFiles;
 		dirExists = data.exists;
 		libraryPathInput = data.libraryPath;

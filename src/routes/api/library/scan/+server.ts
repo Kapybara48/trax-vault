@@ -62,7 +62,8 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	try {
-		const result = await scanLibraryDirectory(targetPath);
+		const force = url.searchParams.get('force') !== 'false';
+		const result = await scanLibraryDirectory(targetPath, { force });
 		return json(result);
 	} catch (err: any) {
 		console.error('Library scan error:', err);

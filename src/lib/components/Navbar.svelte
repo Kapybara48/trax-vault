@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { preloadData } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		Disc3,
@@ -28,6 +30,14 @@
 	}: Props = $props();
 
 	const currentPath = $derived(page.url.pathname);
+
+	onMount(() => {
+		// Slowly / asynchronously warm up the scan route in the background on idle
+		const timer = setTimeout(() => {
+			preloadData('/scan').catch(() => {});
+		}, 1200);
+		return () => clearTimeout(timer);
+	});
 
 	async function handleLogout() {
 		try {
@@ -97,6 +107,7 @@
 
 				<a
 					href="/scan"
+					data-sveltekit-preload-data="hover"
 					class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium transition {currentPath.startsWith('/scan') ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 shadow-sm' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'}"
 				>
 					<FolderSync class="h-4 w-4 text-emerald-400" />
@@ -198,6 +209,7 @@
 
 		<a
 			href="/scan"
+			data-sveltekit-preload-data="hover"
 			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/scan') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<FolderSync class="h-4 w-4" />

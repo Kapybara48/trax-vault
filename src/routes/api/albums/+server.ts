@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getAlbums, createAlbum, deleteAlbums } from '$lib/server/db.js';
+import { invalidateScanCache } from '$lib/server/scanner.js';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const search = url.searchParams.get('q') || undefined;
@@ -24,6 +25,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		const albumId = createAlbum(album, tracks || []);
+		invalidateScanCache();
 		return json({ success: true, id: albumId });
 	} catch (err: any) {
 		return json({ error: err.message }, { status: 500 });
@@ -48,6 +50,7 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		}
 
 		deleteAlbums(albumIds);
+		invalidateScanCache();
 		return json({ success: true, count: albumIds.length });
 	} catch (err: any) {
 		return json({ error: err.message }, { status: 500 });
