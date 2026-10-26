@@ -1,6 +1,6 @@
 services:
   trax-vault:
-    image: ghcr.io/kapybara48/trax-vault:latest
+    image: git.kapyhub.cz/kapybara/trax-vault:latest
     container_name: trax-vault
     restart: unless-stopped
     ports:

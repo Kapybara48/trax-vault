@@ -262,14 +262,13 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added HTTP 303 redirects in `src/hooks.server.ts` routing `/playlists` -> `/player?view=playlists` and `/playlist/:id` -> `/player?playlistId=:id`.
       - Removed legacy route folders `src/routes/playlists` and `src/routes/playlist`.
 
-29. **Automated GitHub Actions Docker CI & Clone-Free Server Deployment**:
-    - **CI/CD Workflow (`.github/workflows/docker-publish.yml`)**:
+29. **Automated Forgejo Actions Docker CI & Clone-Free Server Deployment**:
+    - **CI/CD Workflow (`.forgejo/workflows/docker-publish.yml`)**:
       - Automated build and push on every `git push` to `main`, version tags (`v*`), or via manual `workflow_dispatch`.
-      - Multi-platform container compilation (`linux/amd64` and `linux/arm64`) using QEMU and Docker Buildx.
-      - Automated publication to GitHub Container Registry: `ghcr.io/kapybara48/trax-vault:latest` (with branch, sha, and semver tag variants).
-      - BuildKit GitHub Actions cache (`type=gha`) for fast subsequent image creation.
+      - Runs on self-hosted Forgejo runner (`runs-on: docker`) with native Docker daemon execution.
+      - Automated publication to Forgejo Container Registry: `git.kapyhub.cz/kapybara/trax-vault:latest` (with sha and semver tag variants).
     - **Clone-Free Server Deployment (`docker-compose.server.yml`)**:
-      - Standalone, ready-to-run Docker Compose definition referencing `ghcr.io/kapybara48/trax-vault:latest`.
+      - Standalone, ready-to-run Docker Compose definition referencing `git.kapyhub.cz/kapybara/trax-vault:latest`.
       - Enables headless server deployments without cloning the Git repository, installing Node.js, or compiling C++ dependencies on the target host.
       - 1-command upgrade workflow: `docker compose pull && docker compose up -d`.
 
@@ -340,7 +339,17 @@ This document preserves persistent context, architectural conventions, recent ch
       - Disambiguated root directory `id=0` and `id=root` in `getMusicDirectory` from numeric album ID `1`.
       - Fixed doubled artist cover art prefix (`art-art_...` -> clean `art_...`).
     - **Scan API Sync Endpoint**:
-      - Added `POST /api/library/scan` triggering server library synchronization and returning detailed counts (`importedAlbums`, `newTracks`, `totalAlbums`, `totalTracks`).
+35. **Migration to Self-Hosted Forgejo & Forgejo Actions Runner**:
+    - **Forgejo Remote Configuration**:
+      - Configured repository remote to Forgejo SSH alias: `origin` -> `forgejo:kapybara/trax-vault.git`.
+    - **Forgejo Actions CI/CD (`.forgejo/workflows/docker-publish.yml`)**:
+      - Migrated workflow from `.github/workflows` to `.forgejo/workflows`.
+      - Configured runner target: `runs-on: docker` to match registered self-hosted runner `sam`.
+      - Added automatic fallback verification for Docker CLI inside runner environment.
+      - Automated authentication against Forgejo Container Registry (`git.kapyhub.cz`) using `${{ secrets.GITHUB_TOKEN }}` and actor.
+      - Published Docker image: `git.kapyhub.cz/kapybara/trax-vault:latest` and tagged commits.
+    - **Server Deployment Definition**:
+      - Updated `docker-compose.server.yml` and `docker-compose.yml` to pull from `git.kapyhub.cz/kapybara/trax-vault:latest`.
 
 ---
 

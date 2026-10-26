@@ -58,7 +58,7 @@
 
 ## 🐳 Self-Hosting with Docker
 
-Trax Vault publishes automated, multi-architecture Docker images (`linux/amd64` and `linux/arm64`) to the **GitHub Container Registry** (`ghcr.io/kapybara48/trax-vault:latest`) on every push to `main`.
+Trax Vault publishes automated Docker images to the **Forgejo Container Registry** (`git.kapyhub.cz/kapybara/trax-vault:latest`) on every push to `main`.
 
 ### Quick Start (No Git Clone Required)
 
@@ -69,7 +69,7 @@ On your server, you don't even need to clone the repository or install Node.js. 
 mkdir -p trax-vault && cd trax-vault
 
 # 2. Download the ready-to-run compose file
-curl -fsSL https://raw.githubusercontent.com/Kapybara48/trax-vault/main/docker-compose.server.yml -o docker-compose.yml
+curl -fsSL https://git.kapyhub.cz/kapybara/trax-vault/raw/branch/main/docker-compose.server.yml -o docker-compose.yml
 
 # 3. Edit paths if your music is stored outside ./music (optional)
 # MUSIC_PATH=/path/to/your/music docker compose up -d
@@ -95,7 +95,7 @@ docker compose up -d
 If you prefer building directly from source on your local machine:
 
 ```bash
-git clone https://github.com/Kapybara48/trax-vault.git
+git clone ssh://git@git-ssh.kapyhub.cz:222/kapybara/trax-vault.git
 cd trax-vault
 docker compose up -d --build
 ```

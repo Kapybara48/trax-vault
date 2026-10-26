@@ -1,0 +1,53 @@
+name: Build and Publish Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: git.kapyhub.cz
+  IMAGE_NAME: kapybara/trax-vault
+
+jobs:
+  build-and-push:
+    name: Build & Push Container
+    runs-on: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Docker CLI is available
+        run: |
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "Installing Docker CLI..."
+            apt-get update && apt-get install -y --no-install-recommends docker.io || true
+          fi
+          docker version || true
+
+      - name: Log in to Forgejo Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ github.actor }}" --password-stdin
+
+      - name: Build Docker image
+        run: |
+          TAG_ARGS="-t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_ARGS="$TAG_ARGS -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
+          fi
+          docker build $TAG_ARGS -f Dockerfile .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          fi
