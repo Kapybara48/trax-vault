@@ -1,14 +1,24 @@
 <script lang="ts">
 	import type { Album } from '$lib/types/index.js';
 	import { Disc, AlertTriangle, CheckCircle2, Music, Trash2 } from '@lucide/svelte';
+	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { invalidateAll } from '$app/navigation';
 
 	interface Props {
 		album: Album;
+		selected?: boolean;
+		selectionMode?: boolean;
+		onToggleSelect?: (id: number) => void;
 		onAlbumDeleted?: (id: number) => void;
 	}
 
-	let { album, onAlbumDeleted }: Props = $props();
+	let {
+		album,
+		selected = false,
+		selectionMode = false,
+		onToggleSelect,
+		onAlbumDeleted
+	}: Props = $props();
 
 	const hasIssues = $derived(
 		(album.bad_quality_count || 0) > 0 ||
@@ -44,23 +54,47 @@
 			alert(`Failed to remove album: ${err.message}`);
 		}
 	}
+
+	function handleCardClick(e: MouseEvent) {
+		if (selectionMode) {
+			e.preventDefault();
+			if (onToggleSelect) {
+				onToggleSelect(album.id);
+			}
+		}
+	}
 </script>
 
 <a
 	href="/album/{album.id}"
-	class="group relative flex flex-col overflow-hidden rounded-2xl border border-neutral-800/80 bg-neutral-900/40 p-4 transition duration-200 hover:-translate-y-1 hover:border-emerald-700/50 hover:bg-neutral-900/80 hover:shadow-xl hover:shadow-emerald-950/20"
+	onclick={handleCardClick}
+	class="group relative flex flex-col overflow-hidden rounded-2xl border transition duration-200 p-4 {selected ? 'border-emerald-500 bg-neutral-900/90 ring-2 ring-emerald-500/70 shadow-xl shadow-emerald-950/40 -translate-y-1' : 'border-neutral-800/80 bg-neutral-900/40 hover:-translate-y-1 hover:border-emerald-700/50 hover:bg-neutral-900/80 hover:shadow-xl hover:shadow-emerald-950/20'}"
 >
 	<!-- Cover Art / Thumbnail -->
 	<div class="relative aspect-square w-full overflow-hidden rounded-xl bg-neutral-950 shadow-inner">
-		<!-- Quick Unvault / Remove button on hover -->
-		<button
-			type="button"
-			onclick={handleDelete}
-			class="absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-neutral-400 opacity-0 backdrop-blur-md transition duration-200 hover:bg-rose-950 hover:text-rose-300 group-hover:opacity-100 border border-neutral-700/60 shadow-md"
-			title="Remove from Vault (keeps audio files on disk)"
-		>
-			<Trash2 class="h-3.5 w-3.5" />
-		</button>
+		<!-- Top-Left Actions: Multi-Select Checkbox & Quick Unvault Button -->
+		<div class="absolute top-2 left-2 z-20 flex items-center gap-1.5">
+			<div class="transition duration-150 {selectionMode || selected ? 'opacity-100 scale-100' : 'opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100'}">
+				<CustomCheckbox
+					checked={selected}
+					onchange={() => {
+						if (onToggleSelect) onToggleSelect(album.id);
+					}}
+					title={selected ? 'Deselect album' : 'Select album'}
+				/>
+			</div>
+
+			{#if !selectionMode}
+				<button
+					type="button"
+					onclick={handleDelete}
+					class="flex h-5 w-5 items-center justify-center rounded-md bg-black/70 text-neutral-400 opacity-0 backdrop-blur-md transition duration-200 hover:bg-rose-950 hover:text-rose-300 group-hover:opacity-100 border border-neutral-700/60 shadow-md"
+					title="Remove from Vault (keeps audio files on disk)"
+				>
+					<Trash2 class="h-3 w-3" />
+				</button>
+			{/if}
+		</div>
 
 		{#if album.cover_url}
 			<img

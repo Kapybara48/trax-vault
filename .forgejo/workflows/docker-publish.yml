@@ -6,16 +6,16 @@ on:
       - main
     tags:
       - 'v*'
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
-      - '.gitattributes'
-      - 'docker-compose.server.yml'
-      - '.env.example'
-      - 'LICENSE*'
-      - '.vscode/**'
-      - '.idea/**'
+    paths:
+      - 'src/**'
+      - 'static/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+      - 'docker-compose.yml'
   workflow_dispatch:
 
 concurrency:

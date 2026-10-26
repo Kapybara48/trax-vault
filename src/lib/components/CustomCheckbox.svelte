@@ -11,7 +11,10 @@
 
 	let { checked = false, disabled = false, title = '', class: className = '', onchange }: Props = $props();
 
-	function toggle() {
+	function toggle(e?: MouseEvent | KeyboardEvent) {
+		if (e) {
+			e.stopPropagation();
+		}
 		if (disabled) return;
 		const next = !checked;
 		if (onchange) onchange(next);
@@ -20,7 +23,7 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === ' ' || e.key === 'Enter') {
 			e.preventDefault();
-			toggle();
+			toggle(e);
 		}
 	}
 </script>

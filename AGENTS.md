@@ -391,9 +391,25 @@ This document preserves persistent context, architectural conventions, recent ch
         - Added quick delete action for individual songs in the `tracks` table view.
       - Clarified confirmation dialogs across `/album/[id]` and `TrackRow.svelte` assuring users that audio files on disk in `./music` remain completely untouched.
 
-38. **CI/CD Path Filtering (`paths-ignore`)**:
-    - Added `paths-ignore` filter to `.forgejo/workflows/docker-publish.yml` covering `**.md`, `docs/**`, `.gitignore`, `.gitattributes`, `docker-compose.server.yml`, `.env.example`, `LICENSE*`, `.vscode/**`, and `.idea/**`.
-    - Skips Docker container image builds and registry pushes when updating documentation, README, agents instructions, or non-app configuration files, saving runner resources and build time.
+38. **CI/CD Path Filtering & Allow-List**:
+    - Replaced permissive path filters with a strict `paths:` allow-list in `.forgejo/workflows/docker-publish.yml` targeting only application source and container files (`src/**`, `static/**`, `Dockerfile`, `.dockerignore`, `package.json`, `package-lock.json`, `tsconfig.json`, `vite.config.ts`, `docker-compose.yml`).
+    - Skips Docker container image builds and registry pushes when updating documentation, README files, or non-app configuration files, preserving runner resources and build time.
+
+39. **Multi-Album Selection & Batch Deletion in Vault**:
+    - **Database Batch Removal**:
+      - Added `deleteAlbums(ids: number[])` to `src/lib/server/db.ts` deleting album records and corresponding `starred_items` in a single SQLite transaction with cascading foreign keys to `tracks`.
+      - Updated `deleteAlbum(id: number)` to also clean up associated `starred_items`.
+    - **REST API Endpoint**:
+      - Added `DELETE /api/albums` (`src/routes/api/albums/+server.ts`) accepting `{ ids: number[] }` and invoking `deleteAlbums(albumIds)`.
+    - **AlbumCard Multi-Select Checkbox**:
+      - Added `selected`, `selectionMode`, and `onToggleSelect` props to `src/lib/components/AlbumCard.svelte`.
+      - Embedded `CustomCheckbox` at top-left of album artwork, visible on hover, when selected, or when selection mode is active.
+      - Added distinct selected styles: emerald border, glowing ring (`ring-2 ring-emerald-500/70`), and elevation.
+      - Clicking cards in selection mode toggles selection; clicking without selection navigates to `/album/[id]`.
+    - **Vault Multi-Select UI & Actions**:
+      - On main Vault page (`src/routes/+page.svelte`), added batch selection header above album grid with "Select All / Deselect All", count badge, clear button, and red "Remove Selected (N)" trash can action.
+      - Added floating batch actions dock with count pill and "Remove from Vault" button positioned dynamically to prevent overlapping the persistent mini-player.
+      - Guaranteed audio files on disk in `./music` remain completely untouched when removing albums from the Vault.
 
 ---
 

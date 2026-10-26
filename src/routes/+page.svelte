@@ -33,6 +33,7 @@
 	} from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { player } from '$lib/services/player.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -42,6 +43,9 @@
 	let selectedLyrics = $state(data.activeLyrics || 'all');
 	let currentView = $state<'albums' | 'tracks'>(data.activeView || 'albums');
 	let showFilters = $state(false);
+
+	let selectedAlbumIds = $state<number[]>([]);
+	let isBatchDeleting = $state(false);
 
 	const activeFilterCount = $derived(
 		(selectedFormat !== 'all' && selectedFormat !== '' ? 1 : 0) +
@@ -58,7 +62,58 @@
 		selectedLyrics = data.activeLyrics || 'all';
 		currentView = data.activeView || 'albums';
 		tracksList = [...data.matchingTracks];
+		selectedAlbumIds = selectedAlbumIds.filter((id) => data.albums.some((a) => a.id === id));
 	});
+
+	function toggleAlbumSelect(id: number) {
+		if (selectedAlbumIds.includes(id)) {
+			selectedAlbumIds = selectedAlbumIds.filter((x) => x !== id);
+		} else {
+			selectedAlbumIds = [...selectedAlbumIds, id];
+		}
+	}
+
+	function toggleSelectAll() {
+		if (selectedAlbumIds.length === data.albums.length) {
+			selectedAlbumIds = [];
+		} else {
+			selectedAlbumIds = data.albums.map((a) => a.id);
+		}
+	}
+
+	async function handleBatchDelete() {
+		if (selectedAlbumIds.length === 0) return;
+		const count = selectedAlbumIds.length;
+		if (
+			!confirm(
+				`Remove ${count} selected ${count === 1 ? 'album' : 'albums'} from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the albums will return to the Library Scanner.`
+			)
+		) {
+			return;
+		}
+
+		isBatchDeleting = true;
+		try {
+			const res = await fetch('/api/albums', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ids: selectedAlbumIds })
+			});
+
+			if (res.ok) {
+				selectedAlbumIds = [];
+				await invalidateAll();
+			} else {
+				const errData = await res.json().catch(() => ({}));
+				alert(`Failed to remove albums: ${errData.error || res.statusText}`);
+			}
+		} catch (err: any) {
+			console.error('Failed to batch remove albums:', err);
+			alert(`Failed to remove albums: ${err.message}`);
+		} finally {
+			isBatchDeleting = false;
+		}
+	}
 
 	function applyFilters(overrides: {
 		q?: string;
@@ -68,6 +123,7 @@
 		lyrics?: string;
 		view?: 'albums' | 'tracks';
 	} = {}) {
+		selectedAlbumIds = [];
 		const params = new URLSearchParams(window.location.search);
 
 		const q = overrides.q !== undefined ? overrides.q : searchQuery;
@@ -428,9 +484,68 @@
 	<!-- VIEW 1: ALBUMS GRID -->
 	{#if currentView === 'albums'}
 		{#if data.albums.length > 0}
+			<!-- Multi-select Toolbar Header -->
+			<div class="mb-3.5 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-neutral-800/80 bg-neutral-900/40 px-3.5 py-2.5 backdrop-blur-sm">
+				<div class="flex items-center gap-2.5">
+					<button
+						type="button"
+						onclick={toggleSelectAll}
+						class="flex items-center gap-2 rounded-lg border border-neutral-700/80 bg-neutral-950/80 px-2.5 py-1 text-xs font-semibold text-neutral-300 hover:border-neutral-600 hover:text-white transition cursor-pointer"
+					>
+						<CustomCheckbox
+							checked={selectedAlbumIds.length > 0 && selectedAlbumIds.length === data.albums.length}
+							onchange={toggleSelectAll}
+						/>
+						<span>{selectedAlbumIds.length === data.albums.length ? 'Deselect All' : 'Select All'} ({data.albums.length})</span>
+					</button>
+
+					{#if selectedAlbumIds.length > 0}
+						<span class="text-xs text-neutral-400">
+							<strong class="text-emerald-400 font-bold">{selectedAlbumIds.length}</strong> of {data.albums.length} selected
+						</span>
+					{/if}
+				</div>
+
+				{#if selectedAlbumIds.length > 0}
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							onclick={() => (selectedAlbumIds = [])}
+							class="text-xs text-neutral-400 hover:text-neutral-200 transition px-2 py-1 cursor-pointer"
+						>
+							Clear selection
+						</button>
+						<button
+							type="button"
+							onclick={handleBatchDelete}
+							disabled={isBatchDeleting}
+							class="flex items-center gap-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white px-3 py-1 text-xs font-semibold shadow-md shadow-rose-950/30 transition disabled:opacity-50 cursor-pointer"
+							title="Remove selected albums from Vault"
+						>
+							{#if isBatchDeleting}
+								<div class="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+								<span>Removing...</span>
+							{:else}
+								<Trash2 class="h-3.5 w-3.5" />
+								<span>Remove Selected ({selectedAlbumIds.length})</span>
+							{/if}
+						</button>
+					</div>
+				{/if}
+			</div>
+
 			<section class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
 				{#each data.albums as album (album.id)}
-					<AlbumCard {album} onAlbumDeleted={() => invalidateAll()} />
+					<AlbumCard
+						{album}
+						selected={selectedAlbumIds.includes(album.id)}
+						selectionMode={selectedAlbumIds.length > 0}
+						onToggleSelect={toggleAlbumSelect}
+						onAlbumDeleted={(id) => {
+							selectedAlbumIds = selectedAlbumIds.filter((x) => x !== id);
+							invalidateAll();
+						}}
+					/>
 				{/each}
 			</section>
 		{:else}
@@ -663,5 +778,52 @@
 				</button>
 			</section>
 		{/if}
+	{/if}
+
+	<!-- Floating Batch Actions Dock (shows when items are selected) -->
+	{#if selectedAlbumIds.length > 0 && currentView === 'albums'}
+		<div class="fixed {player.currentTrack ? 'bottom-20 sm:bottom-22' : 'bottom-6'} inset-x-0 z-40 flex justify-center px-4 pointer-events-none">
+			<div class="pointer-events-auto flex items-center gap-3 rounded-2xl border border-neutral-700/80 bg-neutral-900/95 px-4 py-3 shadow-2xl backdrop-blur-xl">
+				<div class="flex items-center gap-2 border-r border-neutral-800 pr-3">
+					<span class="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-400 border border-emerald-500/40">
+						{selectedAlbumIds.length}
+					</span>
+					<span class="text-xs font-medium text-neutral-200">
+						{selectedAlbumIds.length === 1 ? 'album selected' : 'albums selected'}
+					</span>
+				</div>
+
+				<button
+					type="button"
+					onclick={toggleSelectAll}
+					class="text-xs text-neutral-400 hover:text-white transition cursor-pointer"
+				>
+					{selectedAlbumIds.length === data.albums.length ? 'Deselect All' : 'Select All'}
+				</button>
+
+				<button
+					type="button"
+					onclick={() => (selectedAlbumIds = [])}
+					class="text-xs text-neutral-400 hover:text-white transition cursor-pointer"
+				>
+					Clear
+				</button>
+
+				<button
+					type="button"
+					onclick={handleBatchDelete}
+					disabled={isBatchDeleting}
+					class="flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg shadow-rose-950/50 transition disabled:opacity-50 cursor-pointer"
+				>
+					{#if isBatchDeleting}
+						<div class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+						<span>Removing...</span>
+					{:else}
+						<Trash2 class="h-4 w-4" />
+						<span>Remove from Vault</span>
+					{/if}
+				</button>
+			</div>
+		</div>
 	{/if}
 </div>

@@ -963,7 +963,21 @@ export function updateAlbum(
 }
 
 export function deleteAlbum(id: number): void {
+	db.prepare("DELETE FROM starred_items WHERE item_type = 'album' AND item_id = ?").run(id);
 	db.prepare('DELETE FROM albums WHERE id = ?').run(id);
+}
+
+export function deleteAlbums(ids: number[]): void {
+	if (!ids || ids.length === 0) return;
+	const stmt = db.prepare('DELETE FROM albums WHERE id = ?');
+	const starStmt = db.prepare("DELETE FROM starred_items WHERE item_type = 'album' AND item_id = ?");
+	const tx = db.transaction(() => {
+		for (const id of ids) {
+			starStmt.run(id);
+			stmt.run(id);
+		}
+	});
+	tx();
 }
 
 export function updateTrack(
