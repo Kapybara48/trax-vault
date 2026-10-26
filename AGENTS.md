@@ -460,10 +460,30 @@ This document preserves persistent context, architectural conventions, recent ch
       - **LRC Maker Studio (`/lrc-maker`)**: Added direct `Flag Censored` / `Censored LRC` toggle button in studio top bar, auto-detection from existing track lyrics, and status persistence on save.
       - **LRCLIB Candidate Modal (`LrcLibModal.svelte`)**: Auto-detected censored text on LRCLIB candidate cards with an orange `Censored` badge and provided a 1-click `Use Censored LRC` application button.
       - **Search Parser (`src/lib/search.ts`)**: Supported queries like `censored_lrc`, `lyrics:censored`, and `lyrics:censored_lrc`.
+44. **Clean LRC Formatting & Subsonic Bracket Header Stripping**:
+    - **Root Cause Resolution**:
+      - Resolved issue where third-party Subsonic clients (**Symfonium** and **Feishin**) displayed metadata headers (e.g. `[ti:...]`, `[by:Trax Vault]`, `[]`) as singing lyrics at timestamp 0:00.
+      - Trax Vault's `generateLrcContent()` previously prepended `[ti:...]`, `[ar:...]`, `[al:...]`, `[length:...]`, `[by:Trax Vault]`, and `[au:Instrumental]` to `.lrc` outputs, and Subsonic handlers pushed non-timestamped lines into `timedLines` with `{ start: 0, value: line }`.
+    - **Isomorphic `stripLrcMetadataHeaders(content: string): string`**:
+      - Added in `src/lib/utils.ts` and re-exported in `src/lib/server/scanner.ts`.
+      - Strips metadata header tags (`[ti:...]`, `[ar:...]`, `[al:...]`, `[by:...]`, `[length:...]`, `[au:...]`, `[re:...]`, `[ve:...]`, `[offset:...]`) and empty bracket tags (`[]`, `[ ]`) while strictly preserving timestamps (`[00:12.34]`), section markers (`[Chorus]`, `[Verse 1]`), instrumental markers (`[00:00.00]♪`), and lyrics lines.
+      - Automatically trims leading and trailing empty lines.
+    - **LRC Maker Studio Generation & Editing (`src/routes/lrc-maker/+page.svelte`)**:
+      - Updated `generateLrcContent()` to output pure, clean synced lyrics without legacy `[...]` headers.
+      - Applied `stripLrcMetadataHeaders` to existing lyrics on mount, when switching from Text to Sync mode, when importing from LRCLIB, and when saving from text mode.
+    - **Subsonic API Handlers (`src/lib/server/subsonic/handlers.ts`)**:
+      - **OpenSubsonic `getLyricsBySongId.view`**:
+        - Applied `stripLrcMetadataHeaders` to disk companion and database lyrics.
+        - Returns empty `structuredLyrics: []` for instrumental tracks so clients do not display fake singing lines.
+        - For synced files (`isSynced === true`), only lines with valid timestamps are pushed into `timedLines`; untimed or header lines are never assigned `start: 0`.
+      - **Subsonic `getLyrics.view`**:
+        - Resolves folder companion files on disk if available and runs `stripLrcMetadataHeaders` before responding.
+    - **REST API Endpoint (`src/routes/api/tracks/[id]/lyrics/+server.ts`)**:
+      - Sanitizes `lyrics_text` with `stripLrcMetadataHeaders` in both `GET` and `POST` handlers before persisting to companion `.lrc` files on disk and SQLite.
+    - **Database Migration & Backfill (`src/lib/server/db.ts`)**:
+      - Added automated startup routine querying tracks with legacy `[ti:%`, `[ar:%`, `[by:%`, etc., and sanitizing `tracks.lyrics_text` in an atomic transaction.
 
 ---
-
-
 
 ## 4. Workflows & Verification
 

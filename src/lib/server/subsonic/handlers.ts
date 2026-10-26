@@ -28,7 +28,14 @@ import {
 	getPlayQueue,
 	savePlayQueue
 } from '$lib/server/db.js';
-import { findCompanionLyricsFile, resolveTrackFilePath, getLibraryScanStatus, syncLibraryFromDisk } from '$lib/server/scanner.js';
+import {
+	findCompanionLyricsFile,
+	resolveTrackFilePath,
+	getLibraryScanStatus,
+	syncLibraryFromDisk,
+	isInstrumentalLyrics,
+	stripLrcMetadataHeaders
+} from '$lib/server/scanner.js';
 import type { Album, Track } from '$lib/types/index.js';
 import type { User } from '$lib/server/auth.js';
 import { SubsonicErrorCode } from './types.js';
@@ -1265,7 +1272,20 @@ export const subsonicHandlers: Record<
 			}
 		}
 
+		lyricsText = stripLrcMetadataHeaders(lyricsText);
+
 		if (!lyricsText.trim()) {
+			return {
+				data: {
+					lyricsList: {
+						structuredLyrics: []
+					}
+				}
+			};
+		}
+
+		// If instrumental lyrics text, OpenSubsonic clients (Symfonium/Feishin) expect empty structuredLyrics
+		if (isInstrumentalLyrics(lyricsText)) {
 			return {
 				data: {
 					lyricsList: {
@@ -1278,11 +1298,20 @@ export const subsonicHandlers: Record<
 		// Parse lines (support multi-timestamp and synced vs unsynced)
 		const lines = lyricsText.split(/\r?\n/);
 		const timedLines: Array<{ start: number; value: string }> = [];
+		const plainLines: string[] = [];
 		let isSynced = false;
 
 		const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
 
-		for (const line of lines) {
+		for (const rawLine of lines) {
+			const line = rawLine.trim();
+			if (!line) continue;
+
+			// Skip any leftover metadata tags like [ti:...] or empty brackets []
+			if (/^\[[a-zA-Z_]{1,15}:[^\]]*\]/i.test(line) || /^\[\s*\]$/.test(line)) {
+				continue;
+			}
+
 			const matches = [...line.matchAll(timeRegex)];
 			if (matches.length > 0) {
 				isSynced = true;
@@ -1295,14 +1324,18 @@ export const subsonicHandlers: Record<
 					const totalMs = min * 60000 + sec * 1000 + ms;
 					timedLines.push({ start: totalMs, value: text });
 				}
-			} else if (line.trim()) {
-				timedLines.push({ start: 0, value: line.trim() });
+			} else {
+				plainLines.push(line);
 			}
 		}
 
 		if (isSynced) {
 			timedLines.sort((a, b) => a.start - b.start);
 		}
+
+		const resultLines = isSynced
+			? timedLines
+			: plainLines.map((l) => ({ start: 0, value: l }));
 
 		return {
 			data: {
@@ -1311,7 +1344,7 @@ export const subsonicHandlers: Record<
 						{
 							lang: 'eng',
 							synced: isSynced,
-							line: timedLines
+							line: resultLines
 						}
 					]
 				}
@@ -1330,12 +1363,25 @@ export const subsonicHandlers: Record<
 			).get(`%${title}%`, `%${artist}%`, `%${artist}%`) as Track | undefined;
 		}
 
+		let lyricsText = track?.lyrics_text || '';
+		if (track) {
+			const resolvedPath = resolveTrackFilePath(track);
+			if (resolvedPath && fs.existsSync(resolvedPath)) {
+				const companion = findCompanionLyricsFile(resolvedPath, track.title);
+				if (companion && companion.content) {
+					lyricsText = companion.content;
+				}
+			}
+		}
+
+		lyricsText = stripLrcMetadataHeaders(lyricsText);
+
 		return {
 			data: {
 				lyrics: {
 					artist: artist || '',
 					title: title || '',
-					content: track?.lyrics_text || ''
+					content: lyricsText
 				}
 			}
 		};

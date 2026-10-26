@@ -170,8 +170,8 @@ export interface CompanionLyricsResult {
 	isWritable: boolean;
 }
 
-import { isInstrumentalLyrics, isCensoredLyrics } from '$lib/utils.js';
-export { isInstrumentalLyrics, isCensoredLyrics };
+import { isInstrumentalLyrics, isCensoredLyrics, stripLrcMetadataHeaders } from '$lib/utils.js';
+export { isInstrumentalLyrics, isCensoredLyrics, stripLrcMetadataHeaders };
 
 /**
  * Searches the directory of an audio file for matching companion .lrc or .txt files.

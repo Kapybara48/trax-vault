@@ -39,7 +39,7 @@
 	import { player } from '$lib/services/player.svelte.js';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
 	import type { LrcLibCandidate, LyricsStatus } from '$lib/types/index.js';
-	import { isCensoredLyrics } from '$lib/utils.js';
+	import { isCensoredLyrics, stripLrcMetadataHeaders } from '$lib/utils.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -193,20 +193,11 @@
 			  ];
 	}
 
-	// Generate standard .lrc file text with metadata
+	// Generate clean standard .lrc file text (without legacy metadata headers)
 	function generateLrcContent(): string {
-		const header: string[] = [];
-		if (trackTitle) header.push(`[ti:${trackTitle}]`);
-		if (trackArtist) header.push(`[ar:${trackArtist}]`);
-		if (albumTitle) header.push(`[al:${albumTitle}]`);
-		if (duration > 0) header.push(`[length:${formatDurationShort(duration)}]`);
-		if (isInstrumental) header.push('[au:Instrumental]');
-		header.push('[by:Trax Vault]');
-		header.push('');
-
 		if (isInstrumental) {
 			const marker = instrumentalFormat === 'note' ? '♪' : '[instrumental]';
-			return [...header, `[00:00.00]${marker}`].join('\n');
+			return `[00:00.00]${marker}`;
 		}
 
 		const body = lyricLines.map((l) => {
@@ -216,7 +207,7 @@
 			return l.text;
 		});
 
-		return [...header, ...body].join('\n');
+		return body.join('\n');
 	}
 
 	// Initial Setup on Mount
@@ -251,8 +242,9 @@
 
 		// 2. Load existing lyrics from track or database
 		if (data.existingLyrics && data.existingLyrics.trim()) {
-			rawLyricsText = data.existingLyrics;
-			lyricLines = parseLyrics(data.existingLyrics);
+			const cleanExisting = stripLrcMetadataHeaders(data.existingLyrics);
+			rawLyricsText = cleanExisting;
+			lyricLines = parseLyrics(cleanExisting);
 			if (
 				data.track?.lyrics === 'instrumental' ||
 				/\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]\s*(♪|♫|\[instrumental\]|\(instrumental\)|instrumental)/i.test(data.existingLyrics) ||
@@ -260,7 +252,7 @@
 			) {
 				isInstrumental = true;
 				instrumentalFormat = data.existingLyrics.includes('[instrumental]') ? 'tag' : 'note';
-			} else if (data.track?.lyrics === 'censored_lrc' || isCensoredLyrics(data.existingLyrics)) {
+			} else if (data.track?.lyrics === 'censored_lrc' || isCensoredLyrics(cleanExisting)) {
 				isCensored = true;
 			}
 		} else if (data.track?.lyrics === 'instrumental') {
@@ -640,10 +632,11 @@
 			setAsInstrumental('note');
 			isCensored = false;
 		} else {
-			rawLyricsText = result.text;
-			lyricLines = parseLyrics(result.text);
+			const cleanText = stripLrcMetadataHeaders(result.text);
+			rawLyricsText = cleanText;
+			lyricLines = parseLyrics(cleanText);
 			activeLineIndex = 0;
-			isCensored = result.status === 'censored_lrc' || isCensoredLyrics(result.text);
+			isCensored = result.status === 'censored_lrc' || isCensoredLyrics(cleanText);
 		}
 		showLrcLibModal = false;
 		saveStatus = {
@@ -654,6 +647,7 @@
 
 	// Switch from Text Mode to Sync Mode
 	function applyRawText() {
+		rawLyricsText = stripLrcMetadataHeaders(rawLyricsText);
 		lyricLines = parseLyrics(rawLyricsText);
 		activeLineIndex = 0;
 		currentMode = 'sync';
@@ -667,6 +661,11 @@
 				message: 'No Trax Vault track associated. Use "Download .lrc" or "Copy LRC" instead.'
 			};
 			return;
+		}
+
+		if (currentMode === 'text') {
+			rawLyricsText = stripLrcMetadataHeaders(rawLyricsText);
+			lyricLines = parseLyrics(rawLyricsText);
 		}
 
 		isSaving = true;

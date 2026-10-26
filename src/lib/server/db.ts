@@ -21,6 +21,7 @@ import type {
 	Playlist
 } from '$lib/types/index.js';
 import { parseSearchQuery } from '$lib/search.js';
+import { stripLrcMetadataHeaders } from '$lib/utils.js';
 
 /**
  * Version Lifecycle & Migration Engine
@@ -358,6 +359,33 @@ try {
 	}
 } catch (err) {
 	console.warn('Track path backfill notice:', err);
+}
+
+// Sanitize existing tracks.lyrics_text by removing legacy metadata headers
+try {
+	const tracksWithHeaders = db.prepare(`
+		SELECT id, lyrics_text FROM tracks 
+		WHERE lyrics_text LIKE '[ti:%' 
+		   OR lyrics_text LIKE '[ar:%' 
+		   OR lyrics_text LIKE '[al:%' 
+		   OR lyrics_text LIKE '[by:%' 
+		   OR lyrics_text LIKE '[length:%'
+		   OR lyrics_text LIKE '[au:%'
+	`).all() as Array<{ id: number; lyrics_text: string }>;
+
+	if (tracksWithHeaders.length > 0) {
+		const updateTrackLyrics = db.prepare(`UPDATE tracks SET lyrics_text = ? WHERE id = ?`);
+		const tx = db.transaction((rows: Array<{ id: number; lyrics_text: string }>) => {
+			for (const row of rows) {
+				const cleaned = stripLrcMetadataHeaders(row.lyrics_text);
+				updateTrackLyrics.run(cleaned, row.id);
+			}
+		});
+		tx(tracksWithHeaders);
+		console.log(`[Trax Vault] Sanitized legacy LRC headers for ${tracksWithHeaders.length} track(s).`);
+	}
+} catch (err) {
+	console.warn('LRC header cleanup notice:', err);
 }
 
 /**

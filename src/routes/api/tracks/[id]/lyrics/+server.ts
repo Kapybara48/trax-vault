@@ -8,6 +8,7 @@ import {
 	resolveTrackFilePath,
 	isInstrumentalLyrics,
 	isCensoredLyrics,
+	stripLrcMetadataHeaders,
 	getMusicDirectory,
 	isPathWithin
 } from '$lib/server/scanner.js';
@@ -49,6 +50,8 @@ export const GET: RequestHandler = async ({ params }) => {
 			}
 		}
 	}
+
+	lyricsText = stripLrcMetadataHeaders(lyricsText);
 
 	// If marked instrumental in database and has no text, supply default musical note marker
 	if (track.lyrics === 'instrumental' && !lyricsText.trim()) {
@@ -92,8 +95,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		return json({ error: 'Invalid JSON payload' }, { status: 400 });
 	}
 
-	const lyricsText = typeof body.lyrics_text === 'string' ? body.lyrics_text : '';
-	
+	const rawText = typeof body.lyrics_text === 'string' ? body.lyrics_text : '';
+	let lyricsText = stripLrcMetadataHeaders(rawText);
+
 	// Auto-detect status if not specified or verify synced vs plain vs instrumental vs censored
 	let status: LyricsStatus = body.status || 'synced_lrc';
 	if (!body.status) {
@@ -105,6 +109,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			const hasTimestamps = /\[\d{1,2}:\d{2}/.test(lyricsText);
 			status = hasTimestamps ? 'synced_lrc' : 'plain_txt';
 		}
+	}
+
+	// For instrumental tracks, ensure standard marker if text is empty
+	if (status === 'instrumental' && !lyricsText.trim()) {
+		lyricsText = '[00:00.00]♪';
 	}
 
 	// 1. Save directly to the song's folder file on disk IF explicitly requested

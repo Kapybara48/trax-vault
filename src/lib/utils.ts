@@ -173,3 +173,53 @@ export function isCensoredLyrics(content: string): boolean {
 	return false;
 }
 
+/**
+ * Strips metadata header tags (e.g. [ti:...], [ar:...], [al:...], [by:...], [length:...], [au:...])
+ * and empty brackets [] from lyrics content, while strictly preserving timestamps,
+ * section markers ([Chorus]), instrumental indicators, and singing lyrics.
+ */
+export function stripLrcMetadataHeaders(content: string): string {
+	if (!content || !content.trim()) return '';
+
+	const lines = content.split(/\r?\n/);
+	const cleanLines: string[] = [];
+
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (!line) {
+			cleanLines.push('');
+			continue;
+		}
+
+		// Check if line contains only LRC metadata tags like [ti:...], [by:...], [offset:...], or empty brackets []
+		const withoutMeta = line
+			.replace(/\[[a-zA-Z_]{1,15}:[^\]]*\]/gi, '')
+			.replace(/\[\s*\]/g, '')
+			.trim();
+
+		// If the line had content, but removing metadata tags left it completely empty, skip this header line
+		if (!withoutMeta) {
+			continue;
+		}
+
+		// If a line has both an inline metadata tag and lyrics, clean the tag out
+		if (withoutMeta !== line) {
+			const cleaned = line.replace(/\[[a-zA-Z_]{1,15}:[^\]]*\]/gi, '').replace(/\[\s*\]/g, '').trim();
+			cleanLines.push(cleaned);
+		} else {
+			cleanLines.push(rawLine);
+		}
+	}
+
+	// Remove leading empty lines
+	while (cleanLines.length > 0 && cleanLines[0].trim() === '') {
+		cleanLines.shift();
+	}
+	// Remove trailing empty lines
+	while (cleanLines.length > 0 && cleanLines[cleanLines.length - 1].trim() === '') {
+		cleanLines.pop();
+	}
+
+	return cleanLines.join('\n');
+}
+
