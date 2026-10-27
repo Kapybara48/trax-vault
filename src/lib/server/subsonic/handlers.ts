@@ -350,6 +350,14 @@ export const subsonicHandlers: Record<
 		};
 	},
 
+	createBookmark: async () => {
+		return { data: {} };
+	},
+
+	deleteBookmark: async () => {
+		return { data: {} };
+	},
+
 	getIndexes: async (params, user) => {
 		const rawArtists = getDistinctArtists();
 		const indexMap = new Map<string, any[]>();
@@ -1418,6 +1426,14 @@ export const subsonicHandlers: Record<
 				}
 			}
 		};
+	},
+
+	getInternetRadioStation: async (params, user) => {
+		return subsonicHandlers.getInternetRadioStations(params, user);
+	},
+
+	getRadioStations: async (params, user) => {
+		return subsonicHandlers.getInternetRadioStations(params, user);
 	},
 
 	createInternetRadioStation: async (params) => {
