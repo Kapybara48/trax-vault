@@ -31,7 +31,8 @@
 		ArrowUp,
 		ArrowDown,
 		Globe,
-		Lock
+		Lock,
+		AlertTriangle
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 
@@ -1109,8 +1110,11 @@
 									onclick={() => {
 										if (player.currentAlbum?.id === selectedAlbum!.id && player.isPlaying) {
 											player.togglePlay();
-										} else if (selectedAlbum!.tracks.length > 0) {
-											player.playTrack(selectedAlbum!.tracks[0], selectedAlbum!, selectedAlbum!.tracks);
+										} else {
+											const playable = selectedAlbum!.tracks.filter((t) => t.is_missing !== 1);
+											if (playable.length > 0) {
+												player.playTrack(playable[0], selectedAlbum!, playable);
+											}
 										}
 									}}
 									class="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
@@ -1130,8 +1134,9 @@
 									onclick={() => {
 										player.toggleShuffle();
 										if (!player.isPlaying || player.currentAlbum?.id !== selectedAlbum!.id) {
-											if (selectedAlbum!.tracks.length > 0) {
-												player.playTrack(selectedAlbum!.tracks[0], selectedAlbum!, selectedAlbum!.tracks);
+											const playable = selectedAlbum!.tracks.filter((t) => t.is_missing !== 1);
+											if (playable.length > 0) {
+												player.playTrack(playable[0], selectedAlbum!, playable);
 											}
 										}
 									}}
@@ -1221,9 +1226,9 @@
 													type="button"
 													onclick={(e) => {
 														e.stopPropagation();
-														const discTracks = selectedAlbum!.tracks.filter((t) => (t.disc_number || 1) === currentDisc);
+														const discTracks = selectedAlbum!.tracks.filter((t) => (t.disc_number || 1) === currentDisc && t.is_missing !== 1);
 														if (discTracks.length > 0) {
-															player.playTrack(discTracks[0], selectedAlbum!, selectedAlbum!.tracks);
+															player.playTrack(discTracks[0], selectedAlbum!, discTracks);
 														}
 													}}
 													class="opacity-90 sm:opacity-0 sm:group-hover/disc:opacity-100 flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold transition cursor-pointer"
@@ -1237,15 +1242,22 @@
 									</tr>
 								{/if}
 
+								{@const isMissing = track.is_missing === 1}
 								{@const isCurrent = player.currentTrack?.id === track.id}
 								{@const isCurrentPlaying = isCurrent && player.isPlaying}
 								<tr
-									onclick={() => player.playTrack(track, selectedAlbum!, selectedAlbum!.tracks)}
-									class="group hover:bg-neutral-800/50 transition cursor-pointer rounded-xl h-12 {isCurrent ? 'bg-emerald-950/20 text-white' : 'text-neutral-300'}"
+									onclick={() => {
+										if (isMissing) return;
+										const playable = selectedAlbum!.tracks.filter((t) => t.is_missing !== 1);
+										player.playTrack(track, selectedAlbum!, playable);
+									}}
+									class="group transition rounded-xl h-12 {isMissing ? 'opacity-60 bg-rose-950/10 cursor-not-allowed' : 'hover:bg-neutral-800/50 cursor-pointer'} {isCurrent ? 'bg-emerald-950/20 text-white' : 'text-neutral-300'}"
 								>
 									<!-- Track # or Play Action -->
 									<td class="text-center font-mono w-10">
-										{#if isCurrentPlaying}
+										{#if isMissing}
+											<AlertTriangle class="w-3.5 h-3.5 text-rose-400 mx-auto" />
+										{:else if isCurrentPlaying}
 											<div class="flex items-end justify-center gap-0.5 h-3">
 												<span class="w-0.5 bg-emerald-400 animate-pulse h-full"></span>
 												<span class="w-0.5 bg-emerald-400 animate-pulse h-1.5"></span>
@@ -1259,8 +1271,13 @@
 
 									<!-- Track Title & Artist -->
 									<td class="py-2 pr-3 min-w-0">
-										<div class="font-semibold truncate {isCurrent ? 'text-emerald-300' : 'text-neutral-100'}">
-											{track.title}
+										<div class="font-semibold truncate flex items-center gap-1.5 {isMissing ? 'text-rose-200' : isCurrent ? 'text-emerald-300' : 'text-neutral-100'}">
+											<span>{track.title}</span>
+											{#if isMissing}
+												<span class="rounded bg-rose-500/20 px-1.5 py-0.2 text-[9px] font-bold text-rose-300 border border-rose-500/30 shrink-0">
+													Missing
+												</span>
+											{/if}
 										</div>
 										<div class="text-[10px] text-neutral-400 truncate">
 											{track.artist || selectedAlbum!.artist}
@@ -1270,18 +1287,24 @@
 									{#if !showLyricsDrawer}
 										<!-- Quality Badge -->
 										<td class="hidden sm:table-cell pr-3">
-											<div class="flex items-center gap-1.5 flex-wrap">
-												<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
-													? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
-													: 'bg-neutral-800 text-neutral-300 border border-neutral-700/40'}">
-													{track.format}
+											{#if isMissing}
+												<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-950/60 text-rose-300 border border-rose-800/50">
+													Missing File
 												</span>
-												{#if track.bitrate_kbps}
-													<span class="text-[10px] font-mono text-neutral-400 bg-neutral-950/70 px-1.5 py-0.5 rounded border border-neutral-800/80">
-														{track.bitrate_kbps.toLocaleString()} kbps
+											{:else}
+												<div class="flex items-center gap-1.5 flex-wrap">
+													<span class="px-2 py-0.5 rounded text-[10px] font-mono {track.format === 'FLAC'
+														? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
+														: 'bg-neutral-800 text-neutral-300 border border-neutral-700/40'}">
+														{track.format}
 													</span>
-												{/if}
-											</div>
+													{#if track.bitrate_kbps}
+														<span class="text-[10px] font-mono text-neutral-400 bg-neutral-950/70 px-1.5 py-0.5 rounded border border-neutral-800/80">
+															{track.bitrate_kbps.toLocaleString()} kbps
+														</span>
+													{/if}
+												</div>
+											{/if}
 										</td>
 
 										<!-- Lyrics Indicator Button -->

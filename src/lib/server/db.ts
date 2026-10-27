@@ -18,7 +18,8 @@ import type {
 	LyricsStatus,
 	FixerRules,
 	SearchFilters,
-	Playlist
+	Playlist,
+	InternetRadioStation
 } from '$lib/types/index.js';
 import { parseSearchQuery } from '$lib/search.js';
 import { stripLrcMetadataHeaders } from '$lib/utils.js';
@@ -282,7 +283,22 @@ if (!columnExists('users', 'subsonic_secret')) {
 	db.exec(`ALTER TABLE users ADD COLUMN subsonic_secret TEXT;`);
 }
 
+if (!columnExists('tracks', 'is_missing')) {
+	db.exec(`ALTER TABLE tracks ADD COLUMN is_missing INTEGER NOT NULL DEFAULT 0;`);
+}
+
+db.exec(`
+	CREATE TABLE IF NOT EXISTS internet_radio_stations (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		stream_url TEXT NOT NULL,
+		home_page_url TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+`);
+
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_manually_checked ON tracks(manually_checked);`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_is_missing ON tracks(album_id, is_missing);`);
 
 // System version tracking & user_version stamping
 try {
@@ -396,8 +412,12 @@ export function computeNeedsAttention(
 	censorship: CensorshipStatus,
 	lyrics: LyricsStatus,
 	format: AudioFormat = 'FLAC',
-	rules?: FixerRules | null
+	rules?: FixerRules | null,
+	isMissing: number = 0
 ): number {
+	// Missing tracks from the album release always need attention
+	if (isMissing === 1) return 1;
+
 	// Quality checks
 	const badQuality = rules?.flag_bad_quality ?? true;
 	const needsUpgrade = rules?.flag_needs_upgrade ?? true;
@@ -499,6 +519,7 @@ export function getStats(): CollectionStats {
 			bad_quality_count: 0,
 			censored_count: 0,
 			missing_lyrics_count: 0,
+			missing_tracks_count: 0,
 			synced_lyrics_count: 0,
 			unsynced_lyrics_count: 0,
 			censored_lyrics_count: 0,
@@ -521,6 +542,7 @@ export function getStats(): CollectionStats {
 			SUM(CASE WHEN quality_rating IN ('bad', 'needs_upgrade') THEN 1 ELSE 0 END) as bad_quality,
 			SUM(CASE WHEN censorship = 'censored' THEN 1 ELSE 0 END) as censored,
 			SUM(CASE WHEN lyrics = 'missing' THEN 1 ELSE 0 END) as missing_lyrics,
+			SUM(CASE WHEN is_missing = 1 THEN 1 ELSE 0 END) as missing_tracks,
 			SUM(CASE WHEN lyrics = 'synced_lrc' THEN 1 ELSE 0 END) as synced_lyrics,
 			SUM(CASE WHEN lyrics = 'unsynced_lrc' THEN 1 ELSE 0 END) as unsynced_lyrics,
 			SUM(CASE WHEN lyrics = 'censored_lrc' THEN 1 ELSE 0 END) as censored_lyrics,
@@ -532,6 +554,7 @@ export function getStats(): CollectionStats {
 		bad_quality: number;
 		censored: number;
 		missing_lyrics: number;
+		missing_tracks: number;
 		synced_lyrics: number;
 		unsynced_lyrics: number;
 		censored_lyrics: number;
@@ -553,6 +576,7 @@ export function getStats(): CollectionStats {
 		bad_quality_count: issueCounts.bad_quality || 0,
 		censored_count: issueCounts.censored || 0,
 		missing_lyrics_count: issueCounts.missing_lyrics || 0,
+		missing_tracks_count: issueCounts.missing_tracks || 0,
 		synced_lyrics_count: issueCounts.synced_lyrics || 0,
 		unsynced_lyrics_count: issueCounts.unsynced_lyrics || 0,
 		censored_lyrics_count: issueCounts.censored_lyrics || 0,
@@ -582,6 +606,7 @@ export function getAlbums(searchQuery?: string, filter?: string, options?: Searc
 			SUM(CASE WHEN t.quality_rating IN ('bad', 'needs_upgrade') THEN 1 ELSE 0 END) as bad_quality_count,
 			SUM(CASE WHEN t.censorship = 'censored' THEN 1 ELSE 0 END) as censored_count,
 			SUM(CASE WHEN t.lyrics = 'missing' THEN 1 ELSE 0 END) as missing_lyrics_count,
+			SUM(CASE WHEN t.is_missing = 1 THEN 1 ELSE 0 END) as missing_tracks_count,
 			SUM(CASE WHEN t.manually_checked = 1 THEN 1 ELSE 0 END) as checked_count
 	`;
 
@@ -833,6 +858,7 @@ export function getAlbumById(id: number): { album: Album; tracks: Track[] } | nu
 			SUM(CASE WHEN t.quality_rating IN ('bad', 'needs_upgrade') THEN 1 ELSE 0 END) as bad_quality_count,
 			SUM(CASE WHEN t.censorship = 'censored' THEN 1 ELSE 0 END) as censored_count,
 			SUM(CASE WHEN t.lyrics = 'missing' THEN 1 ELSE 0 END) as missing_lyrics_count,
+			SUM(CASE WHEN t.is_missing = 1 THEN 1 ELSE 0 END) as missing_tracks_count,
 			SUM(CASE WHEN t.manually_checked = 1 THEN 1 ELSE 0 END) as checked_count
 		FROM albums a
 		LEFT JOIN tracks t ON t.album_id = a.id
@@ -1159,6 +1185,13 @@ export function updateAlbumAndTracksFromMusicBrainz(
 		artist?: string | null;
 		track_number: number;
 		disc_number?: number;
+	}>,
+	missingTracksToAdd?: Array<{
+		disc_number?: number;
+		track_number: number;
+		title: string;
+		artist?: string | null;
+		duration_ms?: number | null;
 	}>
 ): { album: Album; tracks: Track[] } | null {
 	const albumRes = getAlbumWithTracks(albumId);
@@ -1206,6 +1239,7 @@ export function updateAlbumAndTracksFromMusicBrainz(
 				track_number = ?,
 				disc_number = ?,
 				manually_checked = 1,
+				is_missing = 0,
 				needs_attention = ?,
 				updated_at = datetime('now')
 			WHERE id = ? AND album_id = ?
@@ -1219,9 +1253,57 @@ export function updateAlbumAndTracksFromMusicBrainz(
 			const trackNumber = t.track_number ?? existing.track_number;
 			const title = t.title.trim();
 			const artist = t.artist?.trim() ?? existing.artist;
-			const needsAtt = computeNeedsAttention(existing.quality_rating, existing.censorship, existing.lyrics, existing.format, rules);
+			const needsAtt = computeNeedsAttention(existing.quality_rating, existing.censorship, existing.lyrics, existing.format, rules, 0);
 
 			updateTrackStmt.run(title, artist, trackNumber, discNumber, needsAtt, t.id, albumId);
+		}
+
+		// 3. Add or update missing tracks from release that have no local audio files
+		if (missingTracksToAdd && missingTracksToAdd.length > 0) {
+			const checkTrackStmt = db.prepare('SELECT id, is_missing FROM tracks WHERE album_id = ? AND disc_number = ? AND track_number = ?');
+			const insertMissingStmt = db.prepare(`
+				INSERT INTO tracks (
+					album_id, disc_number, track_number, title, artist, duration_ms,
+					format, quality_rating, censorship, lyrics, needs_attention,
+					manually_checked, is_missing, notes, file_path, lyrics_text
+				) VALUES (
+					?, ?, ?, ?, ?, ?,
+					'OTHER', 'needs_upgrade', 'unknown', 'missing', 1,
+					0, 1, '[Missing Song] Missing from local album on disk', NULL, NULL
+				)
+			`);
+			const updateMissingStmt = db.prepare(`
+				UPDATE tracks SET
+					title = ?,
+					artist = ?,
+					duration_ms = ?,
+					is_missing = 1,
+					needs_attention = 1,
+					notes = '[Missing Song] Missing from local album on disk',
+					updated_at = datetime('now')
+				WHERE id = ?
+			`);
+
+			for (const mt of missingTracksToAdd) {
+				const existing = checkTrackStmt.get(albumId, mt.disc_number, mt.track_number) as { id: number; is_missing: number } | undefined;
+				if (!existing) {
+					insertMissingStmt.run(
+						albumId,
+						mt.disc_number,
+						mt.track_number,
+						mt.title.trim(),
+						mt.artist?.trim() ?? albumData.artist ?? null,
+						mt.duration_ms ?? null
+					);
+				} else if (existing.is_missing === 1) {
+					updateMissingStmt.run(
+						mt.title.trim(),
+						mt.artist?.trim() ?? albumData.artist ?? null,
+						mt.duration_ms ?? null,
+						existing.id
+					);
+				}
+			}
 		}
 	});
 
@@ -1245,6 +1327,7 @@ export function addTrackToAlbum(
 		censorship?: CensorshipStatus;
 		lyrics?: LyricsStatus;
 		manually_checked?: number;
+		is_missing?: number;
 		notes?: string | null;
 		file_path?: string | null;
 		lyrics_text?: string | null;
@@ -1262,12 +1345,13 @@ export function addTrackToAlbum(
 	const quality = trackData.quality_rating || 'good';
 	const censorship = trackData.censorship || 'unknown';
 	const lyrics = trackData.lyrics || 'missing';
+	const isMissing = trackData.is_missing ?? 0;
 	const rules = getAlbumFixerRules(albumId);
-	const needsAtt = computeNeedsAttention(quality, censorship, lyrics, format, rules);
+	const needsAtt = computeNeedsAttention(quality, censorship, lyrics, format, rules, isMissing);
 
 	const result = db.prepare(`
-		INSERT INTO tracks (album_id, disc_number, track_number, title, artist, duration_ms, format, bitrate_kbps, sample_rate, bits_per_sample, quality_rating, censorship, lyrics, needs_attention, manually_checked, notes, file_path, lyrics_text)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tracks (album_id, disc_number, track_number, title, artist, duration_ms, format, bitrate_kbps, sample_rate, bits_per_sample, quality_rating, censorship, lyrics, needs_attention, manually_checked, is_missing, notes, file_path, lyrics_text)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`).run(
 		albumId,
 		trackData.disc_number || 1,
@@ -1284,6 +1368,7 @@ export function addTrackToAlbum(
 		lyrics,
 		needsAtt,
 		trackData.manually_checked ?? 0,
+		isMissing,
 		trackData.notes?.trim() ?? null,
 		trackData.file_path?.trim() ?? null,
 		trackData.lyrics_text ?? null
@@ -1385,6 +1470,8 @@ export function getIssuesTracks(params?: {
 		conditions.push("t.censorship = 'censored'");
 	} else if (params?.issueType === 'missing_lyrics') {
 		conditions.push("t.lyrics = 'missing'");
+	} else if (params?.issueType === 'missing_tracks') {
+		conditions.push('t.is_missing = 1');
 	} else if (params?.issueType === 'unsynced_lyrics') {
 		conditions.push("t.lyrics = 'unsynced_lrc'");
 	} else if (params?.issueType === 'censored_lyrics') {
@@ -1893,5 +1980,33 @@ export function savePlayQueue(userId: number, currentTrackId: number | null, pos
 			track_ids = excluded.track_ids,
 			changed_at = excluded.changed_at
 	`).run(userId, currentTrackId, position, JSON.stringify(trackIds), now);
+}
+
+export function getInternetRadioStations(): InternetRadioStation[] {
+	return db.prepare('SELECT * FROM internet_radio_stations ORDER BY name ASC').all() as InternetRadioStation[];
+}
+
+export function createInternetRadioStation(name: string, streamUrl: string, homePageUrl?: string | null): InternetRadioStation {
+	const info = db.prepare('INSERT INTO internet_radio_stations (name, stream_url, home_page_url) VALUES (?, ?, ?)').run(
+		name.trim(),
+		streamUrl.trim(),
+		homePageUrl?.trim() || null
+	);
+	return db.prepare('SELECT * FROM internet_radio_stations WHERE id = ?').get(info.lastInsertRowid) as InternetRadioStation;
+}
+
+export function updateInternetRadioStation(id: number, name: string, streamUrl: string, homePageUrl?: string | null): boolean {
+	const info = db.prepare('UPDATE internet_radio_stations SET name = ?, stream_url = ?, home_page_url = ? WHERE id = ?').run(
+		name.trim(),
+		streamUrl.trim(),
+		homePageUrl?.trim() || null,
+		id
+	);
+	return info.changes > 0;
+}
+
+export function deleteInternetRadioStation(id: number): boolean {
+	const info = db.prepare('DELETE FROM internet_radio_stations WHERE id = ?').run(id);
+	return info.changes > 0;
 }
 

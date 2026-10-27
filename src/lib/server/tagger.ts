@@ -408,7 +408,18 @@ export async function applyAlbumTags(
 		updatedTracksCount++;
 	}
 
-	// 3. Persist changes into SQLite database
+	// 3. Compute missing tracks from MusicBrainz release
+	const confirmedMbTrackIds = new Set(confirmedMatches.map((m) => m.mbTrackId));
+	const missingMbTracks = release.tracks.filter((t) => !confirmedMbTrackIds.has(t.id));
+	const missingTracksToAdd = missingMbTracks.map((mt) => ({
+		disc_number: mt.disc_number,
+		track_number: mt.track_number,
+		title: mt.title,
+		artist: mt.artist || release.artist,
+		duration_ms: mt.duration_ms
+	}));
+
+	// 4. Persist changes into SQLite database
 	const albumUpdate: {
 		title?: string;
 		artist?: string;
@@ -425,7 +436,7 @@ export async function applyAlbumTags(
 	if (options.updateYear && release.release_year) albumUpdate.release_year = release.release_year;
 	if (newCoverUrl) albumUpdate.cover_url = newCoverUrl;
 
-	const updated = updateAlbumAndTracksFromMusicBrainz(albumId, albumUpdate, trackUpdates);
+	const updated = updateAlbumAndTracksFromMusicBrainz(albumId, albumUpdate, trackUpdates, missingTracksToAdd);
 	if (!updated) {
 		throw new Error('Failed to update album in database');
 	}
@@ -748,7 +759,17 @@ export async function applyFolderTags(
 					}
 				}
 
-				updateAlbumAndTracksFromMusicBrainz(folderData.existing_album_id, albumUpdate, trackUpdates);
+				const confirmedMbTrackIds = new Set(confirmedMatches.map((m) => m.mbTrackId));
+				const missingMbTracks = release.tracks.filter((t) => !confirmedMbTrackIds.has(t.id));
+				const missingTracksToAdd = missingMbTracks.map((mt) => ({
+					disc_number: mt.disc_number,
+					track_number: mt.track_number,
+					title: mt.title,
+					artist: mt.artist || release.artist,
+					duration_ms: mt.duration_ms
+				}));
+
+				updateAlbumAndTracksFromMusicBrainz(folderData.existing_album_id, albumUpdate, trackUpdates, missingTracksToAdd);
 			}
 		} else {
 			// Not in vault: re-scan folder now that tags are written, then import into Vault
@@ -773,6 +794,33 @@ export async function applyFolderTags(
 
 			// Mark all tracks of the cleanly imported album as verified
 			db.prepare('UPDATE tracks SET manually_checked = 1 WHERE album_id = ?').run(importedAlbumId);
+
+			// Insert missing tracks from the release that have no local audio files
+			const importedTrackNumbers = new Set(rescan.raw_tracks.map((t) => t.track_number));
+			const missingReleaseTracks = release.tracks.filter((rt) => !importedTrackNumbers.has(rt.track_number));
+			if (missingReleaseTracks.length > 0) {
+				const insertMissingStmt = db.prepare(`
+					INSERT INTO tracks (
+						album_id, disc_number, track_number, title, artist, duration_ms,
+						format, quality_rating, censorship, lyrics, needs_attention,
+						manually_checked, is_missing, notes, file_path, lyrics_text
+					) VALUES (
+						?, ?, ?, ?, ?, ?,
+						'OTHER', 'needs_upgrade', 'unknown', 'missing', 1,
+						0, 1, '[Missing Song] Missing from local album on disk', NULL, NULL
+					)
+				`);
+				for (const mt of missingReleaseTracks) {
+					insertMissingStmt.run(
+						importedAlbumId,
+						mt.disc_number,
+						mt.track_number,
+						mt.title.trim(),
+						mt.artist?.trim() ?? release.artist,
+						mt.duration_ms ?? null
+					);
+				}
+			}
 		}
 	}
 

@@ -78,6 +78,7 @@ export interface Album {
 	bad_quality_count?: number;
 	censored_count?: number;
 	missing_lyrics_count?: number;
+	missing_tracks_count?: number;
 	checked_count?: number;
 	matched_tracks_count?: number;
 	parsed_fixer_rules?: FixerRules;
@@ -97,6 +98,7 @@ export interface Track {
 	lyrics: LyricsStatus;
 	needs_attention: number; // 0 or 1
 	manually_checked: number; // 0 or 1 (100% verified by user)
+	is_missing?: number; // 1 if track is missing from local album release, 0 otherwise
 	notes: string | null;
 	file_path?: string | null;
 	lyrics_text?: string | null;
@@ -127,6 +129,14 @@ export interface Playlist {
 	cover_url?: string | null;
 }
 
+export interface InternetRadioStation {
+	id: number;
+	name: string;
+	stream_url: string;
+	home_page_url?: string | null;
+	created_at: string;
+}
+
 export interface CollectionStats {
 	total_albums: number;
 	total_tracks: number;
@@ -136,6 +146,7 @@ export interface CollectionStats {
 	bad_quality_count: number;
 	censored_count: number;
 	missing_lyrics_count: number;
+	missing_tracks_count?: number;
 	synced_lyrics_count: number;
 	unsynced_lyrics_count: number;
 	censored_lyrics_count?: number;

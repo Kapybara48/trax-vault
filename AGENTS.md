@@ -483,6 +483,41 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Database Migration & Backfill (`src/lib/server/db.ts`)**:
       - Added automated startup routine querying tracks with legacy `[ti:%`, `[ar:%`, `[by:%`, etc., and sanitizing `tracks.lyrics_text` in an atomic transaction.
 
+34. **Batch Synced Lyrics Downloader, Missing Album Songs, & Navic Compatibility**:
+    - **Navic / Navidrome Subsonic Protocol Compatibility**:
+      - Added SQLite table `internet_radio_stations` (`id`, `name`, `stream_url`, `home_page_url`, `created_at`).
+      - Implemented Subsonic endpoints in `src/lib/server/subsonic/handlers.ts`:
+        - `getInternetRadioStations.view`: Resolves radio stations list (eliminates Navic initial connect error `action "getInternetRadioStations" is not supported by this server`).
+        - `createInternetRadioStation.view`, `updateInternetRadioStation.view`, `deleteInternetRadioStation.view`.
+        - `getPodcasts.view`, `getNewestPodcasts.view`, `getShares.view`, `getChatMessages.view`, `addChatMessage.view`.
+    - **Missing Songs Tracking & Vault UI**:
+      - Added database column `is_missing` (INTEGER DEFAULT 0) to `tracks` table with index `idx_tracks_is_missing`.
+      - Updated `applyAlbumTags` and `applyFolderTags` in `src/lib/server/tagger.ts` to detect untracked release tracks from MusicBrainz and insert them with `is_missing = 1`, `file_path = NULL`, and `needs_attention = 1`.
+      - Updated `src/lib/server/scanner.ts`: When new audio files appear on disk, auto-match against existing missing tracks and link them (`is_missing = 0`) instead of duplicating entries.
+      - Updated `computeNeedsAttention(..., isMissing)` to mark missing songs as needing attention.
+      - Updated `getAlbums()`, `getAlbumById()`, and `getStats()` in `db.ts` to calculate `missing_tracks_count`.
+      - Updated `TrackRow.svelte`: Added rose `Missing Song` badge on Line 1, `Missing File` badge on right side, disabled verify checkbox, and styled row with rose border.
+      - Updated `AlbumCard.svelte`: Added `{album.missing_tracks_count} missing song(s)` badge.
+      - Updated `src/routes/album/[id]/+page.svelte`: Added hero breakdown badge and alert banner guiding the user to copy missing files to the folder or review in Tagger.
+      - Updated `src/routes/player/+page.svelte` & `+page.server.ts`: Included `t.is_missing` in server track queries, displayed `Missing` badge in tracklist, and disabled playback/streaming for missing files.
+      - Updated `src/routes/issues/+page.svelte`: Added `Missing Songs` tab filtering by `is_missing = 1`.
+    - **Batch Synced Lyrics Downloader Studio (`/lrc-maker` & `/album/[id]`)**:
+      - Added endpoint `GET /api/lyrics/batch-status` returning library-wide and album-specific counts of songs needing synced lyrics (`lyrics NOT IN ('synced_lrc', 'instrumental')`).
+      - Added Server-Sent Events (SSE) streaming endpoint `POST /api/lyrics/batch-download`:
+        - Supports album-scoped or library-wide execution.
+        - Queries LRCLIB (`/api/get` exact match with fallback to `/api/search`).
+        - Sanitizes lyrics with `stripLrcMetadataHeaders` and classifies as `synced_lrc`, `censored_lrc`, or `instrumental`.
+        - Writes companion `.lrc` files directly into song folders on disk with directory traversal protection (`isPathWithin`).
+        - Updates SQLite database and fixer rules atomically.
+        - Streams live progress events (`progress`, `start`, `complete`) with polite 120ms rate limiting.
+      - Created `src/lib/components/BatchLyricsModal.svelte`:
+        - Scope selector: "Current Album only" vs "Entire Vault Library".
+        - Preference checkboxes: "Only save Synced Lyrics" and "Save companion .lrc files to disk".
+        - Live animated progress bar, percentage, and real-time metric counters (`Synced`, `Instrumental`, `Not Found`, `Errors`).
+        - Auto-scrolling live terminal log box with color-coded status badges.
+        - Stop/Cancel and Done buttons with automated view invalidation.
+      - Integrated "Batch Download" action button into LRC Maker Studio header toolbar and Album Detail hero action bar.
+
 ---
 
 ## 4. Workflows & Verification

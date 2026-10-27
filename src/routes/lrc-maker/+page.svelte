@@ -38,10 +38,13 @@
 	} from '@lucide/svelte';
 	import { player } from '$lib/services/player.svelte.js';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
+	import BatchLyricsModal from '$lib/components/BatchLyricsModal.svelte';
 	import type { LrcLibCandidate, LyricsStatus } from '$lib/types/index.js';
 	import { isCensoredLyrics, stripLrcMetadataHeaders } from '$lib/utils.js';
 
 	let { data }: { data: PageData } = $props();
+
+	let showBatchLyricsModal = $state(false);
 
 	interface LyricLine {
 		id: string;
@@ -915,6 +918,16 @@
 					<span>Fetch from LRCLIB</span>
 				</button>
 
+				<button
+					type="button"
+					onclick={() => (showBatchLyricsModal = true)}
+					class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-300 hover:bg-teal-600/30 transition text-xs font-semibold cursor-pointer shadow-sm shadow-teal-950/30"
+					title="Batch download missing synced lyrics from LRCLIB for album or library"
+				>
+					<Download class="w-3.5 h-3.5 text-teal-400" />
+					<span>Batch Download</span>
+				</button>
+
 				{#if data.track}
 					<button
 						type="button"
@@ -1671,4 +1684,17 @@
 	durationSeconds={duration}
 	onSelectLyrics={handleLrcLibSelect}
 	onClose={() => (showLrcLibModal = false)}
+/>
+
+<!-- Batch Lyrics Downloader Modal -->
+<BatchLyricsModal
+	isOpen={showBatchLyricsModal}
+	currentAlbumId={data.track?.album_id || null}
+	currentAlbumTitle={data.track?.album_title || albumTitle || null}
+	onClose={() => (showBatchLyricsModal = false)}
+	onComplete={async () => {
+		if (data.track) {
+			await reloadFromDisk();
+		}
+	}}
 />

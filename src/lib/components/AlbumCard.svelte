@@ -23,7 +23,8 @@
 	const hasIssues = $derived(
 		(album.bad_quality_count || 0) > 0 ||
 		(album.censored_count || 0) > 0 ||
-		(album.missing_lyrics_count || 0) > 0
+		(album.missing_lyrics_count || 0) > 0 ||
+		(album.missing_tracks_count || 0) > 0
 	);
 
 	async function handleDelete(e: MouseEvent) {
@@ -204,6 +205,11 @@
 				{#if (album.missing_lyrics_count || 0) > 0}
 					<span class="rounded bg-amber-950/70 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 border border-amber-800/50 whitespace-nowrap">
 						{album.missing_lyrics_count}&nbsp;no lyrics
+					</span>
+				{/if}
+				{#if (album.missing_tracks_count || 0) > 0}
+					<span class="rounded bg-rose-950/80 px-1.5 py-0.5 text-[10px] font-bold text-rose-300 border border-rose-700/60 whitespace-nowrap">
+						{album.missing_tracks_count}&nbsp;missing song{(album.missing_tracks_count ?? 0) > 1 ? 's' : ''}
 					</span>
 				{/if}
 			</div>

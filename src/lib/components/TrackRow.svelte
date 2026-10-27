@@ -85,7 +85,7 @@
 </script>
 
 <div
-	class="group relative flex flex-col gap-2 border-b border-neutral-800/60 p-3 transition hover:bg-neutral-900/40 {track.needs_attention ? 'border-l-4 border-l-amber-500/80 bg-amber-500/[0.02]' : track.manually_checked === 1 ? 'border-l-4 border-l-emerald-500/60 bg-emerald-500/[0.02]' : ''}"
+	class="group relative flex flex-col gap-2 border-b border-neutral-800/60 p-3 transition hover:bg-neutral-900/40 {track.is_missing === 1 ? 'border-l-4 border-l-rose-500 bg-rose-500/[0.03]' : track.needs_attention ? 'border-l-4 border-l-amber-500/80 bg-amber-500/[0.02]' : track.manually_checked === 1 ? 'border-l-4 border-l-emerald-500/60 bg-emerald-500/[0.02]' : ''}"
 >
 	<!-- LINE 1: Song Info, Title, Artist, Duration & Quality / Bitrate -->
 	<div class="flex items-center justify-between gap-3 min-w-0">
@@ -93,11 +93,11 @@
 			<!-- Verification Checkbox -->
 			<div
 				class="flex items-center shrink-0"
-				title={track.manually_checked === 1 ? 'Marked as verified (Click to uncheck)' : 'Click to mark as verified'}
+				title={track.is_missing === 1 ? 'Missing song from release' : track.manually_checked === 1 ? 'Marked as verified (Click to uncheck)' : 'Click to mark as verified'}
 			>
 				<CustomCheckbox
 					checked={track.manually_checked === 1}
-					disabled={isUpdating}
+					disabled={isUpdating || track.is_missing === 1}
 					onchange={(checked) => updateField('manually_checked', checked ? 1 : 0)}
 				/>
 			</div>
@@ -107,20 +107,26 @@
 			</span>
 
 			<div class="flex items-center gap-2 min-w-0 flex-1">
-				<span class="truncate text-sm font-semibold {track.manually_checked === 1 ? 'text-emerald-100' : 'text-neutral-100'}" title={track.title}>
+				<span class="truncate text-sm font-semibold {track.is_missing === 1 ? 'text-rose-200' : track.manually_checked === 1 ? 'text-emerald-100' : 'text-neutral-100'}" title={track.title}>
 					{track.title}
 				</span>
 
-				{#if track.manually_checked === 1}
+				{#if track.is_missing === 1}
+					<span
+						class="inline-flex items-center gap-1 rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300 border border-rose-500/40 shrink-0"
+						title="Audio file is missing from library folder"
+					>
+						<AlertTriangle class="h-3 w-3 text-rose-400" />
+						Missing Song
+					</span>
+				{:else if track.manually_checked === 1}
 					<span
 						class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30 shrink-0"
 					>
 						<CheckCircle2 class="h-3 w-3" />
 						Checked
 					</span>
-				{/if}
-
-				{#if track.needs_attention}
+				{:else if track.needs_attention}
 					<span
 						class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/30 shrink-0"
 					>
@@ -139,12 +145,18 @@
 			{/if}
 			<span class="font-mono text-neutral-500">{formatDuration(track.duration_ms)}</span>
 
-			<!-- Format & Bitrate kb/s Badge -->
-			<span class="inline-flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-[11px] font-medium {getFormatBadgeClass(track.format)}">
-				<span class="font-bold uppercase font-mono">{track.format}</span>
-				<span class="opacity-40">|</span>
-				<span class="text-neutral-200 font-mono text-[10px]">{getBitrateLabel(track.format, track.bitrate_kbps)}</span>
-			</span>
+			{#if track.is_missing === 1}
+				<span class="inline-flex items-center gap-1 rounded-lg border border-rose-800/60 bg-rose-950/60 px-2 py-0.5 text-[11px] font-semibold text-rose-300">
+					<span class="font-bold uppercase font-mono text-[10px]">Missing File</span>
+				</span>
+			{:else}
+				<!-- Format & Bitrate kb/s Badge -->
+				<span class="inline-flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-[11px] font-medium {getFormatBadgeClass(track.format)}">
+					<span class="font-bold uppercase font-mono">{track.format}</span>
+					<span class="opacity-40">|</span>
+					<span class="text-neutral-200 font-mono text-[10px]">{getBitrateLabel(track.format, track.bitrate_kbps)}</span>
+				</span>
+			{/if}
 		</div>
 	</div>
 

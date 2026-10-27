@@ -26,7 +26,11 @@ import {
 	getTracksByGenre,
 	getTopTracksByArtist,
 	getPlayQueue,
-	savePlayQueue
+	savePlayQueue,
+	getInternetRadioStations,
+	createInternetRadioStation,
+	updateInternetRadioStation,
+	deleteInternetRadioStation
 } from '$lib/server/db.js';
 import {
 	findCompanionLyricsFile,
@@ -1398,5 +1402,119 @@ export const subsonicHandlers: Record<
 				}
 			}
 		};
+	},
+
+	getInternetRadioStations: async () => {
+		const stations = getInternetRadioStations();
+		return {
+			data: {
+				internetRadioStations: {
+					internetRadioStation: stations.map((s) => ({
+						id: s.id.toString(),
+						name: s.name,
+						streamUrl: s.stream_url,
+						homePageUrl: s.home_page_url || ''
+					}))
+				}
+			}
+		};
+	},
+
+	createInternetRadioStation: async (params) => {
+		const name = params.name?.trim();
+		const streamUrl = params.streamUrl?.trim();
+		if (!name || !streamUrl) {
+			return {
+				error: {
+					code: SubsonicErrorCode.REQUIRED_PARAM_MISSING,
+					message: "Parameters 'name' and 'streamUrl' are required"
+				}
+			};
+		}
+		const station = createInternetRadioStation(name, streamUrl, params.homePageUrl);
+		return {
+			data: {
+				internetRadioStation: {
+					id: station.id.toString(),
+					name: station.name,
+					streamUrl: station.stream_url,
+					homePageUrl: station.home_page_url || ''
+				}
+			}
+		};
+	},
+
+	updateInternetRadioStation: async (params) => {
+		const id = parseInt(params.id, 10);
+		const name = params.name?.trim();
+		const streamUrl = params.streamUrl?.trim();
+		if (isNaN(id) || !name || !streamUrl) {
+			return {
+				error: {
+					code: SubsonicErrorCode.REQUIRED_PARAM_MISSING,
+					message: "Valid 'id', 'name', and 'streamUrl' are required"
+				}
+			};
+		}
+		updateInternetRadioStation(id, name, streamUrl, params.homePageUrl);
+		return { data: {} };
+	},
+
+	deleteInternetRadioStation: async (params) => {
+		const id = parseInt(params.id, 10);
+		if (isNaN(id)) {
+			return {
+				error: {
+					code: SubsonicErrorCode.REQUIRED_PARAM_MISSING,
+					message: "Valid 'id' is required"
+				}
+			};
+		}
+		deleteInternetRadioStation(id);
+		return { data: {} };
+	},
+
+	getPodcasts: async () => {
+		return {
+			data: {
+				podcasts: {
+					channel: []
+				}
+			}
+		};
+	},
+
+	getNewestPodcasts: async () => {
+		return {
+			data: {
+				newestPodcasts: {
+					episode: []
+				}
+			}
+		};
+	},
+
+	getShares: async () => {
+		return {
+			data: {
+				shares: {
+					share: []
+				}
+			}
+		};
+	},
+
+	getChatMessages: async () => {
+		return {
+			data: {
+				chatMessages: {
+					chatMessage: []
+				}
+			}
+		};
+	},
+
+	addChatMessage: async () => {
+		return { data: {} };
 	}
 };

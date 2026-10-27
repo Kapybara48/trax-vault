@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseFile } from 'music-metadata';
-import { db, createAlbum, addTrackToAlbum } from '$lib/server/db.js';
+import { db, createAlbum, addTrackToAlbum, getAlbumFixerRules, computeNeedsAttention } from '$lib/server/db.js';
 import type {
 	ScannedAlbum,
 	ScannedTrack,
@@ -966,6 +966,51 @@ export async function syncLibraryFromDisk(): Promise<{
 					if (missingTracks.length > 0) {
 						for (const t of missingTracks) {
 							try {
+								// Check if this album already had a missing track with matching disc & track_number or title
+								const missingTrackRow = db.prepare(`
+									SELECT id FROM tracks 
+									WHERE album_id = ? AND is_missing = 1 
+									  AND (track_number = ? OR LOWER(title) = LOWER(?))
+									LIMIT 1
+								`).get(albumId, t.track_number, t.title) as { id: number } | undefined;
+
+								if (missingTrackRow) {
+									const rules = getAlbumFixerRules(albumId);
+									const needsAtt = computeNeedsAttention(t.quality_rating, t.censorship, t.lyrics, t.format, rules, 0);
+									db.prepare(`
+										UPDATE tracks SET
+											file_path = ?,
+											duration_ms = COALESCE(?, duration_ms),
+											format = ?,
+											bitrate_kbps = ?,
+											sample_rate = ?,
+											bits_per_sample = ?,
+											quality_rating = ?,
+											censorship = ?,
+											lyrics = ?,
+											is_missing = 0,
+											needs_attention = ?,
+											notes = ?,
+											updated_at = datetime('now')
+										WHERE id = ?
+									`).run(
+										t.file_path,
+										t.duration_ms,
+										t.format,
+										t.bitrate_kbps,
+										t.sample_rate,
+										t.bits_per_sample,
+										t.quality_rating,
+										t.censorship,
+										t.lyrics,
+										needsAtt,
+										`Matched missing song from disk: ${path.basename(t.file_path)}`,
+										missingTrackRow.id
+									);
+									newTracksCount++;
+									continue;
+								}
+
 								addTrackToAlbum(albumId, {
 									disc_number: t.disc_number,
 									track_number: t.track_number,

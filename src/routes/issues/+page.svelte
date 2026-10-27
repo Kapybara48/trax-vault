@@ -206,6 +206,18 @@
 			Censored LRC ({data.stats.censored_lyrics_count || 0})
 		</button>
 
+		{#if (data.stats.missing_tracks_count || 0) > 0}
+			<button
+				type="button"
+				onclick={() => setIssueType('missing_tracks')}
+				class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition {data.activeType === 'missing_tracks' ? 'bg-rose-700 text-white shadow-sm shadow-rose-700/30' : 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'}"
+				title="Show missing songs from tagged releases"
+			>
+				<TriangleAlert class="h-3.5 w-3.5 text-rose-400" />
+				Missing Songs ({data.stats.missing_tracks_count})
+			</button>
+		{/if}
+
 		<button
 			type="button"
 			onclick={() => setIssueType('unverified')}

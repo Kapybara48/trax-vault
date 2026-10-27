@@ -32,6 +32,7 @@
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
+	import BatchLyricsModal from '$lib/components/BatchLyricsModal.svelte';
 	import type { LrcLibCandidate } from '$lib/types/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 
@@ -39,6 +40,8 @@
 
 	let tracks = $state<Track[]>([...data.tracks]);
 	let album = $state({ ...data.album });
+
+	let showBatchLyricsModal = $state(false);
 
 	// Track Fixer Rules state
 	let showFixerRulesModal = $state(false);
@@ -132,6 +135,10 @@
 
 	const unsyncedLyricsCount = $derived(
 		tracks.filter(t => t.lyrics === 'unsynced_lrc').length
+	);
+
+	const missingTracksCount = $derived(
+		tracks.filter(t => t.is_missing === 1).length
 	);
 
 	const issuesCount = $derived(
@@ -591,6 +598,13 @@
 							{unsyncedLyricsCount} Unsynced LRC
 						</span>
 					{/if}
+
+					{#if missingTracksCount > 0}
+						<span class="inline-flex items-center gap-1.5 rounded-lg bg-rose-950/80 px-2.5 py-1 text-xs font-bold text-rose-300 border border-rose-700 whitespace-nowrap shadow-sm">
+							<AlertTriangle class="h-3.5 w-3.5 text-rose-400" />
+							{missingTracksCount} Missing {missingTracksCount === 1 ? 'Song' : 'Songs'}
+						</span>
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -656,6 +670,16 @@
 					<ListPlus class="h-3.5 w-3.5 text-emerald-400" />
 					<span>Add to Playlist</span>
 				</button>
+
+				<button
+					type="button"
+					onclick={() => (showBatchLyricsModal = true)}
+					class="flex items-center gap-1.5 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 px-3.5 py-2 text-xs font-semibold transition"
+					title="Batch download missing synced lyrics from LRCLIB for this album"
+				>
+					<Mic2 class="h-3.5 w-3.5 text-teal-400" />
+					<span>Download Lyrics</span>
+				</button>
 			</div>
 
 			<div class="flex items-center gap-3">
@@ -680,6 +704,32 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Missing Tracks Alert Banner -->
+	{#if missingTracksCount > 0}
+		<div class="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-rose-800/60 bg-rose-950/30 p-4 text-xs text-rose-200 shadow-md">
+			<div class="flex items-center gap-3">
+				<div class="p-2 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-400 shrink-0">
+					<AlertTriangle class="h-5 w-5" />
+				</div>
+				<div>
+					<p class="font-bold text-rose-100 text-sm">
+						{missingTracksCount} {missingTracksCount === 1 ? 'song is' : 'songs are'} missing from this album release
+					</p>
+					<p class="text-neutral-400 mt-0.5">
+						Missing release songs are highlighted in red below. Copy the missing audio files to this album's folder on disk, and the Library Scanner will auto-link them.
+					</p>
+				</div>
+			</div>
+			<a
+				href={`/tagger?albumId=${album.id}`}
+				class="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-rose-900/60 hover:bg-rose-800/80 text-rose-200 border border-rose-700/60 px-3.5 py-2 font-semibold text-xs transition"
+			>
+				<Sparkles class="h-3.5 w-3.5 text-rose-300" />
+				<span>Review in Tagger</span>
+			</a>
+		</div>
+	{/if}
 
 	<!-- Tracklist Section -->
 	<section class="mt-8">
@@ -1527,4 +1577,14 @@
 	trackIds={playlistModalTrackIds}
 	trackTitle={playlistModalTitle}
 	onClose={() => (showPlaylistModal = false)}
+/>
+
+<BatchLyricsModal
+	isOpen={showBatchLyricsModal}
+	currentAlbumId={album.id}
+	currentAlbumTitle={album.title}
+	onClose={() => (showBatchLyricsModal = false)}
+	onComplete={async () => {
+		await invalidateAll();
+	}}
 />
