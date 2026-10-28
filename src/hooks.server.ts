@@ -2,6 +2,10 @@ import { redirect, json, type RequestEvent } from '@sveltejs/kit';
 import { isAuthDisabled, hasAnyUser, validateSession, SESSION_COOKIE_NAME } from '$lib/server/auth.js';
 import { backfillTrackBitrates, syncLibraryFromDisk, scanLibraryDirectory } from '$lib/server/scanner.js';
 
+if (!process.env.BODY_SIZE_LIMIT) {
+	process.env.BODY_SIZE_LIMIT = 'Infinity';
+}
+
 // Library sync on startup is strictly opt-in (AUTO_SYNC_LIBRARY=true) to prevent automatically
 // re-importing albums the user intentionally removed or has not yet tagged in the Scanner.
 const shouldAutoSync = process.env.AUTO_SYNC_LIBRARY === 'true';

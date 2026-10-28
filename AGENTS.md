@@ -588,6 +588,10 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Direct Audio Download (`GET /api/tracks/[id]/audio?download=true`)**: Direct audio attachment download with `Content-Disposition`.
     - **Fidelity & Metadata Re-scan (`POST /api/tracks/[id]/rescan`)**: 1-click refresh of track tags and exact bitrates from storage.
     - **UI Integration**: Added "Upload Tracks" button to album detail header, interactive `UploadTracksModal.svelte`, dedicated "+ Upload Audio" button directly on missing songs in `TrackRow.svelte`, and action buttons for replacement, rescanning, downloading, and custom deletion.
+44. **Unlimited Audio Upload Payload & Sequential Resilient Upload**:
+    - Resolved SvelteKit `adapter-node` default 512KB limit (`413 Payload Too Large: Content-length exceeds limit of 524288 bytes`) by setting `BODY_SIZE_LIMIT=Infinity` across `Dockerfile`, `docker-compose.yml`, `.env.example`, `src/hooks.server.ts`, and `vite.config.ts`.
+    - Added `scripts/postbuild.js` which automatically generates `build/env-defaults.js` and injects it into `build/index.js`, ensuring standalone Node deployments default to `BODY_SIZE_LIMIT=Infinity` without requiring external env configurations.
+    - Enhanced `UploadTracksModal.svelte` to upload staged songs sequentially one-by-one with an animated progress bar, percentage counter, and per-file status badges (idle, uploading, success, error), enabling seamless uploads of high-resolution tracks (100MB+ each) and multi-gigabyte albums (2GB+) without reverse proxy timeouts or memory spikes.
 
 ---
 

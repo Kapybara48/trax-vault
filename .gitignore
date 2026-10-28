@@ -13,6 +13,7 @@ data/*.db
 data/*.db-*
 data/*.bak*
 data/*.key
+data/*.json
 data/covers/*
 data/picard-config/*
 data/picard-config/.*

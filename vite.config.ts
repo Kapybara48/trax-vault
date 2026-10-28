@@ -3,6 +3,11 @@ import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+// Set BODY_SIZE_LIMIT to Infinity by default for Vite dev, preview, and build
+if (!process.env.BODY_SIZE_LIMIT) {
+	process.env.BODY_SIZE_LIMIT = 'Infinity';
+}
+
 export default defineConfig({
 	plugins: [
 		tailwindcss(),

@@ -24,7 +24,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production \
     PORT=3000 \
-    DATA_DIR=/app/data
+    DATA_DIR=/app/data \
+    BODY_SIZE_LIMIT=Infinity
 
 # Create data directory
 RUN mkdir -p /app/data

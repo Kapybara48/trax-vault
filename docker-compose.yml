@@ -18,6 +18,8 @@ services:
       - AUTO_SYNC_LIBRARY=false
       # Set to your server URL or domain (e.g. http://my-server.lan:3000 or http://localhost:3000)
       - ORIGIN=http://localhost:3000
+      # Unlimited body size to support high-fidelity and multi-gigabyte audio uploads
+      - BODY_SIZE_LIMIT=Infinity
     volumes:
       - ./data:/app/data
       # Mount your existing music library folder here (read-write for companion lyrics files and tagger)
