@@ -5,6 +5,7 @@ import {
 	authenticateUser,
 	createSession,
 	isAuthDisabled,
+	isRegistrationDisabled,
 	getSessionCookieOptions,
 	SESSION_COOKIE_NAME
 } from '$lib/server/auth.js';
@@ -19,7 +20,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		throw redirect(303, '/setup');
 	}
 
-	return {};
+	return {
+		registrationAllowed: !isRegistrationDisabled()
+	};
 };
 
 export const actions: Actions = {

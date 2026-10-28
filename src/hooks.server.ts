@@ -53,7 +53,7 @@ export async function handle({
 	// If auth is globally disabled via environment variable
 	if (authDisabled) {
 		event.locals.user = { id: 1, username: 'admin', role: 'admin' };
-		if (path === '/login' || path === '/setup') {
+		if (path === '/login' || path === '/setup' || path === '/register') {
 			throw redirect(303, '/');
 		}
 		return resolve(event);
@@ -80,7 +80,7 @@ export async function handle({
 
 	// If user is logged in
 	if (user) {
-		if (path === '/login' || path === '/setup') {
+		if (path === '/login' || path === '/setup' || path === '/register') {
 			throw redirect(303, '/');
 		}
 		return resolve(event);
@@ -89,7 +89,9 @@ export async function handle({
 	// If user is NOT logged in
 	const isAuthRoute =
 		path === '/login' ||
+		path === '/register' ||
 		path.startsWith('/api/auth/login') ||
+		path.startsWith('/api/auth/register') ||
 		path.startsWith('/api/auth/logout');
 
 	if (!isAuthRoute) {

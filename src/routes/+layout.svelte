@@ -11,7 +11,7 @@
 	let { data, children }: { data: LayoutData; children: any } = $props();
 
 	const currentPath = $derived(page.url.pathname);
-	const isAuthPage = $derived(currentPath === '/login' || currentPath === '/setup');
+	const isAuthPage = $derived(currentPath === '/login' || currentPath === '/setup' || currentPath === '/register');
 	const isPlayerPage = $derived(currentPath.startsWith('/player'));
 
 	let audioElement = $state<HTMLAudioElement | null>(null);

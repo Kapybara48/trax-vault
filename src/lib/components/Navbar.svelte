@@ -128,27 +128,28 @@
 		<div class="flex items-center gap-2 sm:gap-3">
 			<a
 				href="/add"
-				class="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs sm:text-sm font-semibold text-white shadow-md shadow-emerald-600/30 transition hover:bg-emerald-500 active:scale-95"
+				class="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-semibold text-white shadow-md shadow-emerald-600/30 transition hover:bg-emerald-500 active:scale-95 shrink-0"
 			>
 				<Plus class="h-4 w-4" />
-				<span>Add Album</span>
+				<span class="hidden sm:inline">Add Album</span>
+				<span class="sm:hidden">Add</span>
 			</a>
 
 			{#if user && !authDisabled}
 				<div class="flex items-center gap-1.5 pl-2 border-l border-neutral-800">
 					<a
 						href="/settings"
-						class="flex items-center gap-1.5 text-xs font-medium text-neutral-300 bg-neutral-900 border border-neutral-800 rounded-xl px-2.5 py-1.5 hover:border-emerald-600/50 hover:text-white transition"
+						class="flex items-center gap-1.5 text-xs font-medium text-neutral-300 bg-neutral-900 border border-neutral-800 rounded-xl px-2 sm:px-2.5 py-1.5 hover:border-emerald-600/50 hover:text-white transition"
 						title="Account Settings ({user.username})"
 					>
 						<UserIcon class="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-						<span class="truncate max-w-[80px] sm:max-w-[120px]">{user.username}</span>
+						<span class="truncate max-w-[60px] xs:max-w-[80px] sm:max-w-[120px]">{user.username}</span>
 					</a>
 
 					<button
 						type="button"
 						onclick={handleLogout}
-						class="rounded-xl p-2 text-neutral-400 hover:text-rose-400 hover:bg-neutral-900 border border-transparent hover:border-neutral-800 transition cursor-pointer"
+						class="rounded-xl p-1.5 sm:p-2 text-neutral-400 hover:text-rose-400 hover:bg-neutral-900 border border-transparent hover:border-neutral-800 transition cursor-pointer"
 						title="Sign Out"
 					>
 						<LogOut class="h-4 w-4" />
@@ -159,69 +160,69 @@
 	</div>
 
 	<!-- Mobile Navigation Bottom Bar (7-tab bar) -->
-	<div class="grid grid-cols-7 md:hidden border-t border-neutral-800/80 px-1 py-1.5 bg-neutral-950 text-center">
+	<div class="grid grid-cols-7 md:hidden border-t border-neutral-800/80 px-0.5 py-1 bg-neutral-950 text-center select-none">
 		<a
 			href="/"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath === '/' ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-0.5 py-1 text-[9px] xs:text-[10px] font-medium transition {currentPath === '/' ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Library class="h-4 w-4" />
-			<span>Vault</span>
+			<span class="truncate w-full block">Vault</span>
 		</a>
 
 		<a
 			href="/player"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/player') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-0.5 py-1 text-[9px] xs:text-[10px] font-medium transition {currentPath.startsWith('/player') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Disc3 class="h-4 w-4 {currentPath.startsWith('/player') ? 'text-emerald-400 animate-spin-slow' : ''}" />
-			<span>Player</span>
+			<span class="truncate w-full block">Player</span>
 		</a>
 
 		<a
 			href="/issues"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium relative {currentPath.startsWith('/issues') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-0.5 py-1 text-[9px] xs:text-[10px] font-medium relative transition {currentPath.startsWith('/issues') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<div class="relative">
 				<TriangleAlert class="h-4 w-4 {issuesCount > 0 ? 'text-amber-400' : ''}" />
 				{#if issuesCount > 0}
-					<span class="absolute -top-1 -right-2 rounded-full bg-amber-500 text-black px-1 text-[9px] font-bold leading-none">
+					<span class="absolute -top-1 -right-2 rounded-full bg-amber-500 text-black px-1 text-[8px] font-bold leading-none">
 						{issuesCount}
 					</span>
 				{/if}
 			</div>
-			<span>Fixer</span>
+			<span class="truncate w-full block">Fixer</span>
 		</a>
 
 		<a
 			href="/tagger"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/tagger') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-0.5 py-1 text-[9px] xs:text-[10px] font-medium transition {currentPath.startsWith('/tagger') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Tag class="h-4 w-4 {currentPath.startsWith('/tagger') ? 'text-emerald-400' : ''}" />
-			<span>Tagger</span>
+			<span class="truncate w-full block">Tagger</span>
 		</a>
 
 		<a
 			href="/lrc-maker"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/lrc-maker') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-0.5 py-1 text-[9px] xs:text-[10px] font-medium transition {currentPath.startsWith('/lrc-maker') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<Mic class="h-4 w-4" />
-			<span>LRC</span>
+			<span class="truncate w-full block">LRC</span>
 		</a>
 
 		<a
 			href="/scan"
 			data-sveltekit-preload-data="hover"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/scan') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-0.5 py-1 text-[9px] xs:text-[10px] font-medium transition {currentPath.startsWith('/scan') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<FolderSync class="h-4 w-4" />
-			<span>Scan</span>
+			<span class="truncate w-full block">Scan</span>
 		</a>
 
 		<a
 			href="/settings"
-			class="flex flex-col items-center gap-1 py-1 text-[10px] font-medium {currentPath.startsWith('/settings') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
+			class="flex flex-col items-center gap-0.5 py-1 text-[9px] xs:text-[10px] font-medium transition {currentPath.startsWith('/settings') ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'}"
 		>
 			<SettingsIcon class="h-4 w-4" />
-			<span>Settings</span>
+			<span class="truncate w-full block">Settings</span>
 		</a>
 	</div>
 </header>

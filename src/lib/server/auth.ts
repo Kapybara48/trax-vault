@@ -269,3 +269,159 @@ export function changePassword(
 
 	return { success: true };
 }
+
+/**
+ * Check if public registration is disabled via environment variables.
+ * Defaults to false (public registration enabled).
+ * Can be disabled by setting DISABLE_REGISTRATION=true, DISABLE_ACCOUNT_CREATION=true, or ALLOW_REGISTRATION=false.
+ */
+export function isRegistrationDisabled(): boolean {
+	const disableEnv = process.env.DISABLE_REGISTRATION ?? process.env.DISABLE_ACCOUNT_CREATION;
+	if (disableEnv !== undefined) {
+		return disableEnv === 'true' || disableEnv === '1';
+	}
+	const allowEnv = process.env.ALLOW_REGISTRATION ?? process.env.ALLOW_ACCOUNT_CREATION;
+	if (allowEnv !== undefined) {
+		return allowEnv === 'false' || allowEnv === '0';
+	}
+	return false;
+}
+
+/**
+ * Create a new user account with role validation and Subsonic secret synchronization
+ */
+export function createUser(
+	username: string,
+	password: string,
+	role: 'user' | 'admin' = 'user'
+): { user?: User; error?: string } {
+	const trimmedUser = username.trim().toLowerCase();
+	if (!trimmedUser || trimmedUser.length < 3 || trimmedUser.length > 32) {
+		return { error: 'Username must be between 3 and 32 characters' };
+	}
+	if (!/^[a-z0-9_.-]+$/.test(trimmedUser)) {
+		return { error: 'Username can only contain letters, numbers, hyphens, periods, and underscores' };
+	}
+	if (!password || password.length < 6) {
+		return { error: 'Password must be at least 6 characters long' };
+	}
+
+	const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(trimmedUser);
+	if (existing) {
+		return { error: 'Username already taken' };
+	}
+
+	const { hash, salt } = hashPassword(password);
+	const result = db.prepare(`
+		INSERT INTO users (username, password_hash, salt, role)
+		VALUES (?, ?, ?, ?)
+	`).run(trimmedUser, hash, salt, role);
+
+	const user: User = {
+		id: Number(result.lastInsertRowid),
+		username: trimmedUser,
+		role
+	};
+
+	try {
+		persistUserSubsonicSecret(user.id, password);
+	} catch (e) {
+		console.error('Failed to auto-persist Subsonic secret for user:', e);
+	}
+
+	return { user };
+}
+
+/**
+ * Retrieve all users with statistics (playlists, starred items) for admin management
+ */
+export function getAllUsers(): Array<User & { created_at: string; playlist_count: number; starred_count: number }> {
+	try {
+		return db.prepare(`
+			SELECT u.id, u.username, u.role, u.created_at,
+				(SELECT COUNT(*) FROM playlists p WHERE p.user_id = u.id) as playlist_count,
+				(SELECT COUNT(*) FROM starred_items s WHERE s.user_id = u.id) as starred_count
+			FROM users u
+			ORDER BY u.id ASC
+		`).all() as any[];
+	} catch (err) {
+		console.error('Failed to query all users:', err);
+		return [];
+	}
+}
+
+/**
+ * Delete a user account (admin only)
+ */
+export function deleteUser(targetUserId: number, requestingAdminId: number): { success: boolean; error?: string } {
+	if (targetUserId === requestingAdminId) {
+		return { success: false, error: 'You cannot delete your own account' };
+	}
+
+	const targetUser = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(targetUserId) as { id: number; username: string; role: string } | undefined;
+	if (!targetUser) {
+		return { success: false, error: 'User not found' };
+	}
+
+	if (targetUser.role === 'admin') {
+		const adminCount = (db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get() as { count: number })?.count || 0;
+		if (adminCount <= 1) {
+			return { success: false, error: 'Cannot delete the only administrator account' };
+		}
+	}
+
+	db.prepare('DELETE FROM users WHERE id = ?').run(targetUserId);
+	return { success: true };
+}
+
+/**
+ * Update a user's role (admin only)
+ */
+export function updateUserRole(targetUserId: number, newRole: 'admin' | 'user', requestingAdminId: number): { success: boolean; error?: string } {
+	if (targetUserId === requestingAdminId && newRole !== 'admin') {
+		return { success: false, error: 'You cannot demote your own administrator account' };
+	}
+
+	const targetUser = db.prepare('SELECT id, role FROM users WHERE id = ?').get(targetUserId) as { id: number; role: string } | undefined;
+	if (!targetUser) {
+		return { success: false, error: 'User not found' };
+	}
+
+	if (targetUser.role === 'admin' && newRole === 'user') {
+		const adminCount = (db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get() as { count: number })?.count || 0;
+		if (adminCount <= 1) {
+			return { success: false, error: 'Cannot demote the only administrator account' };
+		}
+	}
+
+	db.prepare("UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?").run(newRole, targetUserId);
+	return { success: true };
+}
+
+/**
+ * Reset password for a target user (admin only)
+ */
+export function adminResetPassword(targetUserId: number, newPassword: string): { success: boolean; error?: string } {
+	if (!newPassword || newPassword.length < 6) {
+		return { success: false, error: 'Password must be at least 6 characters long' };
+	}
+
+	const user = db.prepare('SELECT id FROM users WHERE id = ?').get(targetUserId);
+	if (!user) {
+		return { success: false, error: 'User not found' };
+	}
+
+	const { hash, salt } = hashPassword(newPassword);
+	db.prepare("UPDATE users SET password_hash = ?, salt = ?, updated_at = datetime('now') WHERE id = ?").run(hash, salt, targetUserId);
+
+	try {
+		persistUserSubsonicSecret(targetUserId, newPassword);
+	} catch (e) {
+		console.error('Failed to update Subsonic secret on admin password reset:', e);
+	}
+
+	// Invalidate existing sessions for this user so they must log in with new password
+	db.prepare('DELETE FROM sessions WHERE user_id = ?').run(targetUserId);
+
+	return { success: true };
+}

@@ -32,7 +32,8 @@
 		ArrowDown,
 		Globe,
 		Lock,
-		AlertTriangle
+		AlertTriangle,
+		Library
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -60,6 +61,7 @@
 	// Side Drawers
 	let showLyricsDrawer = $state(false);
 	let showQueueDrawer = $state(false);
+	let mobilePlayerTab = $state<'tracks' | 'library' | 'lyrics' | 'queue'>('tracks');
 
 	// Synced Lyrics State
 	let lyricsLoading = $state(false);
@@ -279,6 +281,9 @@
 		showLyricsDrawer = !showLyricsDrawer;
 		if (showLyricsDrawer) {
 			showQueueDrawer = false;
+			mobilePlayerTab = 'lyrics';
+		} else if (mobilePlayerTab === 'lyrics') {
+			mobilePlayerTab = 'tracks';
 		}
 	}
 
@@ -286,6 +291,9 @@
 		showQueueDrawer = !showQueueDrawer;
 		if (showQueueDrawer) {
 			showLyricsDrawer = false;
+			mobilePlayerTab = 'queue';
+		} else if (mobilePlayerTab === 'queue') {
+			mobilePlayerTab = 'tracks';
 		}
 	}
 
@@ -357,6 +365,7 @@
 		selectedAlbum = album;
 		selectedPlaylist = null;
 		albumTrackSearch = '';
+		mobilePlayerTab = 'tracks';
 	}
 
 	function selectPlaylist(playlist: PlayerPlaylist) {
@@ -364,6 +373,7 @@
 		selectedPlaylist = playlist;
 		selectedAlbum = null;
 		albumTrackSearch = '';
+		mobilePlayerTab = 'tracks';
 	}
 
 	// Playlist Actions
@@ -668,10 +678,46 @@
 
 <!-- Trax Vault Studio Audio Player (Full Viewport, Non-Scrollable Window) -->
 <div class="flex-1 h-full flex flex-col bg-neutral-950 text-neutral-100 font-sans select-none overflow-hidden min-h-0">
+	<!-- Mobile View Switcher (Phones & Small Tablets < md) -->
+	<div class="md:hidden flex items-center justify-between p-1 mx-2 sm:mx-3 mt-2 mb-1 bg-neutral-900/90 border border-neutral-800 rounded-xl text-xs font-semibold shrink-0 gap-1">
+		<button
+			type="button"
+			onclick={() => mobilePlayerTab = 'library'}
+			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'library' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+		>
+			<Library class="h-3.5 w-3.5" />
+			<span>Library</span>
+		</button>
+		<button
+			type="button"
+			onclick={() => mobilePlayerTab = 'tracks'}
+			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'tracks' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+		>
+			<Disc3 class="h-3.5 w-3.5" />
+			<span>Tracks</span>
+		</button>
+		<button
+			type="button"
+			onclick={() => { mobilePlayerTab = 'lyrics'; showLyricsDrawer = true; showQueueDrawer = false; }}
+			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'lyrics' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+		>
+			<Mic class="h-3.5 w-3.5" />
+			<span>Lyrics</span>
+		</button>
+		<button
+			type="button"
+			onclick={() => { mobilePlayerTab = 'queue'; showQueueDrawer = true; showLyricsDrawer = false; }}
+			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'queue' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+		>
+			<ListMusic class="h-3.5 w-3.5" />
+			<span>Queue</span>
+		</button>
+	</div>
+
 	<!-- Workspace: Side Library + Main Stage + Drawers -->
-	<div class="flex-1 flex overflow-hidden min-h-0 p-3 gap-3">
+	<div class="flex-1 flex overflow-hidden min-h-0 p-2 sm:p-3 gap-2 sm:gap-3">
 		<!-- LEFT SIDEBAR: Vault Audio Library & Playlists -->
-		<aside class="order-1 w-72 lg:w-80 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-xl">
+		<aside class="{mobilePlayerTab === 'library' ? 'flex' : 'hidden'} md:flex order-1 w-full md:w-72 lg:w-80 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden shrink-0 shadow-xl">
 			<!-- Header & Mode Tabs -->
 			<div class="p-3.5 pb-2 border-b border-neutral-800/60 shrink-0">
 				<div class="flex items-center justify-between mb-2.5">
@@ -946,8 +992,8 @@
 		</aside>
 
 		<!-- CENTER / MIDDLE PANEL: Studio Synced Lyrics (When Open) -->
-		{#if showLyricsDrawer}
-			<section class="order-2 flex-1 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden min-h-0 shadow-xl animate-in fade-in duration-200">
+		{#if showLyricsDrawer || mobilePlayerTab === 'lyrics'}
+			<section class="{mobilePlayerTab === 'lyrics' ? 'flex' : (showLyricsDrawer ? 'hidden md:flex' : 'hidden')} order-2 flex-1 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 shadow-xl animate-in fade-in duration-200">
 				<!-- Lyrics Header -->
 				<div class="p-3.5 px-5 border-b border-neutral-800/60 flex items-center justify-between shrink-0">
 					<div class="flex items-center gap-2.5">
@@ -984,6 +1030,7 @@
 							type="button"
 							onclick={() => {
 								showLyricsDrawer = false;
+								if (mobilePlayerTab === 'lyrics') mobilePlayerTab = 'tracks';
 							}}
 							class="text-neutral-400 hover:text-white p-1.5 rounded-lg hover:bg-neutral-800 cursor-pointer transition"
 							title="Close Lyrics"
@@ -1050,7 +1097,7 @@
 		{/if}
 
 		<!-- SONGS & HERO PANEL: Main Viewport (Center when lyrics closed, Right when lyrics open) -->
-		<main class="{showLyricsDrawer ? 'order-3 flex-1 min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden min-h-0 shadow-xl transition-all duration-200">
+		<main class="{mobilePlayerTab === 'tracks' ? 'flex' : 'hidden'} md:flex {showLyricsDrawer ? 'order-3 flex-1 min-w-0 md:min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 shadow-xl transition-all duration-200">
 			{#if selectedType === 'album' && selectedAlbum}
 				<!-- ALBUM HERO BANNER -->
 				<div class="{showLyricsDrawer ? 'p-4 pb-3' : 'p-6 pb-4'} border-b border-neutral-800/60 shrink-0">
@@ -1674,8 +1721,8 @@
 		</main>
 
 		<!-- RIGHT PANEL: Play Queue Drawer (When Open) -->
-		{#if showQueueDrawer}
-			<aside class="order-3 w-80 lg:w-96 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-2xl animate-in slide-in-from-right duration-200 min-h-0">
+		{#if showQueueDrawer || mobilePlayerTab === 'queue'}
+			<aside class="{mobilePlayerTab === 'queue' ? 'flex' : (showQueueDrawer ? 'hidden md:flex' : 'hidden')} order-3 w-full md:w-80 lg:w-96 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden shrink-0 shadow-2xl animate-in slide-in-from-right duration-200 min-h-0">
 				<!-- Header -->
 				<div class="p-3.5 border-b border-neutral-800/60 flex items-center justify-between shrink-0">
 					<div class="flex items-center gap-2">
@@ -1686,6 +1733,7 @@
 						type="button"
 						onclick={() => {
 							showQueueDrawer = false;
+							if (mobilePlayerTab === 'queue') mobilePlayerTab = 'tracks';
 						}}
 						class="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 cursor-pointer"
 						title="Close Queue"
@@ -1753,16 +1801,16 @@
 	</div>
 
 	<!-- BOTTOM FLOATING AUDIO CONTROL DOCK -->
-	<footer class="h-20 bg-neutral-900/85 backdrop-blur-2xl border-t border-neutral-800/80 px-4 sm:px-6 flex items-center justify-between gap-4 z-40 shrink-0 shadow-2xl">
+	<footer class="h-20 bg-neutral-900/85 backdrop-blur-2xl border-t border-neutral-800/80 px-2 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 z-40 shrink-0 shadow-2xl">
 		<!-- Track Info Pill -->
-		<div class="flex items-center gap-3 w-1/4 min-w-[160px] max-w-[280px]">
+		<div class="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-initial sm:w-1/4 min-w-0 sm:min-w-[160px] sm:max-w-[280px]">
 			{#if player.currentTrack}
-				<div class="w-12 h-12 rounded-xl bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 shadow-md relative">
+				<div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 shadow-md relative">
 					{#if player.currentAlbum?.cover_url}
 						<img src={player.currentAlbum.cover_url} alt="Cover" class="w-full h-full object-cover" />
 					{:else}
 						<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
-							<Disc3 class="w-6 h-6 animate-spin-slow" />
+							<Disc3 class="w-5 h-5 sm:w-6 sm:h-6 animate-spin-slow" />
 						</div>
 					{/if}
 				</div>
@@ -1774,7 +1822,7 @@
 					<div class="text-[10px] text-neutral-400 truncate mt-0.5" title={player.currentTrack.artist || player.currentAlbum?.artist}>
 						{player.currentTrack.artist || player.currentAlbum?.artist || 'Unknown Artist'}
 					</div>
-					<div class="flex items-center gap-1.5 mt-0.5 text-[9px] font-mono">
+					<div class="hidden xs:flex sm:flex items-center gap-1.5 mt-0.5 text-[9px] font-mono">
 						{#if (player.currentTrack.disc_number || 1) > 1}
 							<span class="text-amber-400 font-semibold bg-amber-950/60 px-1 rounded border border-amber-800/50">CD {player.currentTrack.disc_number}</span>
 							<span class="text-neutral-500">&bull;</span>
@@ -1794,7 +1842,7 @@
 		<!-- Playback Controls & Scrubber Center -->
 		<div class="flex-1 max-w-xl flex flex-col items-center justify-center gap-1">
 			<!-- Buttons Row -->
-			<div class="flex items-center gap-4 sm:gap-6">
+			<div class="flex items-center gap-2 sm:gap-4 md:gap-6">
 				<!-- Shuffle -->
 				<button
 					type="button"
@@ -1878,7 +1926,7 @@
 		</div>
 
 		<!-- Right Side Utilities (Lyrics Drawer Toggle, Queue, Volume) -->
-		<div class="flex items-center justify-end gap-3 w-1/4 min-w-[160px] max-w-[280px]">
+		<div class="hidden sm:flex items-center justify-end gap-2 md:gap-3 sm:w-1/4 sm:min-w-[120px] md:min-w-[160px] max-w-[280px]">
 			<!-- Lyrics Drawer Toggle -->
 			<button
 				type="button"
@@ -1904,7 +1952,7 @@
 			</button>
 
 			<!-- Volume Controls -->
-			<div class="flex items-center gap-1.5">
+			<div class="hidden md:flex items-center gap-1.5">
 				<button
 					type="button"
 					onclick={() => player.toggleMute()}

@@ -70,6 +70,12 @@ Turn Trax Vault into a full-featured alternative to Navidrome, Airsonic, or Goni
 * **1-Click Unvault / Remove**: Remove any album or track from the Vault back to the Scanner with a single click. Audio files on disk in `./music` remain completely untouched!
 * **Filter Pills**: Filter discovered albums by *All*, *In Vault*, *Not In Vault*, *Censored*, *Missing Lyrics*, *Unsynced LRC*, or *Bad Quality*.
 
+### 👥 Multi-User Experience & Responsive Mobile Design
+* **Multi-User Architecture**: Independent user accounts with custom roles (`admin` vs `user`), personal playlists, favorites, and Subsonic streaming credentials.
+* **Configurable Registration Policy**: Public account registration enabled by default (`/register`), or toggleable via `DISABLE_REGISTRATION=true` (or `DISABLE_ACCOUNT_CREATION=true`) so only administrators can provision accounts.
+* **Administrator Control Center**: Built-in account management in `/settings` to list users, create accounts, assign roles, reset passwords, and manage profiles.
+* **Responsive Breakpoints**: Seamless UX tailored across Phone (`< 640px`), Tablet (`640px – 1024px`), and Desktop (`> 1024px`), featuring a top segment switcher in the Studio Player (`Library`, `Tracks`, `Lyrics`, `Queue`), compact touch-friendly mobile bottom navigation, and zero horizontal scrolling.
+
 ---
 
 ## 🐳 Self-Hosting with Docker
@@ -153,6 +159,7 @@ Connect your favorite music player to Trax Vault using the Subsonic / OpenSubson
 | `AUTO_SYNC_LIBRARY` | `false` | When set to `true`, automatically imports all albums found in `/music` on boot |
 | `ORIGIN` | `http://localhost:3000` | Public URL or IP address for CSRF form handling |
 | `AUTH_DISABLED` | `false` | Set to `true` to bypass login on private local networks (warns on startup) |
+| `DISABLE_REGISTRATION` | `false` | Set to `true` (or `DISABLE_ACCOUNT_CREATION=true`) to disable public sign-ups so only admins can create accounts |
 | `COOKIE_SECURE` | Auto (`production`/HTTPS) | Enforces HTTPS-only session cookies when behind a reverse proxy |
 
 ---

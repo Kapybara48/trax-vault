@@ -1,6 +1,6 @@
 import { redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types.js';
-import { getUserById, changePassword, verifyPassword } from '$lib/server/auth.js';
+import { getUserById, changePassword, verifyPassword, getAllUsers, isRegistrationDisabled } from '$lib/server/auth.js';
 import { persistUserSubsonicSecret } from '$lib/server/subsonic/crypto.js';
 import { db, getSystemMetadata } from '$lib/server/db.js';
 import { APP_VERSION, CURRENT_SCHEMA_VERSION, MIN_COMPATIBLE_VERSION } from '$lib/version.js';
@@ -22,6 +22,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number })?.count || 0;
 	const subsonicUrl = `${url.protocol}//${url.host}/rest`;
 	const serverBaseUrl = `${url.protocol}//${url.host}`;
+	const registrationDisabled = isRegistrationDisabled();
+	const allUsers = (locals.user.role === 'admin' && locals.user.id) ? getAllUsers() : [];
 
 	return {
 		account: userDetails || locals.user,
@@ -31,6 +33,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		subsonicUrl,
 		serverBaseUrl,
 		authDisabled: locals.authDisabled,
+		registrationDisabled,
+		users: allUsers,
 		versionInfo: {
 			appVersion: APP_VERSION,
 			schemaVersion: CURRENT_SCHEMA_VERSION,

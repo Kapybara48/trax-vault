@@ -476,9 +476,9 @@
 
 	<!-- Album Hero Banner -->
 	<div class="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-neutral-950 p-6 md:p-8 shadow-2xl">
-		<div class="flex flex-col md:flex-row gap-6 md:gap-8 items-start">
+		<div class="flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start">
 			<!-- Album Cover Art -->
-			<div class="relative aspect-square w-48 sm:w-56 shrink-0 overflow-hidden rounded-2xl bg-neutral-950 shadow-2xl border border-neutral-800">
+			<div class="relative aspect-square w-48 sm:w-56 shrink-0 overflow-hidden rounded-2xl bg-neutral-950 shadow-2xl border border-neutral-800 mx-auto md:mx-0">
 				{#if album.cover_url}
 					<img
 						src={album.cover_url}

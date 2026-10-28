@@ -23,7 +23,7 @@
 
 {#if player.currentTrack}
 	<div
-		class="fixed bottom-3 sm:bottom-4 left-3 sm:left-6 right-3 sm:right-6 max-w-4xl mx-auto z-40 bg-neutral-900/90 backdrop-blur-2xl border border-neutral-800/80 rounded-2xl shadow-2xl p-2 sm:p-2.5 px-3 sm:px-4 flex items-center justify-between gap-3 sm:gap-5 animate-in slide-in-from-bottom-4 duration-200"
+		class="fixed bottom-3 sm:bottom-4 left-2 sm:left-6 right-2 sm:right-6 max-w-4xl mx-auto z-40 bg-neutral-900/90 backdrop-blur-2xl border border-neutral-800/80 rounded-2xl shadow-2xl p-2 sm:p-2.5 px-2.5 sm:px-4 flex items-center justify-between gap-2 sm:gap-5 animate-in slide-in-from-bottom-4 duration-200"
 	>
 		<!-- Left: Track info & Artwork -->
 		<div class="flex items-center gap-2.5 min-w-0 max-w-[30%] sm:max-w-[28%]">

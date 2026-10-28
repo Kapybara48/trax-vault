@@ -554,6 +554,33 @@ This document preserves persistent context, architectural conventions, recent ch
       - Updated `scan/+page.server.ts` to load the existing snapshot with `{ force: false }`, dropping scan tab page load times from 3–10 seconds down to 0–2ms (Navidrome-style instant loading).
       - Added snapshot metadata badge in `/scan` header: `Snapshot: [relative time] ([total] files)` with active status indicator.
       - Updated "Full Scan / Rescan Library" button to explicitly trigger `POST /api/library/scan?force=true` with an animated progress banner while crawling the filesystem and updating the snapshot.
+46. **Multi-User Experience, Configurable Registration, & Responsive CSS Breakpoints**:
+    - **Multi-User Backend & Role Architecture (`src/lib/server/auth.ts`)**:
+      - Implemented `isRegistrationDisabled(): boolean` checking `DISABLE_REGISTRATION`, `DISABLE_ACCOUNT_CREATION`, and `ALLOW_REGISTRATION`.
+      - Added `createUser(username, password, role)` with 3–32 char alphanumeric validation, length enforcement, collision checking, scrypt password hashing, and automated Subsonic secret encryption (`persistUserSubsonicSecret`).
+      - Added `getAllUsers()` joining user accounts with playlist count and starred count.
+      - Added `deleteUser(targetUserId, requestingAdminId)` preventing self-deletion and last-admin deletion, with cascading cleanup.
+      - Added `updateUserRole(targetUserId, newRole, requestingAdminId)` preventing demoting oneself or the last admin.
+      - Added `adminResetPassword(targetUserId, newPassword)` updating hash, salt, Subsonic secret, and invalidating existing sessions.
+    - **Public Registration & Login Routes (`src/routes/register` & `src/routes/login`)**:
+      - Added `/register` page and `POST /api/auth/register` API endpoint with registration disable guard.
+      - Updated `/login` page to conditionally render "Create an account" link based on registration policy.
+      - Updated `src/hooks.server.ts` allowing unauthenticated access to `/register` and `/api/auth/register` while redirecting authenticated users to `/`.
+    - **Admin User Management Center (`src/routes/settings`)**:
+      - Added User Accounts management card in Settings for administrators displaying total users, public registration status indicator, and a sleek user list.
+      - Added responsive Add User modal with username, password, and role selection (`admin` vs `user`).
+      - Added Reset Password modal with instant Subsonic sync.
+      - Integrated role toggle ("Make Admin" / "Make User") and delete user action with custom obsidian dialogs.
+    - **Responsive Mobile Breakpoints (Phone <640px, Tablet 640px–1024px, Desktop >1024px)**:
+      - **Studio Audiophile Player (`/player`)**:
+        - Added mobile segmented view switcher on `< md` (`[ Library ] [ Tracks ] [ Lyrics ] [ Queue ]`).
+        - Automatically navigates from Library to Tracks when tapping an album or playlist on phone.
+        - Suppressed multi-column flex squashing by rendering each view at 100% width on phone while maintaining side-by-side desktop view.
+        - Optimized floating audio dock: responsive artwork sizing (`w-10 h-10` on mobile, `w-12 h-12` on desktop), condensed track information, tightened button gaps, and hidden desktop-only volume slider on small screens.
+      - **Desktop & Mobile Navbar (`src/lib/components/Navbar.svelte`)**:
+        - Refined 7-tab mobile bottom bar (`px-0.5 py-1 text-[9px] xs:text-[10px]` with truncated labels) preventing text clipping or overflow on narrow screens down to 320px.
+        - Condensed header action button text (`Add` on mobile, `Add Album` on desktop).
+        - Centered album detail cover artwork on mobile screens (`mx-auto md:mx-0`).
 
 ---
 

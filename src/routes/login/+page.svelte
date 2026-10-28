@@ -2,6 +2,8 @@
 	import { page } from '$app/state';
 	import { Disc, Lock, User, ArrowRight, ShieldCheck } from '@lucide/svelte';
 
+	let { data }: { data: any } = $props();
+
 	let username = $state('');
 	let password = $state('');
 	let isSubmitting = $state(false);
@@ -137,6 +139,15 @@
 					</button>
 				</div>
 			</form>
+
+			{#if data?.registrationAllowed}
+				<div class="mt-6 pt-5 border-t border-neutral-800 text-center text-xs text-neutral-400">
+					Don't have an account?
+					<a href="/register" class="font-bold text-emerald-400 hover:text-emerald-300 ml-1 transition">
+						Create an account &rarr;
+					</a>
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>
