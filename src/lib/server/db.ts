@@ -1238,7 +1238,6 @@ export function updateAlbumAndTracksFromMusicBrainz(
 				artist = ?,
 				track_number = ?,
 				disc_number = ?,
-				manually_checked = 1,
 				is_missing = 0,
 				needs_attention = ?,
 				updated_at = datetime('now')
@@ -1253,7 +1252,8 @@ export function updateAlbumAndTracksFromMusicBrainz(
 			const trackNumber = t.track_number ?? existing.track_number;
 			const title = t.title.trim();
 			const artist = t.artist?.trim() ?? existing.artist;
-			const needsAtt = computeNeedsAttention(existing.quality_rating, existing.censorship, existing.lyrics, existing.format, rules, 0);
+			const manuallyChecked = existing.manually_checked ?? 0;
+			const needsAtt = computeNeedsAttention(existing.quality_rating, existing.censorship, existing.lyrics, existing.format, rules, manuallyChecked);
 
 			updateTrackStmt.run(title, artist, trackNumber, discNumber, needsAtt, t.id, albumId);
 		}

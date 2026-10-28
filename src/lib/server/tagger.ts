@@ -792,9 +792,6 @@ export async function applyFolderTags(
 
 			importedAlbumId = await importScannedAlbum(scannedAlbum);
 
-			// Mark all tracks of the cleanly imported album as verified
-			db.prepare('UPDATE tracks SET manually_checked = 1 WHERE album_id = ?').run(importedAlbumId);
-
 			// Insert missing tracks from the release that have no local audio files
 			const importedTrackNumbers = new Set(rescan.raw_tracks.map((t) => t.track_number));
 			const missingReleaseTracks = release.tracks.filter((rt) => !importedTrackNumbers.has(rt.track_number));

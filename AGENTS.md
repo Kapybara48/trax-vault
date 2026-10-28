@@ -517,10 +517,10 @@ This document preserves persistent context, architectural conventions, recent ch
         - Auto-scrolling live terminal log box with color-coded status badges.
         - Stop/Cancel and Done buttons with automated view invalidation.
       - Integrated "Batch Download" action button into LRC Maker Studio header toolbar and Album Detail hero action bar.
-43. **Forgejo Runner Migration (`runs-on: pve1`) & DinD Configuration**:
-    - Updated `.forgejo/workflows/docker-publish.yml` runner target to `runs-on: pve1`.
-    - Configured `DOCKER_HOST: tcp://docker-in-docker:2375` for the DinD service container on runner `pve1`.
-    - Added `.forgejo/**` path filter to ensure workflow edits trigger CI/CD builds.
+43. **Forgejo Runner Migration (`runs-on: pve1`) & Tagger Manual Check Decoupling**:
+    - Updated `.forgejo/workflows/docker-publish.yml` runner target to `runs-on: pve1` and removed `DOCKER_HOST` environment variable to connect directly to the native Docker socket.
+    - Decoupled Tagger from `manually_checked`: tagging an album (either existing library album in `updateAlbumAndTracksFromMusicBrainz` or folder import in `applyAlbumTagsToFolder`) now preserves each track's existing `manually_checked` state and does not automatically toggle it to 1.
+    - Added `.forgejo/**` path filter in `docker-publish.yml` to ensure workflow edits trigger CI/CD builds.
 
 ---
 
