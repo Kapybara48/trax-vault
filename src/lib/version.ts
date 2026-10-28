@@ -5,6 +5,8 @@
  * - v1.6: Legacy Track Vault (trackvault.db, schema <= 160)
  * - v1.7: Bridge Release - automatically migrates v1.6 databases to traxvault.db and stamps schema 170
  * - v2.0: Requires v1.7+ (schema >= 170). Direct upgrades from v1.6 are rejected to prevent corruption.
+ *
+ * CI/CD: Automated builds published via Forgejo Actions on pve1 runner.
  */
 
 export const APP_NAME = 'Trax Vault';

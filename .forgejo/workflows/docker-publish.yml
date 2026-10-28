@@ -16,6 +16,7 @@ on:
       - 'tsconfig.json'
       - 'vite.config.ts'
       - 'docker-compose.yml'
+      - '.forgejo/**'
   workflow_dispatch:
 
 concurrency:
@@ -25,12 +26,11 @@ concurrency:
 env:
   REGISTRY: git.kapyhub.cz
   IMAGE_NAME: kapybara/trax-vault
-  DOCKER_HOST: tcp://172.21.0.2:2375
 
 jobs:
   build-and-push:
     name: Build & Push Container
-    runs-on: docker
+    runs-on: pve1
     permissions:
       contents: read
       packages: write
@@ -38,36 +38,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure Docker daemon connection
+      - name: Ensure Docker CLI is available
         run: |
           if ! command -v docker >/dev/null 2>&1; then
             echo "Installing Docker CLI..."
             apt-get update && apt-get install -y --no-install-recommends docker.io || true
           fi
-
-          echo "Detecting Docker daemon connection..."
-          DETECTED=""
-          for candidate in "${DOCKER_HOST:-}" "tcp://172.21.0.2:2375" "tcp://docker-in-docker:2375" "tcp://docker:2375" "unix:///var/run/docker.sock"; do
-            echo "Checking: $candidate"
-            if [ -n "$candidate" ] && DOCKER_HOST="$candidate" docker info >/dev/null 2>&1; then
-              DETECTED="$candidate"
-              echo "==> Successfully connected to Docker daemon at $candidate"
-              break
-            fi
-          done
-
-          if [ -n "$DETECTED" ]; then
-            echo "DOCKER_HOST=$DETECTED" >> $GITHUB_ENV
-            export DOCKER_HOST="$DETECTED"
-            docker version
-          else
-            echo "::error::Could not connect to Docker daemon. Probing candidates:"
-            for candidate in "tcp://172.21.0.2:2375" "tcp://docker-in-docker:2375" "tcp://docker:2375" "unix:///var/run/docker.sock"; do
-              echo "--- Probing candidate: $candidate ---"
-              DOCKER_HOST="$candidate" docker info || true
-            done
-            exit 1
-          fi
+          docker version
 
       - name: Log in to Forgejo Container Registry
         run: |

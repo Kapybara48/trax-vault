@@ -517,6 +517,10 @@ This document preserves persistent context, architectural conventions, recent ch
         - Auto-scrolling live terminal log box with color-coded status badges.
         - Stop/Cancel and Done buttons with automated view invalidation.
       - Integrated "Batch Download" action button into LRC Maker Studio header toolbar and Album Detail hero action bar.
+43. **Forgejo Runner Migration (`runs-on: pve1`) & CI/CD Pipeline Simplification**:
+    - Updated `.forgejo/workflows/docker-publish.yml` runner target to `runs-on: pve1`.
+    - Removed `DOCKER_HOST` environment variable and daemon detection probe logic, using local Docker socket natively on the `pve1` runner.
+    - Added `.forgejo/**` path filter to ensure workflow edits trigger CI/CD builds.
 
 ---
 
