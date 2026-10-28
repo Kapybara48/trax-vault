@@ -62,7 +62,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	try {
-		const force = url.searchParams.get('force') !== 'false';
+		const force = url.searchParams.get('force') === 'true';
 		const result = await scanLibraryDirectory(targetPath, { force });
 		return json(result);
 	} catch (err: any) {

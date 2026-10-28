@@ -23,7 +23,13 @@
 		ArrowRight,
 		Filter,
 		RotateCcw,
-		Mic2
+		Mic2,
+		Sliders,
+		ChevronDown,
+		ChevronUp,
+		Info,
+		ShieldCheck,
+		Music2
 	} from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -31,6 +37,9 @@
 	let { data }: { data: PageData } = $props();
 
 	let tracks = $state<Track[]>([...data.tracks]);
+
+	// Global rules details accordion toggle
+	let showRulesDetails = $state(false);
 
 	// Local interactive search & filters
 	let localSearch = $state(data.searchQuery || '');
@@ -140,14 +149,191 @@
 
 <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
 	<!-- Page Header -->
-	<div class="mb-5">
-		<div class="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-400">
-			<TriangleAlert class="h-4 w-4 text-emerald-400" />
-			Trax Vault Fixer
+	<div class="mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+		<div>
+			<div class="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-400">
+				<TriangleAlert class="h-4 w-4 text-emerald-400" />
+				Trax Vault Fixer
+			</div>
+			<h1 class="mt-1 text-2xl sm:text-3xl font-black text-white">
+				Track Fixer
+			</h1>
+			<p class="mt-1 text-xs text-neutral-400">
+				Audit and repair audio fidelity, sync companion lyrics, and resolve library quality issues.
+			</p>
 		</div>
-		<h1 class="mt-1 text-2xl sm:text-3xl font-black text-white">
-			Track Fixer
-		</h1>
+
+		<button
+			type="button"
+			onclick={() => (showRulesDetails = !showRulesDetails)}
+			class="self-start md:self-auto flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3.5 py-2 text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-800/90 transition shadow-sm cursor-pointer"
+		>
+			<Sliders class="h-3.5 w-3.5 text-emerald-400" />
+			<span>{showRulesDetails ? 'Hide Global Rules' : 'Global Quality Rules & Standards'}</span>
+			{#if showRulesDetails}
+				<ChevronUp class="h-3.5 w-3.5 text-neutral-400" />
+			{:else}
+				<ChevronDown class="h-3.5 w-3.5 text-neutral-400" />
+			{/if}
+		</button>
+	</div>
+
+	<!-- Global Rules & Standards Banner -->
+	<div class="mb-6 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 sm:p-5 backdrop-blur-md shadow-xl">
+		<div class="flex items-center justify-between gap-2 mb-3.5">
+			<div class="flex items-center gap-2.5">
+				<div class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+					<ShieldCheck class="h-4 w-4" />
+				</div>
+				<div>
+					<h2 class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+						Vault Global Quality Standards
+						<span class="rounded bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 text-[10px] font-mono text-emerald-300 font-bold">
+							Active
+						</span>
+					</h2>
+					<p class="text-[11px] text-neutral-400 mt-0.5">
+						Criteria songs must meet to be considered healthy. Tracks failing any rule are flagged for attention.
+					</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- 4 Pillars Grid -->
+		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+			<!-- 1. Audio Fidelity -->
+			<div class="rounded-xl border border-neutral-800/80 bg-neutral-950/50 p-3 flex flex-col justify-between">
+				<div>
+					<div class="flex items-center justify-between text-xs font-bold text-white mb-1.5">
+						<span class="flex items-center gap-1.5">
+							<Disc3 class="h-3.5 w-3.5 text-emerald-400" />
+							Audio Fidelity
+						</span>
+						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
+							Lossless
+						</span>
+					</div>
+					<p class="text-[11px] text-neutral-400 leading-relaxed">
+						FLAC or ALAC (16/24-bit) preferred. MP3 320/V0 accepted.
+					</p>
+				</div>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
+					<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+					<span>Flags &lt;192 kbps or bad quality</span>
+				</div>
+			</div>
+
+			<!-- 2. Synced Lyrics -->
+			<div class="rounded-xl border border-neutral-800/80 bg-neutral-950/50 p-3 flex flex-col justify-between">
+				<div>
+					<div class="flex items-center justify-between text-xs font-bold text-white mb-1.5">
+						<span class="flex items-center gap-1.5">
+							<FileText class="h-3.5 w-3.5 text-emerald-400" />
+							Lyrics & Karaoke
+						</span>
+						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
+							Synced .LRC
+						</span>
+					</div>
+					<p class="text-[11px] text-neutral-400 leading-relaxed">
+						Synchronized timestamps or verified ♪ Instrumental status.
+					</p>
+				</div>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
+					<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+					<span>Flags missing or unsynced LRC</span>
+				</div>
+			</div>
+
+			<!-- 3. Explicit / Censorship -->
+			<div class="rounded-xl border border-neutral-800/80 bg-neutral-950/50 p-3 flex flex-col justify-between">
+				<div>
+					<div class="flex items-center justify-between text-xs font-bold text-white mb-1.5">
+						<span class="flex items-center gap-1.5">
+							<ShieldAlert class="h-3.5 w-3.5 text-emerald-400" />
+							Authenticity
+						</span>
+						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
+							Explicit
+						</span>
+					</div>
+					<p class="text-[11px] text-neutral-400 leading-relaxed">
+						Original uncensored audio recording and lyric text.
+					</p>
+				</div>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
+					<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+					<span>Flags radio edits & censored LRC</span>
+				</div>
+			</div>
+
+			<!-- 4. Release Completeness -->
+			<div class="rounded-xl border border-neutral-800/80 bg-neutral-950/50 p-3 flex flex-col justify-between">
+				<div>
+					<div class="flex items-center justify-between text-xs font-bold text-white mb-1.5">
+						<span class="flex items-center gap-1.5">
+							<CheckCircle2 class="h-3.5 w-3.5 text-emerald-400" />
+							Completeness
+						</span>
+						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
+							100% Tracklist
+						</span>
+					</div>
+					<p class="text-[11px] text-neutral-400 leading-relaxed">
+						All tracks from the official MusicBrainz release present.
+					</p>
+				</div>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
+					<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+					<span>Flags missing album tracks</span>
+				</div>
+			</div>
+		</div>
+
+		<!-- Expandable Detailed Rules Breakdown -->
+		{#if showRulesDetails}
+			<div class="mt-4 pt-4 border-t border-neutral-800/80 text-xs text-neutral-300 animate-in fade-in duration-200">
+				<h3 class="font-bold text-white text-xs uppercase tracking-wider mb-2 flex items-center gap-2">
+					<Info class="h-3.5 w-3.5 text-emerald-400" />
+					Detailed Rules Specification & Overrides
+				</h3>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-neutral-400 leading-relaxed">
+					<div class="rounded-lg bg-neutral-950/40 p-3 border border-neutral-800/60 space-y-1.5">
+						<div class="font-semibold text-neutral-200">Default Global Detection Flags:</div>
+						<div class="flex items-center gap-2 text-neutral-300">
+							<span class="text-emerald-400 font-bold font-mono">✓</span>
+							<span><strong class="text-neutral-200">Bad Quality</strong>: Bitrates &lt; 128 kbps or corrupted audio stream.</span>
+						</div>
+						<div class="flex items-center gap-2 text-neutral-300">
+							<span class="text-emerald-400 font-bold font-mono">✓</span>
+							<span><strong class="text-neutral-200">Needs Upgrade</strong>: Lossy bitrates between 128 kbps and 192 kbps.</span>
+						</div>
+						<div class="flex items-center gap-2 text-neutral-300">
+							<span class="text-emerald-400 font-bold font-mono">✓</span>
+							<span><strong class="text-neutral-200">Missing Lyrics</strong>: No companion .lrc/.txt file or embedded tag found.</span>
+						</div>
+						<div class="flex items-center gap-2 text-neutral-300">
+							<span class="text-emerald-400 font-bold font-mono">✓</span>
+							<span><strong class="text-neutral-200">Unsynced LRC</strong>: Lyrics without precise line timestamps.</span>
+						</div>
+						<div class="flex items-center gap-2 text-neutral-300">
+							<span class="text-emerald-400 font-bold font-mono">✓</span>
+							<span><strong class="text-neutral-200">Censored Audio / Lyrics</strong>: Bleeped or muted explicit tracks.</span>
+						</div>
+					</div>
+
+					<div class="rounded-lg bg-neutral-950/40 p-3 border border-neutral-800/60 space-y-1.5">
+						<div class="font-semibold text-neutral-200">Per-Album Rule Customization:</div>
+						<p>
+							Any album can override these standards in its <strong class="text-neutral-200">Album Details &gt; Fixer Rules</strong> menu. For example, you can enforce strict lossless-only mode (<code class="text-emerald-400">flag_lossy: true</code>), allow clean radio edits for specific records, or permit plain text lyrics.
+						</p>
+						<p class="pt-1">
+							Once you've inspected a track and confirmed it meets your standards, click <strong class="text-neutral-200">Manual Check</strong> (<code class="text-emerald-400">✓</code>) to permanently clear it from attention.
+						</p>
+					</div>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Top Issue Type Tabs -->

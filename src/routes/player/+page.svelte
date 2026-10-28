@@ -1147,8 +1147,8 @@
 											}
 										}
 									}}
-									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
-									title="Shuffle Play"
+									class="p-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1.5 {player.shuffleEnabled && player.currentAlbum?.id === selectedAlbum!.id ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm shadow-emerald-500/20' : 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
+									title="Shuffle Play ({player.shuffleEnabled ? 'On' : 'Off'})"
 								>
 									<Shuffle class="w-3.5 h-3.5" />
 									<span class="hidden sm:inline">Shuffle</span>
@@ -1452,8 +1452,8 @@
 									type="button"
 									onclick={playPlaylistShuffle}
 									disabled={selectedPlaylist.tracks.length === 0}
-									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold disabled:opacity-40 transition flex items-center gap-1"
-									title="Shuffle Play"
+									class="p-1.5 rounded-xl border text-xs font-semibold disabled:opacity-40 transition flex items-center gap-1.5 {player.shuffleEnabled ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm shadow-emerald-500/20' : 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
+									title="Shuffle Play ({player.shuffleEnabled ? 'On' : 'Off'})"
 								>
 									<Shuffle class="w-3.5 h-3.5" />
 									<span class="hidden sm:inline">Shuffle</span>
@@ -1799,10 +1799,13 @@
 				<button
 					type="button"
 					onclick={() => player.toggleShuffle()}
-					class="p-1 rounded text-neutral-400 hover:text-white transition cursor-pointer {player.shuffleEnabled ? 'text-emerald-400 hover:text-emerald-300' : ''}"
+					class="relative p-1.5 rounded-lg transition-all duration-200 cursor-pointer flex items-center justify-center {player.shuffleEnabled ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.25)]' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'}"
 					title="Shuffle ({player.shuffleEnabled ? 'On' : 'Off'})"
 				>
 					<Shuffle class="w-4 h-4" />
+					{#if player.shuffleEnabled}
+						<span class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"></span>
+					{/if}
 				</button>
 
 				<!-- Skip Back -->
@@ -1843,13 +1846,16 @@
 				<button
 					type="button"
 					onclick={() => player.toggleRepeat()}
-					class="p-1 rounded text-neutral-400 hover:text-white transition cursor-pointer {player.repeatMode !== 'off' ? 'text-emerald-400 hover:text-emerald-300' : ''}"
-					title="Repeat ({player.repeatMode})"
+					class="relative p-1.5 rounded-lg transition-all duration-200 cursor-pointer flex items-center justify-center {player.repeatMode !== 'off' ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.25)]' : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'}"
+					title="Repeat ({player.repeatMode === 'one' ? 'Repeat One' : player.repeatMode === 'all' ? 'Repeat All' : 'Off'})"
 				>
 					{#if player.repeatMode === 'one'}
 						<Repeat1 class="w-4 h-4" />
 					{:else}
 						<Repeat class="w-4 h-4" />
+					{/if}
+					{#if player.repeatMode !== 'off'}
+						<span class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"></span>
 					{/if}
 				</button>
 			</div>

@@ -551,6 +551,7 @@ export interface ScanResult {
 	totalFiles: number;
 	libraryPath: string;
 	exists: boolean;
+	scannedAt?: number;
 }
 
 interface ScanCacheEntry {
@@ -560,14 +561,107 @@ interface ScanCacheEntry {
 
 const scanCache = new Map<string, ScanCacheEntry>();
 const inFlightScans = new Map<string, Promise<ScanResult>>();
-const SCAN_CACHE_TTL_MS = 60_000; // 60 seconds
+
+function getScanSnapshotPath(canonicalTarget: string): string {
+	const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve('./data');
+	if (!fs.existsSync(dataDir)) {
+		try {
+			fs.mkdirSync(dataDir, { recursive: true });
+		} catch {
+			// ignore
+		}
+	}
+	const safeKey = Buffer.from(canonicalTarget).toString('hex').slice(0, 16);
+	return path.join(dataDir, `scan_snapshot_${safeKey}.json`);
+}
+
+function saveScanSnapshot(canonicalTarget: string, result: ScanResult): void {
+	try {
+		const filePath = getScanSnapshotPath(canonicalTarget);
+		fs.writeFileSync(filePath, JSON.stringify(result), 'utf-8');
+	} catch (err) {
+		console.warn('[Scanner] Failed to save scan snapshot to disk:', err);
+	}
+}
+
+function loadScanSnapshot(canonicalTarget: string): ScanResult | null {
+	try {
+		const filePath = getScanSnapshotPath(canonicalTarget);
+		if (fs.existsSync(filePath)) {
+			const content = fs.readFileSync(filePath, 'utf-8');
+			return JSON.parse(content) as ScanResult;
+		}
+	} catch (err) {
+		console.warn('[Scanner] Failed to load scan snapshot from disk:', err);
+	}
+	return null;
+}
+
+export function reconcileScanAlbumsWithVault(albums: ScannedAlbum[]): void {
+	try {
+		const vaultAlbums = db.prepare(
+			'SELECT id, musicbrainz_id, LOWER(title) as l_title, LOWER(artist) as l_artist FROM albums'
+		).all() as Array<{ id: number; musicbrainz_id: string | null; l_title: string; l_artist: string }>;
+
+		const vaultMbIdMap = new Map<string, number>();
+		const vaultTitleArtistMap = new Map<string, number>();
+
+		for (const va of vaultAlbums) {
+			if (va.musicbrainz_id) {
+				vaultMbIdMap.set(va.musicbrainz_id.trim(), va.id);
+			}
+			vaultTitleArtistMap.set(`${va.l_title}:::${va.l_artist}`, va.id);
+		}
+
+		for (const alb of albums) {
+			let alreadyInVault = false;
+			let existingAlbumId: number | null = null;
+
+			if (alb.musicbrainz_id && vaultMbIdMap.has(alb.musicbrainz_id.trim())) {
+				alreadyInVault = true;
+				existingAlbumId = vaultMbIdMap.get(alb.musicbrainz_id.trim())!;
+			} else {
+				const lookupKey = `${alb.title.toLowerCase()}:::${alb.artist.toLowerCase()}`;
+				if (vaultTitleArtistMap.has(lookupKey)) {
+					alreadyInVault = true;
+					existingAlbumId = vaultTitleArtistMap.get(lookupKey)!;
+				}
+			}
+
+			alb.already_in_vault = alreadyInVault;
+			alb.existing_album_id = existingAlbumId;
+			if (!alreadyInVault && !alb.tracks.some((t) => t.selected)) {
+				alb.selected = true;
+				for (const t of alb.tracks) {
+					t.selected = true;
+				}
+			}
+		}
+
+		albums.sort((a, b) => {
+			if (a.already_in_vault !== b.already_in_vault) {
+				return a.already_in_vault ? 1 : -1;
+			}
+			return a.title.localeCompare(b.title);
+		});
+	} catch (err) {
+		console.warn('[Scanner] Failed to reconcile albums with vault DB:', err);
+	}
+}
 
 export function invalidateScanCache(targetDir?: string): void {
 	if (targetDir) {
 		const canonical = path.resolve(targetDir);
-		scanCache.delete(canonical);
+		const cached = scanCache.get(canonical);
+		if (cached) {
+			reconcileScanAlbumsWithVault(cached.result.albums);
+			saveScanSnapshot(canonical, cached.result);
+		}
 	} else {
-		scanCache.clear();
+		for (const [canonical, cached] of scanCache.entries()) {
+			reconcileScanAlbumsWithVault(cached.result.albums);
+			saveScanSnapshot(canonical, cached.result);
+		}
 	}
 }
 
@@ -608,11 +702,23 @@ export async function scanLibraryDirectory(
 	// 1. Check in-memory cache if not forced
 	if (!options?.force) {
 		const cached = scanCache.get(canonicalTarget);
-		if (cached && Date.now() - cached.timestamp < SCAN_CACHE_TTL_MS) {
+		if (cached) {
+			reconcileScanAlbumsWithVault(cached.result.albums);
 			return cached.result;
 		}
 
-		// 2. Check in-flight scan deduplication
+		// 2. Check persistent disk snapshot if not forced
+		const diskSnapshot = loadScanSnapshot(canonicalTarget);
+		if (diskSnapshot) {
+			reconcileScanAlbumsWithVault(diskSnapshot.albums);
+			scanCache.set(canonicalTarget, {
+				timestamp: diskSnapshot.scannedAt || Date.now(),
+				result: diskSnapshot
+			});
+			return diskSnapshot;
+		}
+
+		// 3. Check in-flight scan deduplication
 		if (inFlightScans.has(canonicalTarget)) {
 			return inFlightScans.get(canonicalTarget)!;
 		}
@@ -772,14 +878,17 @@ export async function scanLibraryDirectory(
 			return a.title.localeCompare(b.title);
 		});
 
+		const scannedAt = Date.now();
 		const result: ScanResult = {
 			albums: scannedAlbums,
 			totalFiles: audioFiles.length,
 			libraryPath: canonicalTarget,
-			exists: true
+			exists: true,
+			scannedAt
 		};
 
-		scanCache.set(canonicalTarget, { timestamp: Date.now(), result });
+		scanCache.set(canonicalTarget, { timestamp: scannedAt, result });
+		saveScanSnapshot(canonicalTarget, result);
 		return result;
 	})();
 
@@ -939,7 +1048,7 @@ export async function syncLibraryFromDisk(): Promise<{
 	let newTracksCount = 0;
 
 	try {
-		const scanResult = await scanLibraryDirectory();
+		const scanResult = await scanLibraryDirectory(undefined, { force: true });
 
 		for (const scannedAlb of scanResult.albums) {
 			if (!scannedAlb.already_in_vault) {

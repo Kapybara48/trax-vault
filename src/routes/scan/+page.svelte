@@ -42,6 +42,23 @@
 	let scannedAlbums = $state<ScannedAlbum[]>(structuredClone(data.albums));
 	let totalFiles = $state(data.totalFiles);
 	let dirExists = $state(data.exists);
+	let scannedAt = $state<number | null>(data.scannedAt || null);
+
+	function formatScannedAt(timestamp: number | null): string {
+		if (!timestamp) return 'Never scanned';
+		const diffSec = Math.floor((Date.now() - timestamp) / 1000);
+		if (diffSec < 60) return 'Just now';
+		const diffMin = Math.floor(diffSec / 60);
+		if (diffMin < 60) return `${diffMin}m ago`;
+		const diffHours = Math.floor(diffMin / 60);
+		if (diffHours < 24) return `${diffHours}h ago`;
+		return new Date(timestamp).toLocaleDateString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
 
 	// Expanded album cards map
 	let expandedAlbums = $state<{ [key: string]: boolean }>({});
@@ -75,6 +92,7 @@
 		totalFiles = data.totalFiles;
 		dirExists = data.exists;
 		libraryPathInput = data.libraryPath;
+		scannedAt = data.scannedAt || null;
 	});
 
 	// Autocomplete fetcher
@@ -156,12 +174,13 @@
 		showSuggestions = false;
 		isScanning = true;
 		try {
-			const res = await fetch(`/api/library/scan?path=${encodeURIComponent(libraryPathInput.trim())}`);
+			const res = await fetch(`/api/library/scan?force=true&path=${encodeURIComponent(libraryPathInput.trim())}`);
 			if (res.ok) {
 				const result = await res.json();
 				scannedAlbums = result.albums;
 				totalFiles = result.totalFiles;
 				dirExists = result.exists;
+				scannedAt = result.scannedAt || Date.now();
 			}
 		} catch (err) {
 			console.error('Scan failed:', err);
@@ -423,9 +442,15 @@
 			<h1 class="mt-1 text-2xl sm:text-3xl font-black text-white">
 				Scan Library & Import Tracks
 			</h1>
-			<p class="mt-1 text-xs text-neutral-400">
-				Scan local files, read metadata and lyrics, and import to your vault.
-			</p>
+			<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+				<span>Scan local files, read metadata and lyrics, and import to your vault.</span>
+				{#if scannedAt}
+					<span class="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 border border-neutral-800 px-2.5 py-0.5 text-[10px] font-mono text-neutral-300">
+						<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"></span>
+						Snapshot: {formatScannedAt(scannedAt)} ({totalFiles} files)
+					</span>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Actions -->
@@ -435,7 +460,7 @@
 					type="button"
 					onclick={importAllSelected}
 					disabled={isBatchImporting || isScanning}
-					class="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-500 disabled:opacity-50"
+					class="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-500 disabled:opacity-50 cursor-pointer"
 				>
 					{#if isBatchImporting}
 						<FolderSync class="h-4 w-4 animate-spin" />
@@ -451,13 +476,27 @@
 				type="button"
 				onclick={rescan}
 				disabled={isScanning || isBatchImporting}
-				class="flex items-center gap-2 rounded-xl bg-neutral-800 px-4 py-2.5 text-xs font-bold text-neutral-200 transition hover:bg-neutral-700 disabled:opacity-50"
+				class="flex items-center gap-2 rounded-xl bg-neutral-800 px-4 py-2.5 text-xs font-bold text-neutral-200 transition hover:bg-neutral-700 disabled:opacity-50 cursor-pointer"
+				title="Run full library scan to discover new audio files on disk"
 			>
-				<FolderSync class="h-4 w-4 {isScanning ? 'animate-spin' : ''}" />
-				<span>{isScanning ? 'Scanning...' : 'Rescan Library'}</span>
+				<FolderSync class="h-4 w-4 {isScanning ? 'animate-spin text-emerald-400' : ''}" />
+				<span>{isScanning ? 'Scanning Library...' : 'Full Scan / Rescan Library'}</span>
 			</button>
 		</div>
 	</div>
+
+	<!-- Live Scanning Progress Alert -->
+	{#if isScanning}
+		<div class="mb-6 rounded-2xl border border-emerald-500/40 bg-emerald-950/30 p-4 sm:p-5 text-xs text-emerald-200 flex items-center gap-3.5 shadow-xl animate-pulse">
+			<FolderSync class="h-6 w-6 text-emerald-400 animate-spin shrink-0" />
+			<div class="flex-1">
+				<div class="font-bold text-white text-sm">Full Library Rescan in Progress...</div>
+				<p class="text-neutral-300 mt-0.5">
+					Trax Vault is walking your music directory, extracting audio metadata and bitrates, and finding companion lyrics. Your library will refresh automatically.
+				</p>
+			</div>
+		</div>
+	{/if}
 
 	<!-- MusicBrainz Tagger Studio Helper Banner -->
 	<div class="mb-6 rounded-2xl border border-emerald-900/60 bg-gradient-to-r from-emerald-950/40 via-neutral-900/50 to-neutral-900/40 p-4 sm:p-5 backdrop-blur-md shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">

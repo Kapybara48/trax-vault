@@ -536,6 +536,24 @@ This document preserves persistent context, architectural conventions, recent ch
       - In `src/lib/server/tagger.ts` (`applyAlbumTags`), restricted confirmed matches strictly to real local audio files, ensuring missing release tracks continue to be recognized and preserved as `is_missing = 1`.
       - In `src/lib/server/db.ts` (`updateAlbumAndTracksFromMusicBrainz`), guarded `is_missing = CASE WHEN file_path IS NOT NULL THEN 0 ELSE is_missing END`, preventing missing placeholder tracks from losing their missing status or becoming 'OTHER'.
       - Added automated self-healing database migration ensuring existing tracks with `file_path IS NULL` are accurately restored to `is_missing = 1`.
+45. **Player Shuffle/Repeat Active State, Global Fixer Standards Header, & Instant Scan Loading**:
+    - **Player Shuffle & Repeat Active State Visual Indicators (`src/routes/player/+page.svelte`)**:
+      - Fixed class collision in Tailwind where `text-neutral-400` conflicted with `text-emerald-400`.
+      - Replaced with dynamic high-contrast styling: emerald background pill (`bg-emerald-500/15 ring-1 ring-emerald-500/30 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.25)]`) and glowing emerald active dot indicator (`<span class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"></span>`).
+      - Updated album header and playlist header shuffle buttons to reflect active shuffle state with emerald highlights.
+    - **Global Fixer Rules & Quality Standards Header (`src/routes/issues/+page.svelte`)**:
+      - Added dedicated obsidian banner at the top of The Fixer detailing the 4 core pillars of Trax Vault quality standards:
+        1. **Audio Fidelity**: Lossless FLAC / ALAC (16/24-bit) preferred or MP3 320/V0; flags <192kbps and bad quality.
+        2. **Lyrics & Karaoke**: Synchronized `.lrc` with millisecond timestamps or ♪ Instrumental; flags missing, unsynced, or censored lyrics.
+        3. **Authenticity / Censorship**: Explicit uncensored audio recording; flags radio edits and censored lines.
+        4. **Release Completeness**: 100% of official MusicBrainz release tracks present; flags missing album tracks.
+      - Added collapsible "Detailed Rules Specification & Overrides" guide explaining default detection flags and per-album custom overrides.
+    - **Instant Scan Tab Loading via Persistent Disk Snapshot & On-Demand Rescan (`src/lib/server/scanner.ts`, `scan/+page.server.ts`, `scan/+page.svelte`)**:
+      - Implemented disk-backed persistent scan cache (`${DATA_DIR}/scan_snapshot_${hash}.json`) storing scanned audio file metadata.
+      - Added `reconcileScanAlbumsWithVault()`: fast single-query SQLite reconciliation updating `already_in_vault` and `existing_album_id` in <1ms without re-scanning disk files.
+      - Updated `scan/+page.server.ts` to load the existing snapshot with `{ force: false }`, dropping scan tab page load times from 3–10 seconds down to 0–2ms (Navidrome-style instant loading).
+      - Added snapshot metadata badge in `/scan` header: `Snapshot: [relative time] ([total] files)` with active status indicator.
+      - Updated "Full Scan / Rescan Library" button to explicitly trigger `POST /api/library/scan?force=true` with an animated progress banner while crawling the filesystem and updating the snapshot.
 
 ---
 
