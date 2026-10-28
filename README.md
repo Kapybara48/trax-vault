@@ -1,5 +1,7 @@
 # 💽 Trax Vault
 
+[![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](LICENSE.md)
+
 **Trax Vault** is a modern, self-hosted web application, audiophile player studio, and Subsonic/OpenSubsonic streaming server built for music collectors. Audit audio fidelity, track censorship, create synchronized lyrics, tag files directly with MusicBrainz, and stream your lossless music library anywhere.
 
 ---
@@ -206,3 +208,11 @@ Trax Vault uses an **N-1 Stepping-Stone Upgrade Policy** to ensure zero data los
 * **Metadata API**: [MusicBrainz API](https://musicbrainz.org) & [Cover Art Archive](https://coverartarchive.org)
 * **Icons**: [@lucide/svelte](https://lucide.dev)
 * **Container**: Docker + Docker Compose with `@sveltejs/adapter-node`
+
+---
+
+## 📄 License
+
+This project is licensed under **The Unlicense** (Public Domain). You are free to copy, modify, publish, use, compile, sell, or distribute this software for any purpose, commercial or non-commercial, and by any means.
+
+See [LICENSE.md](LICENSE.md) for full license details.
