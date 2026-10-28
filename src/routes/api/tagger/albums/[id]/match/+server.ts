@@ -59,7 +59,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			});
 		}
 
-		const matches = alignTracks(tracks, release.tracks);
+		// Only real local tracks with physical audio files should be matched against MusicBrainz release tracks
+		const realTracks = tracks.filter((t) => t.is_missing !== 1 && !!t.file_path);
+		const matches = alignTracks(realTracks, release.tracks);
 		const missingTracks = getMissingTracks(release.tracks, matches);
 		const overallScore = matches.length > 0
 			? Math.round(matches.reduce((sum, m) => sum + m.score, 0) / matches.length)

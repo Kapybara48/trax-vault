@@ -34,6 +34,7 @@
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { player } from '$lib/services/player.svelte.js';
+	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -83,13 +84,13 @@
 	async function handleBatchDelete() {
 		if (selectedAlbumIds.length === 0) return;
 		const count = selectedAlbumIds.length;
-		if (
-			!confirm(
-				`Remove ${count} selected ${count === 1 ? 'album' : 'albums'} from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the albums will return to the Library Scanner.`
-			)
-		) {
-			return;
-		}
+		const confirmed = await confirmAction({
+			title: 'Unvault Selected Albums',
+			message: `Remove ${count} selected ${count === 1 ? 'album' : 'albums'} from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the albums will return to the Library Scanner.`,
+			confirmText: `Unvault ${count} ${count === 1 ? 'Album' : 'Albums'}`,
+			danger: true
+		});
+		if (!confirmed) return;
 
 		isBatchDeleting = true;
 		try {
@@ -104,11 +105,11 @@
 				await invalidateAll();
 			} else {
 				const errData = await res.json().catch(() => ({}));
-				alert(`Failed to remove albums: ${errData.error || res.statusText}`);
+				await alertAction(`Failed to remove albums: ${errData.error || res.statusText}`, 'Error');
 			}
 		} catch (err: any) {
 			console.error('Failed to batch remove albums:', err);
-			alert(`Failed to remove albums: ${err.message}`);
+			await alertAction(`Failed to remove albums: ${err.message}`, 'Error');
 		} finally {
 			isBatchDeleting = false;
 		}
@@ -195,13 +196,13 @@
 	}
 
 	async function removeTrackFromVault(trackId: number, title: string) {
-		if (
-			!confirm(
-				`Remove song "${title}" from Vault?\n\nAudio file on disk will NOT be deleted, and can be re-scanned at any time.`
-			)
-		) {
-			return;
-		}
+		const confirmed = await confirmAction({
+			title: 'Remove Song from Vault',
+			message: `Remove song "${title}" from Vault?\n\nAudio file on disk will NOT be deleted, and can be re-scanned at any time.`,
+			confirmText: 'Remove Song',
+			danger: true
+		});
+		if (!confirmed) return;
 
 		try {
 			const res = await fetch(`/api/tracks/${trackId}`, { method: 'DELETE' });
@@ -210,11 +211,11 @@
 				await invalidateAll();
 			} else {
 				const errData = await res.json().catch(() => ({}));
-				alert(`Failed to remove track: ${errData.error || res.statusText}`);
+				await alertAction(`Failed to remove track: ${errData.error || res.statusText}`, 'Error');
 			}
 		} catch (err: any) {
 			console.error('Failed to delete track:', err);
-			alert(`Failed to remove track: ${err.message}`);
+			await alertAction(`Failed to remove track: ${err.message}`, 'Error');
 		}
 	}
 </script>

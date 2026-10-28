@@ -379,7 +379,7 @@ export async function applyAlbumTags(
 
 	for (const match of confirmedMatches) {
 		const localTr = localTracks.find((t: Track) => t.id === match.localTrackId);
-		if (!localTr) continue;
+		if (!localTr || localTr.is_missing === 1 || !localTr.file_path) continue;
 
 		const targetTitle = match.title.trim();
 		const targetArtist = match.artist?.trim() || release.artist;
@@ -409,8 +409,15 @@ export async function applyAlbumTags(
 	}
 
 	// 3. Compute missing tracks from MusicBrainz release
-	const confirmedMbTrackIds = new Set(confirmedMatches.map((m) => m.mbTrackId));
-	const missingMbTracks = release.tracks.filter((t) => !confirmedMbTrackIds.has(t.id));
+	// Only count confirmed matches that matched a REAL local file with physical audio on disk
+	const matchedRealMbTrackIds = new Set<string>();
+	for (const match of confirmedMatches) {
+		const localTr = localTracks.find((t: Track) => t.id === match.localTrackId);
+		if (localTr && localTr.is_missing !== 1 && !!localTr.file_path) {
+			matchedRealMbTrackIds.add(match.mbTrackId);
+		}
+	}
+	const missingMbTracks = release.tracks.filter((t) => !matchedRealMbTrackIds.has(t.id));
 	const missingTracksToAdd = missingMbTracks.map((mt) => ({
 		disc_number: mt.disc_number,
 		track_number: mt.track_number,
@@ -743,9 +750,10 @@ export async function applyFolderTags(
 					const localSynthetic = folderData.tracks.find((t) => t.id === match.localTrackId);
 					if (!localSynthetic?.file_path) continue;
 
-					// Match DB track by file_path or track_number
+					// Match DB track by file_path or track_number (only real non-missing tracks)
 					const dbTr = dbTracksRes.tracks.find(
-						(dt) => dt.file_path === localSynthetic.file_path || dt.track_number === localSynthetic.track_number
+						(dt) => (dt.file_path && dt.file_path === localSynthetic.file_path) ||
+						        (!dt.is_missing && dt.track_number === localSynthetic.track_number)
 					);
 
 					if (dbTr) {

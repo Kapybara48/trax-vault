@@ -156,11 +156,14 @@ export function albumToSubsonicAlbum(
 	let durationSeconds = 0;
 	let songCount = album.track_count || 0;
 
-	if (tracks && tracks.length > 0) {
-		durationSeconds = Math.round(tracks.reduce((sum, t) => sum + (t.duration_ms || 0), 0) / 1000);
-		songCount = tracks.length;
+	// Filter out missing tracks and tracks with no audio file on disk for Subsonic clients
+	const validTracks = tracks ? tracks.filter((t) => t.is_missing !== 1 && !!t.file_path) : undefined;
+
+	if (validTracks && validTracks.length > 0) {
+		durationSeconds = Math.round(validTracks.reduce((sum, t) => sum + (t.duration_ms || 0), 0) / 1000);
+		songCount = validTracks.length;
 	} else if (album.id) {
-		const row = db.prepare('SELECT SUM(duration_ms) as total_ms, COUNT(*) as count FROM tracks WHERE album_id = ?').get(album.id) as any;
+		const row = db.prepare('SELECT SUM(duration_ms) as total_ms, COUNT(*) as count FROM tracks WHERE album_id = ? AND (is_missing = 0 OR is_missing IS NULL) AND file_path IS NOT NULL').get(album.id) as any;
 		if (row && row.total_ms) {
 			durationSeconds = Math.round((row.total_ms || 0) / 1000);
 			songCount = row.count || songCount;
@@ -192,8 +195,8 @@ export function albumToSubsonicAlbum(
 		alb.starred = formatIsoDate(album.created_at) || new Date().toISOString();
 	}
 
-	if (tracks && tracks.length > 0) {
-		alb.song = tracks.map((t) => trackToSubsonicSong(t, album));
+	if (validTracks && validTracks.length > 0) {
+		alb.song = validTracks.map((t) => trackToSubsonicSong(t, album));
 	}
 
 	return alb;
@@ -458,10 +461,12 @@ export const subsonicHandlers: Record<
 							id: rawId,
 							parent: parentArtistId,
 							name: result.album.title,
-							child: result.tracks.map((t) => {
-								const isSongStarred = isItemStarred(user.id, 'track', t.id);
-								return trackToSubsonicSong(t, result.album, isSongStarred);
-							})
+							child: result.tracks
+								.filter((t) => t.is_missing !== 1 && !!t.file_path)
+								.map((t) => {
+									const isSongStarred = isItemStarred(user.id, 'track', t.id);
+									return trackToSubsonicSong(t, result.album, isSongStarred);
+								})
 						}
 					}
 				};
@@ -657,7 +662,7 @@ export const subsonicHandlers: Record<
 		}
 
 		const track = getTrackById(songId);
-		if (!track) {
+		if (!track || track.is_missing === 1 || !track.file_path) {
 			return { error: { code: SubsonicErrorCode.DATA_NOT_FOUND, message: 'Song not found' } };
 		}
 
@@ -919,7 +924,7 @@ export const subsonicHandlers: Record<
 
 			if (albumCount > 0) {
 				matchingAlbums = db.prepare(
-					'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count FROM albums a ORDER BY a.title COLLATE NOCASE ASC LIMIT ? OFFSET ?'
+					'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id AND (is_missing = 0 OR is_missing IS NULL) AND file_path IS NOT NULL) as track_count FROM albums a ORDER BY a.title COLLATE NOCASE ASC LIMIT ? OFFSET ?'
 				).all(albumCount, albumOffset) as Album[];
 			}
 
@@ -935,7 +940,7 @@ export const subsonicHandlers: Record<
 
 			if (albumCount > 0) {
 				matchingAlbums = db.prepare(
-					'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id) as track_count FROM albums a WHERE a.title LIKE ? OR a.artist LIKE ? ORDER BY a.title COLLATE NOCASE ASC LIMIT ? OFFSET ?'
+					'SELECT a.*, (SELECT COUNT(*) FROM tracks WHERE album_id = a.id AND (is_missing = 0 OR is_missing IS NULL) AND file_path IS NOT NULL) as track_count FROM albums a WHERE a.title LIKE ? OR a.artist LIKE ? ORDER BY a.title COLLATE NOCASE ASC LIMIT ? OFFSET ?'
 				).all(`%${query}%`, `%${query}%`, albumCount, albumOffset) as Album[];
 			}
 
@@ -944,7 +949,7 @@ export const subsonicHandlers: Record<
 					SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
 					FROM tracks t
 					JOIN albums a ON t.album_id = a.id
-					WHERE t.title LIKE ? OR t.artist LIKE ? OR a.title LIKE ?
+					WHERE (t.title LIKE ? OR t.artist LIKE ? OR a.title LIKE ?) AND (t.is_missing = 0 OR t.is_missing IS NULL) AND t.file_path IS NOT NULL
 					ORDER BY t.title COLLATE NOCASE ASC
 					LIMIT ? OFFSET ?
 				`).all(`%${query}%`, `%${query}%`, `%${query}%`, songCount, songOffset) as Track[];
@@ -1007,7 +1012,9 @@ export const subsonicHandlers: Record<
 						};
 					}),
 					album: starred.albums.map((a) => albumToSubsonicAlbum(a, undefined, true)),
-					song: starred.tracks.map((t) => trackToSubsonicSong(t, null, true))
+					song: starred.tracks
+						.filter((t) => t.is_missing !== 1 && !!t.file_path)
+						.map((t) => trackToSubsonicSong(t, null, true))
 				}
 			}
 		};
@@ -1030,7 +1037,9 @@ export const subsonicHandlers: Record<
 						};
 					}),
 					album: starred.albums.map((a) => albumToSubsonicAlbum(a, undefined, true)),
-					song: starred.tracks.map((t) => trackToSubsonicSong(t, null, true))
+					song: starred.tracks
+						.filter((t) => t.is_missing !== 1 && !!t.file_path)
+						.map((t) => trackToSubsonicSong(t, null, true))
 				}
 			}
 		};
@@ -1257,7 +1266,7 @@ export const subsonicHandlers: Record<
 		}
 
 		const track = getTrackById(songId);
-		if (!track) {
+		if (!track || track.is_missing === 1 || !track.file_path) {
 			return { error: { code: SubsonicErrorCode.DATA_NOT_FOUND, message: 'Song not found' } };
 		}
 

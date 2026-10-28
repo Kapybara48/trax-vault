@@ -300,6 +300,14 @@ db.exec(`
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_manually_checked ON tracks(manually_checked);`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_is_missing ON tracks(album_id, is_missing);`);
 
+// Self-heal tracks with no physical file path so they are correctly marked as missing
+db.exec(`
+	UPDATE tracks
+	SET is_missing = 1,
+	    notes = COALESCE(notes, '[Missing Song] Missing from local album on disk')
+	WHERE file_path IS NULL AND is_missing = 0;
+`);
+
 // System version tracking & user_version stamping
 try {
 	const currentDbVersion = db.pragma('user_version', { simple: true }) as number;
@@ -1238,7 +1246,7 @@ export function updateAlbumAndTracksFromMusicBrainz(
 				artist = ?,
 				track_number = ?,
 				disc_number = ?,
-				is_missing = 0,
+				is_missing = CASE WHEN file_path IS NOT NULL THEN 0 ELSE is_missing END,
 				needs_attention = ?,
 				updated_at = datetime('now')
 			WHERE id = ? AND album_id = ?
@@ -1832,10 +1840,11 @@ export function getRandomTracks(limit: number, genre?: string): Track[] {
 		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year
 		FROM tracks t
 		JOIN albums a ON t.album_id = a.id
+		WHERE (t.is_missing = 0 OR t.is_missing IS NULL) AND t.file_path IS NOT NULL
 	`;
 	const params: any[] = [];
 	if (genre && genre.trim()) {
-		query += ` WHERE a.genre = ? `;
+		query += ` AND a.genre = ? `;
 		params.push(genre.trim());
 	}
 	query += ` ORDER BY RANDOM() LIMIT ? `;
@@ -1925,6 +1934,7 @@ export function getAllTracksPaged(offset: number = 0, limit: number = 500): Trac
 		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
 		FROM tracks t
 		JOIN albums a ON t.album_id = a.id
+		WHERE (t.is_missing = 0 OR t.is_missing IS NULL) AND t.file_path IS NOT NULL
 		ORDER BY t.album_id ASC, t.disc_number ASC, t.track_number ASC
 		LIMIT ? OFFSET ?
 	`).all(cappedLimit, Math.max(0, offset)) as Track[];
@@ -1936,7 +1946,7 @@ export function getTracksByGenre(genre: string, offset: number = 0, limit: numbe
 		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
 		FROM tracks t
 		JOIN albums a ON t.album_id = a.id
-		WHERE a.genre = ?
+		WHERE a.genre = ? AND (t.is_missing = 0 OR t.is_missing IS NULL) AND t.file_path IS NOT NULL
 		ORDER BY a.title COLLATE NOCASE ASC, t.track_number ASC
 		LIMIT ? OFFSET ?
 	`).all(genre.trim(), cappedLimit, Math.max(0, offset)) as Track[];
@@ -1948,7 +1958,7 @@ export function getTopTracksByArtist(artist: string, limit: number = 20): Track[
 		SELECT t.*, a.title as album_title, a.artist as album_artist, a.cover_url as album_cover_url, a.release_year as album_year, a.genre as album_genre
 		FROM tracks t
 		JOIN albums a ON t.album_id = a.id
-		WHERE t.artist = ? OR t.artist LIKE ? OR a.artist = ?
+		WHERE (t.artist = ? OR t.artist LIKE ? OR a.artist = ?) AND (t.is_missing = 0 OR t.is_missing IS NULL) AND t.file_path IS NOT NULL
 		ORDER BY t.play_count DESC, t.id ASC
 		LIMIT ?
 	`).all(artist, `%${artist}%`, artist, cappedLimit) as Track[];

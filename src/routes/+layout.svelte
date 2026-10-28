@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import GlobalMiniPlayer from '$lib/components/GlobalMiniPlayer.svelte';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import { player } from '$lib/services/player.svelte.js';
 	import type { LayoutData } from './$types.js';
 
@@ -60,4 +61,7 @@
 			</div>
 		</footer>
 	{/if}
+
+	<!-- Global Confirmation & Alert Modal -->
+	<ConfirmModal />
 </div>

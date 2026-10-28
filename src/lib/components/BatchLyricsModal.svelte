@@ -15,6 +15,7 @@
 		Loader2,
 		AlertCircle
 	} from '@lucide/svelte';
+	import { confirmAction } from '$lib/services/dialog.svelte.js';
 
 	interface Props {
 		isOpen: boolean;
@@ -245,9 +246,15 @@
 		scrollLogsToBottom();
 	}
 
-	function handleClose() {
+	async function handleClose() {
 		if (isRunning) {
-			if (!confirm('Batch lyrics download is in progress. Are you sure you want to stop and close?')) {
+			const confirmed = await confirmAction({
+				title: 'Stop Batch Download',
+				message: 'Batch lyrics download is in progress. Are you sure you want to stop and close?',
+				confirmText: 'Stop & Close',
+				danger: true
+			});
+			if (!confirmed) {
 				return;
 			}
 			stopDownload();

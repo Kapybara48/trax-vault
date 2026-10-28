@@ -41,8 +41,8 @@ export async function handleSubsonicStream(
 	}
 
 	const track = getTrackById(trackId);
-	if (!track) {
-		return new Response('Track not found', { status: 404 });
+	if (!track || track.is_missing === 1 || !track.file_path) {
+		return new Response('Track not found or missing from disk', { status: 404 });
 	}
 
 	const filePath = resolveTrackFilePath(track);

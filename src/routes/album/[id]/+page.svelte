@@ -35,6 +35,7 @@
 	import BatchLyricsModal from '$lib/components/BatchLyricsModal.svelte';
 	import type { LrcLibCandidate } from '$lib/types/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { confirmAction } from '$lib/services/dialog.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -431,13 +432,13 @@
 	}
 
 	async function handleDeleteAlbum() {
-		if (
-			!confirm(
-				`Remove album "${album.title}" from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the album will return to the Library Scanner.`
-			)
-		) {
-			return;
-		}
+		const confirmed = await confirmAction({
+			title: 'Unvault Album',
+			message: `Remove album "${album.title}" from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the album will return to the Library Scanner.`,
+			confirmText: 'Unvault Album',
+			danger: true
+		});
+		if (!confirmed) return;
 
 		try {
 			const res = await fetch(`/api/albums/${album.id}`, { method: 'DELETE' });

@@ -33,6 +33,7 @@
 	} from '@lucide/svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
+	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -247,13 +248,17 @@
 	async function unvaultAlbum(album: ScannedAlbum) {
 		const albumId = album.existing_album_id || importedAlbumIds[album.album_key];
 		if (!albumId) {
-			alert('Could not determine album ID in Vault to remove.');
+			await alertAction('Could not determine album ID in Vault to remove.', 'Warning');
 			return;
 		}
 
-		if (!confirm(`Remove album "${album.title}" from Vault?\n\nAudio files on disk will NOT be deleted, and the album will remain here in the Scanner ready to be imported or re-tagged whenever you want.`)) {
-			return;
-		}
+		const confirmed = await confirmAction({
+			title: 'Unvault Album',
+			message: `Remove album "${album.title}" from Vault?\n\nAudio files on disk will NOT be deleted, and the album will remain here in the Scanner ready to be imported or re-tagged whenever you want.`,
+			confirmText: 'Unvault Album',
+			danger: true
+		});
+		if (!confirmed) return;
 
 		isUnvaulting = album.album_key;
 		try {
@@ -275,11 +280,11 @@
 				delete importedAlbumIds[album.album_key];
 			} else {
 				const errData = await res.json().catch(() => ({}));
-				alert(`Failed to remove album: ${errData.error || res.statusText}`);
+				await alertAction(`Failed to remove album: ${errData.error || res.statusText}`, 'Error');
 			}
 		} catch (err: any) {
 			console.error('Failed to unvault album:', err);
-			alert(`Failed to remove album: ${err.message}`);
+			await alertAction(`Failed to remove album: ${err.message}`, 'Error');
 		} finally {
 			isUnvaulting = null;
 		}
@@ -289,9 +294,13 @@
 		const albumsToUnvault = displayedAlbums.filter((a) => a.already_in_vault && (a.existing_album_id || importedAlbumIds[a.album_key]));
 		if (albumsToUnvault.length === 0) return;
 
-		if (!confirm(`Remove all ${albumsToUnvault.length} filtered albums from the Vault?\n\nAudio files on disk will NOT be deleted and will remain in Library Scanner.`)) {
-			return;
-		}
+		const confirmed = await confirmAction({
+			title: 'Unvault Filtered Albums',
+			message: `Remove all ${albumsToUnvault.length} filtered albums from the Vault?\n\nAudio files on disk will NOT be deleted and will remain in Library Scanner.`,
+			confirmText: `Unvault ${albumsToUnvault.length} Albums`,
+			danger: true
+		});
+		if (!confirmed) return;
 
 		for (const alb of albumsToUnvault) {
 			const albumId = alb.existing_album_id || importedAlbumIds[alb.album_key];

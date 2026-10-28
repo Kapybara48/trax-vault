@@ -522,6 +522,21 @@ This document preserves persistent context, architectural conventions, recent ch
     - Decoupled Tagger from `manually_checked`: tagging an album (either existing library album in `updateAlbumAndTracksFromMusicBrainz` or folder import in `applyAlbumTagsToFolder`) now preserves each track's existing `manually_checked` state and does not automatically toggle it to 1.
     - Added `.forgejo/**` path filter in `docker-publish.yml` to ensure workflow edits trigger CI/CD builds.
 
+44. **Obsidian Custom Confirmation Modals, Subsonic Missing Track Isolation, and Tagger Re-Tagging Fixes**:
+    - **Global Custom Confirmation & Alert Dialogs (`src/lib/services/dialog.svelte.ts` & `src/lib/components/ConfirmModal.svelte`)**:
+      - Completely replaced native browser `confirm()` and `alert()` popups across the application (album deletion, batch unvaulting, track deletion, playlist removal, batch lyrics stop).
+      - Dark obsidian modal with glowing icon containers (danger rose/trash, warning amber, info emerald), keyboard shortcuts (`Enter` confirm, `Escape` cancel), smooth backdrop blur, and accessible focus management.
+      - Mounted globally in `src/routes/+layout.svelte`.
+    - **Subsonic Missing Tracks Filtering (Symfonium & Navic Infinite Loading Fix)**:
+      - Filtered out missing songs (`is_missing !== 1 && !!file_path`) across all Subsonic endpoints: `albumToSubsonicAlbum`, `getAlbum.view`, `getMusicDirectory.view`, `getSong.view`, `search3.view`, `search2.view`, `getRandomSongs.view`, `getSongsByGenre.view`, `getTopSongs.view`, `getSimilarSongs.view`, `getSongs.view`, and `getStarred.view`.
+      - Recalculated total album `duration` and `songCount` in Subsonic responses to strictly count playable local audio files.
+      - Updated `stream.view` in `src/lib/server/subsonic/media.ts` to return HTTP 404 immediately if a requested track is missing or has no physical file path, preventing infinite buffering loops.
+    - **Tagger Re-Tagging Missing Track Preservation**:
+      - In `src/routes/api/tagger/albums/[id]/match/+server.ts`, filtered out missing tracks (`is_missing !== 1 && !!file_path`) before running `alignTracks()`, preventing placeholder rows from matching against MusicBrainz release tracks.
+      - In `src/lib/server/tagger.ts` (`applyAlbumTags`), restricted confirmed matches strictly to real local audio files, ensuring missing release tracks continue to be recognized and preserved as `is_missing = 1`.
+      - In `src/lib/server/db.ts` (`updateAlbumAndTracksFromMusicBrainz`), guarded `is_missing = CASE WHEN file_path IS NOT NULL THEN 0 ELSE is_missing END`, preventing missing placeholder tracks from losing their missing status or becoming 'OTHER'.
+      - Added automated self-healing database migration ensuring existing tracks with `file_path IS NULL` are accurately restored to `is_missing = 1`.
+
 ---
 
 ## 4. Workflows & Verification

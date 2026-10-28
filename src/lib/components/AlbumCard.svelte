@@ -3,6 +3,7 @@
 	import { Disc, AlertTriangle, CheckCircle2, Music, Trash2 } from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 
 	interface Props {
 		album: Album;
@@ -30,13 +31,13 @@
 	async function handleDelete(e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
-		if (
-			!confirm(
-				`Remove album "${album.title}" from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the album will return to the Library Scanner.`
-			)
-		) {
-			return;
-		}
+		const confirmed = await confirmAction({
+			title: 'Unvault Album',
+			message: `Remove album "${album.title}" from Vault?\n\nAudio files on disk in your music directory will NOT be deleted, and the album will return to the Library Scanner.`,
+			confirmText: 'Unvault Album',
+			danger: true
+		});
+		if (!confirmed) return;
 
 		try {
 			const res = await fetch(`/api/albums/${album.id}`, { method: 'DELETE' });
@@ -48,11 +49,11 @@
 				}
 			} else {
 				const errData = await res.json().catch(() => ({}));
-				alert(`Failed to remove album: ${errData.error || res.statusText}`);
+				await alertAction(`Failed to remove album: ${errData.error || res.statusText}`, 'Error');
 			}
 		} catch (err: any) {
 			console.error('Failed to remove album from vault:', err);
-			alert(`Failed to remove album: ${err.message}`);
+			await alertAction(`Failed to remove album: ${err.message}`, 'Error');
 		}
 	}
 

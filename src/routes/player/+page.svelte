@@ -35,6 +35,7 @@
 		AlertTriangle
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
+	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -416,7 +417,13 @@
 
 	async function removePlaylistTrack(originalIdx: number, track: Track) {
 		if (!selectedPlaylist) return;
-		if (!confirm(`Remove "${track.title}" from ${selectedPlaylist.name}?`)) return;
+		const confirmed = await confirmAction({
+			title: 'Remove Track from Playlist',
+			message: `Remove "${track.title}" from "${selectedPlaylist.name}"?`,
+			confirmText: 'Remove Track',
+			danger: true
+		});
+		if (!confirmed) return;
 
 		const originalTracks = [...selectedPlaylist.tracks];
 		selectedPlaylist.tracks = selectedPlaylist.tracks.filter((_, idx) => idx !== originalIdx);
@@ -548,11 +555,11 @@
 					selectedPlaylist = null;
 				}
 			} else {
-				alert('Failed to delete playlist');
+				await alertAction('Failed to delete playlist', 'Error');
 			}
 		} catch (err) {
 			console.error('Failed to delete playlist:', err);
-			alert('Network error while deleting playlist');
+			await alertAction('Network error while deleting playlist', 'Error');
 		} finally {
 			isDeletingPlaylist = false;
 		}
