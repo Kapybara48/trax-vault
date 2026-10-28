@@ -26,6 +26,7 @@ concurrency:
 env:
   REGISTRY: git.kapyhub.cz
   IMAGE_NAME: kapybara/trax-vault
+  DOCKER_HOST: tcp://docker-in-docker:2375
 
 jobs:
   build-and-push:
