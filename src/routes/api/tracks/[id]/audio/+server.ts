@@ -20,7 +20,7 @@ const MIME_MAP: Record<string, string> = {
 	'.wma': 'audio/x-ms-wma'
 };
 
-export const GET: RequestHandler = async ({ params, request }) => {
+export const GET: RequestHandler = async ({ params, request, url }) => {
 	const trackId = parseInt(params.id, 10);
 	if (isNaN(trackId)) {
 		return json({ error: 'Invalid track ID' }, { status: 400 });
@@ -68,9 +68,11 @@ export const GET: RequestHandler = async ({ params, request }) => {
 	const ext = path.extname(canonicalFilePath).toLowerCase();
 	const contentType = MIME_MAP[ext] || 'audio/mpeg';
 	const fileSize = stat.size;
+	const isDownload = url.searchParams.get('download') === 'true';
+	const fileName = path.basename(canonicalFilePath);
 
 	const rangeHeader = request.headers.get('range');
-	if (rangeHeader) {
+	if (rangeHeader && !isDownload) {
 		const parts = rangeHeader.replace(/bytes=/, '').split('-');
 		const start = parseInt(parts[0], 10);
 		const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
@@ -101,13 +103,19 @@ export const GET: RequestHandler = async ({ params, request }) => {
 	const stream = fs.createReadStream(canonicalFilePath);
 	const webStream = Readable.toWeb(stream) as ReadableStream;
 
+	const headers: Record<string, string> = {
+		'Accept-Ranges': 'bytes',
+		'Content-Length': fileSize.toString(),
+		'Content-Type': contentType,
+		'Cache-Control': 'no-cache'
+	};
+
+	if (isDownload) {
+		headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+	}
+
 	return new Response(webStream, {
 		status: 200,
-		headers: {
-			'Accept-Ranges': 'bytes',
-			'Content-Length': fileSize.toString(),
-			'Content-Type': contentType,
-			'Cache-Control': 'no-cache'
-		}
+		headers
 	});
 };

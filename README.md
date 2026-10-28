@@ -73,6 +73,17 @@ Turn Trax Vault into a full-featured alternative to Navidrome, Airsonic, or Goni
 ### 👥 Multi-User Experience & Responsive Mobile Design
 * **Multi-User Architecture**: Independent user accounts with custom roles (`admin` vs `user`), personal playlists, favorites, and Subsonic streaming credentials.
 * **Configurable Registration Policy**: Public account registration enabled by default (`/register`), or toggleable via `DISABLE_REGISTRATION=true` (or `DISABLE_ACCOUNT_CREATION=true`) so only administrators can provision accounts.
+* **Admin Management Console**: Dedicated User Management hub in `/settings` for administrators to create, edit, change roles, update passwords, and delete accounts.
+* **Responsive 3-Tier Layout**: Fluid breakpoints (`<640px` compact mobile, `640px–1024px` tablet, `>1024px` desktop) across the studio player, album details, and navigation bars.
+
+---
+
+### 🚀 Admin Web UI Song Management (Upload, Replace, Delete & Download)
+* **Multi-File Drag-and-Drop Upload**: Select or drag-and-drop multiple audio files (`.flac`, `.mp3`, `.m4a`, `.ogg`, `.wav`, etc.) directly into an album from your web browser.
+* **Smart Missing Track Auto-Linking**: Uploaded files automatically match and fulfill missing songs (`is_missing = 1`), populating their audio fidelity, bitrates, and duration without creating duplicates.
+* **1-Click Audio Replacement**: Replace low-quality or corrupt audio files with high-resolution rips directly from the song row with automatic fixer re-evaluation.
+* **Safe Deletion with Disk Option**: Clear confirmation modal allows administrators to choose between removing a song from Trax Vault only or permanently unlinking the audio file and companion `.lrc` from storage.
+* **Direct Download & Re-scan**: Download original audio tracks with 1 click or re-scan metadata and exact bitrates from storage on demand.
 * **Administrator Control Center**: Built-in account management in `/settings` to list users, create accounts, assign roles, reset passwords, and manage profiles.
 * **Responsive Breakpoints**: Seamless UX tailored across Phone (`< 640px`), Tablet (`640px – 1024px`), and Desktop (`> 1024px`), featuring a top segment switcher in the Studio Player (`Library`, `Tracks`, `Lyrics`, `Queue`), compact touch-friendly mobile bottom navigation, and zero horizontal scrolling.
 

@@ -28,20 +28,25 @@
 		Check,
 		FileText,
 		Sparkles,
-		ListPlus
+		ListPlus,
+		Upload
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
 	import BatchLyricsModal from '$lib/components/BatchLyricsModal.svelte';
+	import UploadTracksModal from '$lib/components/UploadTracksModal.svelte';
 	import type { LrcLibCandidate } from '$lib/types/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { confirmAction } from '$lib/services/dialog.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
+	const isAdmin = $derived((data.user && data.user.role === 'admin') || data.authDisabled);
+
 	let tracks = $state<Track[]>([...data.tracks]);
 	let album = $state({ ...data.album });
 
+	let showUploadModal = $state(false);
 	let showBatchLyricsModal = $state(false);
 
 	// Track Fixer Rules state
@@ -219,6 +224,11 @@
 
 	function handleTrackDeleted(id: number) {
 		tracks = tracks.filter(t => t.id !== id);
+	}
+
+	function handleUploadSuccess(updatedTracks: Track[]) {
+		tracks = [...updatedTracks];
+		invalidateAll();
 	}
 
 	// Quick Lyrics Modal State
@@ -613,6 +623,18 @@
 		<!-- Action Bar at Bottom of Hero -->
 		<div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-800/80 pt-4">
 			<div class="flex flex-wrap items-center gap-2">
+				{#if isAdmin}
+					<button
+						type="button"
+						onclick={() => (showUploadModal = true)}
+						class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 px-3.5 py-2 text-xs font-bold text-white shadow shadow-emerald-950/40 transition cursor-pointer"
+						title="Upload audio files directly to this album"
+					>
+						<Upload class="h-4 w-4" />
+						Upload Tracks
+					</button>
+				{/if}
+
 				<button
 					type="button"
 					onclick={() => (showBatchModal = true)}
@@ -843,6 +865,7 @@
 						{#each group.tracks as track (track.id)}
 							<TrackRow
 								{track}
+								{isAdmin}
 								onTrackUpdated={handleTrackUpdated}
 								onTrackDeleted={handleTrackDeleted}
 								onOpenLyrics={openLyricsModal}
@@ -860,13 +883,24 @@
 					<p class="text-xs text-neutral-500 mt-1">All tracks on this album meet your quality, censorship, and lyrics requirements.</p>
 				{:else}
 					<p>No tracks in this album yet.</p>
-					<button
-						type="button"
-						onclick={() => (showAddTrackModal = true)}
-						class="mt-3 inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition"
-					>
-						<Plus class="h-4 w-4" /> Add Track
-					</button>
+					<div class="mt-3 flex items-center justify-center gap-2">
+						{#if isAdmin}
+							<button
+								type="button"
+								onclick={() => (showUploadModal = true)}
+								class="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-bold text-white hover:from-emerald-500 hover:to-teal-500 transition shadow-md shadow-emerald-900/30"
+							>
+								<Upload class="h-4 w-4" /> Upload Tracks
+							</button>
+						{/if}
+						<button
+							type="button"
+							onclick={() => (showAddTrackModal = true)}
+							class="inline-flex items-center gap-1 rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-200 hover:bg-neutral-700 transition border border-neutral-700"
+						>
+							<Plus class="h-4 w-4" /> Add Track
+						</button>
+					</div>
 				{/if}
 			</div>
 		{/if}
@@ -1588,4 +1622,12 @@
 	onComplete={async () => {
 		await invalidateAll();
 	}}
+/>
+
+<UploadTracksModal
+	albumId={album.id}
+	albumTitle={album.title}
+	isOpen={showUploadModal}
+	onClose={() => (showUploadModal = false)}
+	onUploadSuccess={handleUploadSuccess}
 />

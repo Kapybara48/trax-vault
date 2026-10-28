@@ -20,24 +20,41 @@
 		Sparkles,
 		Check,
 		AlignLeft,
-		ListPlus
+		ListPlus,
+		Download,
+		RefreshCw,
+		ScanLine,
+		Upload
 	} from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
-	import { confirmAction } from '$lib/services/dialog.svelte.js';
+	import DeleteTrackModal from '$lib/components/DeleteTrackModal.svelte';
+	import { alertAction } from '$lib/services/dialog.svelte.js';
 
 	interface Props {
 		track: Track;
+		isAdmin?: boolean;
 		onTrackUpdated?: (updated: Track) => void;
 		onTrackDeleted?: (id: number) => void;
 		onOpenLyrics?: (track: Track) => void;
 		onAddToPlaylist?: (track: Track) => void;
 	}
 
-	let { track, onTrackUpdated, onTrackDeleted, onOpenLyrics, onAddToPlaylist }: Props = $props();
+	let {
+		track,
+		isAdmin = false,
+		onTrackUpdated,
+		onTrackDeleted,
+		onOpenLyrics,
+		onAddToPlaylist
+	}: Props = $props();
 
 	let isUpdating = $state(false);
+	let isReplacing = $state(false);
+	let isRescanning = $state(false);
+	let showDeleteModal = $state(false);
 	let showNotes = $state(false);
 	let notesValue = $state(track.notes || '');
+	let replaceInputRef = $state<HTMLInputElement | null>(null);
 
 	async function updateField(field: keyof Track, value: any) {
 		isUpdating = true;
@@ -53,6 +70,9 @@
 				if (data.track && onTrackUpdated) {
 					onTrackUpdated(data.track);
 				}
+			} else {
+				const data = await res.json().catch(() => ({}));
+				await alertAction(data.error || 'Failed to update track', 'Update Failed');
 			}
 		} catch (err) {
 			console.error('Failed to update track:', err);
@@ -66,21 +86,63 @@
 		showNotes = false;
 	}
 
-	async function handleDelete() {
-		const confirmed = await confirmAction({
-			title: 'Remove Song from Vault',
-			message: `Remove song "${track.title}" from Vault?\n\nAudio file on disk will NOT be deleted, and can be re-scanned at any time.`,
-			confirmText: 'Remove Song',
-			danger: true
-		});
-		if (!confirmed) return;
+	async function handleReplaceFile(file: File) {
+		isReplacing = true;
+		const formData = new FormData();
+		formData.append('file', file);
 		try {
-			const res = await fetch(`/api/tracks/${track.id}`, { method: 'DELETE' });
+			const res = await fetch(`/api/tracks/${track.id}/replace`, {
+				method: 'POST',
+				body: formData
+			});
+			const data = await res.json();
+			if (res.ok && data.track && onTrackUpdated) {
+				onTrackUpdated(data.track);
+			} else {
+				await alertAction(data.error || 'Failed to replace track audio', 'Replacement Error');
+			}
+		} catch (err: any) {
+			console.error('Failed to replace track audio:', err);
+			await alertAction(err.message || 'Failed to upload replacement audio', 'Error');
+		} finally {
+			isReplacing = false;
+		}
+	}
+
+	async function handleRescan() {
+		isRescanning = true;
+		try {
+			const res = await fetch(`/api/tracks/${track.id}/rescan`, {
+				method: 'POST'
+			});
+			const data = await res.json();
+			if (res.ok && data.track && onTrackUpdated) {
+				onTrackUpdated(data.track);
+			} else {
+				await alertAction(data.error || 'Failed to re-scan track metadata', 'Re-scan Error');
+			}
+		} catch (err: any) {
+			console.error('Failed to re-scan track audio:', err);
+			await alertAction(err.message || 'Failed to re-scan metadata', 'Error');
+		} finally {
+			isRescanning = false;
+		}
+	}
+
+	async function handleDeleteConfirm(deleteFile: boolean) {
+		try {
+			const res = await fetch(`/api/tracks/${track.id}?deleteFile=${deleteFile}`, { method: 'DELETE' });
 			if (res.ok && onTrackDeleted) {
 				onTrackDeleted(track.id);
+			} else {
+				const data = await res.json().catch(() => ({}));
+				await alertAction(data.error || 'Failed to delete track', 'Delete Error');
 			}
-		} catch (err) {
+		} catch (err: any) {
 			console.error('Failed to delete track:', err);
+			await alertAction(err.message || 'Failed to delete track', 'Error');
+		} finally {
+			showDeleteModal = false;
 		}
 	}
 </script>
@@ -120,6 +182,23 @@
 						<AlertTriangle class="h-3 w-3 text-rose-400" />
 						Missing Song
 					</span>
+					{#if isAdmin}
+						<button
+							type="button"
+							onclick={() => replaceInputRef?.click()}
+							disabled={isReplacing}
+							class="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-950/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300 hover:bg-emerald-900/60 transition cursor-pointer shrink-0 shadow-sm"
+							title="Upload audio file for this missing song"
+						>
+							{#if isReplacing}
+								<span class="h-3 w-3 animate-spin rounded-full border border-emerald-400 border-t-transparent"></span>
+								Uploading...
+							{:else}
+								<Upload class="h-3 w-3" />
+								+ Upload Audio
+							{/if}
+						</button>
+					{/if}
 				{:else if track.manually_checked === 1}
 					<span
 						class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30 shrink-0"
@@ -160,6 +239,19 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Hidden input for file replacement / upload -->
+	<input
+		type="file"
+		class="hidden"
+		bind:this={replaceInputRef}
+		accept="audio/*,.flac,.mp3,.m4a,.aac,.ogg,.opus,.wav,.aif,.aiff,.alac"
+		onchange={(e) => {
+			const file = e.currentTarget.files?.[0];
+			if (file) handleReplaceFile(file);
+			e.currentTarget.value = '';
+		}}
+	/>
 
 	<!-- LINE 2: Direct Choice Buttons (Format, Quality, Censorship, Lyrics) + Notes & Delete -->
 	<div class="flex flex-wrap items-center justify-between gap-2 pt-1 pl-8.5">
@@ -261,6 +353,49 @@
 				</button>
 			{/if}
 
+			{#if isAdmin}
+				<button
+					type="button"
+					onclick={() => replaceInputRef?.click()}
+					disabled={isReplacing}
+					class="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-emerald-400 transition"
+					title="Replace Audio File"
+				>
+					{#if isReplacing}
+						<span class="h-3.5 w-3.5 animate-spin rounded-full border border-emerald-400 border-t-transparent inline-block"></span>
+					{:else}
+						<RefreshCw class="h-3.5 w-3.5" />
+					{/if}
+				</button>
+
+				{#if track.file_path && track.is_missing !== 1}
+					<button
+						type="button"
+						onclick={handleRescan}
+						disabled={isRescanning}
+						class="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-cyan-400 transition"
+						title="Re-scan File Metadata & Fidelity from Disk"
+					>
+						{#if isRescanning}
+							<span class="h-3.5 w-3.5 animate-spin rounded-full border border-cyan-400 border-t-transparent inline-block"></span>
+						{:else}
+							<ScanLine class="h-3.5 w-3.5" />
+						{/if}
+					</button>
+				{/if}
+			{/if}
+
+			{#if track.file_path && track.is_missing !== 1}
+				<a
+					href="/api/tracks/{track.id}/audio?download=true"
+					download
+					class="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-emerald-400 transition inline-flex items-center"
+					title="Download Audio File"
+				>
+					<Download class="h-3.5 w-3.5" />
+				</a>
+			{/if}
+
 			<button
 				type="button"
 				onclick={() => (showNotes = !showNotes)}
@@ -272,7 +407,7 @@
 
 			<button
 				type="button"
-				onclick={handleDelete}
+				onclick={() => (showDeleteModal = true)}
 				class="rounded p-1 text-neutral-500 hover:bg-rose-950/50 hover:text-rose-400 transition"
 				title="Delete"
 			>
@@ -281,6 +416,14 @@
 		</div>
 	</div>
 </div>
+
+<DeleteTrackModal
+	{track}
+	isOpen={showDeleteModal}
+	{isAdmin}
+	onClose={() => (showDeleteModal = false)}
+	onConfirm={handleDeleteConfirm}
+/>
 
 <!-- Inline Notes Editor Drawer -->
 {#if showNotes}

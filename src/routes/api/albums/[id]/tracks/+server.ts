@@ -2,7 +2,11 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { addTrackToAlbum } from '$lib/server/db.js';
 
-export const POST: RequestHandler = async ({ params, request }) => {
+export const POST: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user || locals.user.role !== 'admin') {
+		return json({ error: 'Forbidden: Administrator privileges required' }, { status: 403 });
+	}
+
 	const albumId = parseInt(params.id, 10);
 	if (isNaN(albumId)) return json({ error: 'Invalid album ID' }, { status: 400 });
 

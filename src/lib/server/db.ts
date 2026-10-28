@@ -1068,6 +1068,7 @@ export function updateTrack(
 		lyrics_text: string | null;
 		needs_attention: number;
 		manually_checked: number;
+		is_missing: number;
 	}>
 ): Track {
 	const current = db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Track | undefined;
@@ -1077,8 +1078,9 @@ export function updateTrack(
 	const newQuality = data.quality_rating ?? current.quality_rating;
 	const newCensorship = data.censorship ?? current.censorship;
 	const newLyrics = data.lyrics ?? current.lyrics;
+	const newIsMissing = data.is_missing ?? (current.is_missing ?? 0);
 	const rules = getAlbumFixerRules(current.album_id);
-	const autoNeedsAtt = computeNeedsAttention(newQuality, newCensorship, newLyrics, newFormat, rules);
+	const autoNeedsAtt = computeNeedsAttention(newQuality, newCensorship, newLyrics, newFormat, rules, newIsMissing);
 	const needsAttention = data.needs_attention !== undefined ? data.needs_attention : autoNeedsAtt;
 
 	db.prepare(`
@@ -1097,6 +1099,7 @@ export function updateTrack(
 			lyrics = ?,
 			needs_attention = ?,
 			manually_checked = CASE WHEN ? = 1 THEN ? ELSE manually_checked END,
+			is_missing = CASE WHEN ? = 1 THEN ? ELSE is_missing END,
 			notes = CASE WHEN ? = 1 THEN ? ELSE notes END,
 			file_path = CASE WHEN ? = 1 THEN ? ELSE file_path END,
 			lyrics_text = CASE WHEN ? = 1 THEN ? ELSE lyrics_text END,
@@ -1123,6 +1126,8 @@ export function updateTrack(
 		needsAttention,
 		data.manually_checked !== undefined ? 1 : 0,
 		data.manually_checked ?? 0,
+		data.is_missing !== undefined ? 1 : 0,
+		data.is_missing ?? 0,
 		data.notes !== undefined ? 1 : 0,
 		data.notes?.trim() ?? null,
 		data.file_path !== undefined ? 1 : 0,

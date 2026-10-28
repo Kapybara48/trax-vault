@@ -581,6 +581,13 @@ This document preserves persistent context, architectural conventions, recent ch
         - Refined 7-tab mobile bottom bar (`px-0.5 py-1 text-[9px] xs:text-[10px]` with truncated labels) preventing text clipping or overflow on narrow screens down to 320px.
         - Condensed header action button text (`Add` on mobile, `Add Album` on desktop).
         - Centered album detail cover artwork on mobile screens (`mx-auto md:mx-0`).
+43. **Admin Web UI Song Management (Upload, Replace, Delete, Download, and Rescan)**:
+    - **Multi-File Album Upload (`POST /api/albums/[id]/tracks/upload`)**: Drag-and-drop or select multiple audio files. Trax Vault automatically saves them into the album's folder on disk, extracts high-fidelity metadata (bitrate, sample rate, bit depth, format, lyrics), and automatically links and fulfills missing track rows (`is_missing = 1`) before inserting any remainder.
+    - **Track Replacement (`POST /api/tracks/[id]/replace`)**: Replaces an existing track's audio file on disk, safely removing the previous file if named differently, scanning new audio tags and fidelity, and re-evaluating fixer rules.
+    - **Protected Deletion (`DELETE /api/tracks/[id]`)**: Gives admins a clear choice in `DeleteTrackModal.svelte`: Remove from Vault only (keeps physical audio file on disk) or Delete Audio File from Disk & Vault (permanently unlinks audio file and companion `.lrc` from storage).
+    - **Direct Audio Download (`GET /api/tracks/[id]/audio?download=true`)**: Direct audio attachment download with `Content-Disposition`.
+    - **Fidelity & Metadata Re-scan (`POST /api/tracks/[id]/rescan`)**: 1-click refresh of track tags and exact bitrates from storage.
+    - **UI Integration**: Added "Upload Tracks" button to album detail header, interactive `UploadTracksModal.svelte`, dedicated "+ Upload Audio" button directly on missing songs in `TrackRow.svelte`, and action buttons for replacement, rescanning, downloading, and custom deletion.
 
 ---
 
