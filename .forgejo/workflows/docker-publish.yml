@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REGISTRY: git.kapyhub.cz
+  REGISTRY: forgejo.kapyhub.cz
   IMAGE_NAME: kapybara/trax-vault
 
 jobs:

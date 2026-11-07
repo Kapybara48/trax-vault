@@ -1,6 +1,6 @@
 services:
   trax-vault:
-    image: git.kapyhub.cz/kapybara/trax-vault:latest
+    image: forgejo.kapyhub.cz/kapybara/trax-vault:latest
     build:
       context: .
       dockerfile: Dockerfile

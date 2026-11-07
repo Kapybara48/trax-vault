@@ -91,7 +91,7 @@ Turn Trax Vault into a full-featured alternative to Navidrome, Airsonic, or Goni
 
 ## 🐳 Self-Hosting with Docker
 
-Trax Vault publishes automated Docker container images to the Forgejo Container Registry (`git.kapyhub.cz/kapybara/trax-vault:latest`) on every push to `main`.
+Trax Vault publishes automated Docker container images to the Forgejo Container Registry (`forgejo.kapyhub.cz/kapybara/trax-vault:latest`) on every push to `main`.
 
 ### Quick Start (No Git Clone Required)
 
@@ -102,7 +102,7 @@ On your server, you do not need to clone the repository or install Node.js. All 
 mkdir -p trax-vault && cd trax-vault
 
 # 2. Download the ready-to-run compose file
-curl -fsSL https://git.kapyhub.cz/kapybara/trax-vault/raw/branch/main/docker-compose.server.yml -o docker-compose.yml
+curl -fsSL https://forgejo.kapyhub.cz/kapybara/trax-vault/raw/branch/main/docker-compose.server.yml -o docker-compose.yml
 
 # 3. Edit paths if your music is stored outside ./music (optional)
 # MUSIC_PATH=/path/to/your/music docker compose up -d
@@ -129,7 +129,7 @@ To build directly from source using HTTPS:
 
 ```bash
 # Clone the repository via HTTPS
-git clone https://git.kapyhub.cz/kapybara/trax-vault.git
+git clone https://forgejo.kapyhub.cz/kapybara/trax-vault.git
 cd trax-vault
 
 # Build and start container
@@ -184,7 +184,7 @@ Connect your favorite music player to Trax Vault using the Subsonic / OpenSubson
 ### Setup & Run
 ```bash
 # 1. Clone repository via HTTPS
-git clone https://git.kapyhub.cz/kapybara/trax-vault.git
+git clone https://forgejo.kapyhub.cz/kapybara/trax-vault.git
 cd trax-vault
 
 # 2. Install dependencies
