@@ -515,18 +515,28 @@
 				}
 
 				// Update folder in local folders list
-				const fIdx = folders.findIndex((f) => f.folder_path === selectedFolderPath);
+				const fIdx = folders.findIndex(
+					(f) => f.folder_path === selectedFolderPath || f.folder_path === currentFolderData?.folder_path
+				);
+				const updatedArtist = json.folderArtist || (optUpdateArtist && releaseDetail ? releaseDetail.artist : undefined);
+				const updatedTitle = json.folderTitle || (optUpdateAlbumTitle && releaseDetail ? releaseDetail.title : undefined);
+				const updatedCover = json.coverUrl || undefined;
+
 				if (fIdx !== -1) {
 					folders[fIdx] = {
 						...folders[fIdx],
 						already_in_vault: json.importedAlbumId ? true : folders[fIdx].already_in_vault,
-						title: optUpdateAlbumTitle && releaseDetail ? releaseDetail.title : folders[fIdx].title,
-						artist: optUpdateArtist && releaseDetail ? releaseDetail.artist : folders[fIdx].artist
+						title: updatedTitle || folders[fIdx].title,
+						artist: updatedArtist || folders[fIdx].artist,
+						cover_url: updatedCover || folders[fIdx].cover_url
 					};
 				}
 				if (currentFolderData) {
 					currentFolderData.already_in_vault = Boolean(json.importedAlbumId || currentFolderData.already_in_vault);
 					currentFolderData.existing_album_id = json.importedAlbumId || currentFolderData.existing_album_id;
+					if (updatedArtist) currentFolderData.folder_artist = updatedArtist;
+					if (updatedTitle) currentFolderData.folder_title = updatedTitle;
+					if (updatedCover) currentFolderData.cover_url = updatedCover;
 				}
 
 				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount} audio files`;

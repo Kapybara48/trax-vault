@@ -61,14 +61,24 @@ export function resolveTrackFilePath(track: { id?: number; file_path?: string | 
 
 	const musicDir = getMusicDirectory();
 
-	// If track.file_path has a path from host or container mismatch
 	if (track.file_path) {
-		const musicIdx = track.file_path.indexOf('/music/');
+		const raw = track.file_path;
+		// 1. Direct join with musicDir
+		const candidateDirect = path.resolve(musicDir, raw.replace(/^[/\\]+/, ''));
+		if (fs.existsSync(candidateDirect)) return candidateDirect;
+
+		// 2. /music/ substring
+		const norm = raw.replace(/\\/g, '/');
+		const musicIdx = norm.indexOf('/music/');
 		if (musicIdx !== -1) {
-			const subPath = track.file_path.slice(musicIdx + '/music/'.length);
+			const subPath = norm.slice(musicIdx + '/music/'.length);
 			const candidate = path.join(musicDir, subPath);
 			if (fs.existsSync(candidate)) return candidate;
 		}
+
+		// 3. Basename in musicDir
+		const candidateBase = path.join(musicDir, path.basename(raw));
+		if (fs.existsSync(candidateBase)) return candidateBase;
 	}
 
 	// Fallback: check if notes contain folder/filename information from previous imports
@@ -76,6 +86,8 @@ export function resolveTrackFilePath(track: { id?: number; file_path?: string | 
 		const filename = track.notes.replace('Imported from: ', '').trim();
 		const directPath = path.join(musicDir, filename);
 		if (fs.existsSync(directPath)) return directPath;
+		const baseOnly = path.join(musicDir, path.basename(filename));
+		if (fs.existsSync(baseOnly)) return baseOnly;
 	}
 
 	return null;
@@ -94,10 +106,14 @@ export function resolveMusicFolderPath(folderPath: string): string | null {
 		canonicalMusicDir = path.resolve(musicDir);
 	}
 
-	const candidates = [path.resolve(folderPath)];
-	const musicIdx = folderPath.indexOf('/music/');
+	const norm = folderPath.replace(/\\/g, '/');
+	const candidates = [
+		path.resolve(folderPath),
+		path.resolve(canonicalMusicDir, folderPath.replace(/^[/\\]+/, ''))
+	];
+	const musicIdx = norm.indexOf('/music/');
 	if (musicIdx !== -1) {
-		const subPath = folderPath.slice(musicIdx + '/music/'.length);
+		const subPath = norm.slice(musicIdx + '/music/'.length);
 		candidates.push(path.join(canonicalMusicDir, subPath));
 	}
 	candidates.push(path.join(canonicalMusicDir, path.basename(folderPath)));
@@ -899,15 +915,54 @@ export function mergeScannedAlbumsInCache(
 export function invalidateScanCache(targetDir?: string): void {
 	if (targetDir) {
 		const canonical = path.resolve(targetDir);
-		const cached = scanCache.get(canonical);
-		if (cached) {
-			reconcileScanAlbumsWithVault(cached.result.albums);
-			saveScanSnapshot(canonical, cached.result);
+		scanCache.delete(canonical);
+		for (const key of Array.from(scanCache.keys())) {
+			if (key.startsWith(canonical) || canonical.startsWith(key)) {
+				scanCache.delete(key);
+			}
 		}
+		try {
+			const snapPath = getScanSnapshotPath(canonical);
+			if (fs.existsSync(snapPath)) {
+				fs.unlinkSync(snapPath);
+			}
+		} catch {}
 	} else {
-		for (const [canonical, cached] of scanCache.entries()) {
-			reconcileScanAlbumsWithVault(cached.result.albums);
-			saveScanSnapshot(canonical, cached.result);
+		scanCache.clear();
+	}
+}
+
+export function clearScanCache(targetDir?: string): void {
+	invalidateScanCache(targetDir);
+}
+
+/**
+ * Updates an album entry in scanCache when tags are applied directly on disk
+ */
+export function updateAlbumInScanCache(
+	folderPath: string,
+	updates: {
+		title?: string;
+		artist?: string;
+		year?: number | null;
+		cover_url?: string | null;
+	}
+): void {
+	const canonical = path.resolve(folderPath);
+
+	for (const [key, entry] of scanCache.entries()) {
+		let modified = false;
+		for (const alb of entry.result.albums) {
+			if (alb.folder_path && (path.resolve(alb.folder_path) === canonical || canonical.startsWith(path.resolve(alb.folder_path)))) {
+				if (updates.title) alb.title = updates.title;
+				if (updates.artist) alb.artist = updates.artist;
+				if (updates.year !== undefined) alb.year = updates.year;
+				if (updates.cover_url) alb.cover_url = updates.cover_url;
+				modified = true;
+			}
+		}
+		if (modified) {
+			saveScanSnapshot(key, entry.result);
 		}
 	}
 }

@@ -1,12 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import dns from 'node:dns';
+import net from 'node:net';
 
-// Ensure IPv4 is prioritized in DNS resolution
+// Ensure IPv4 is prioritized in DNS resolution and disable Happy Eyeballs autoSelectFamily
+// to prevent ETIMEDOUT when external APIs like coverartarchive.org or archive.org are queried
 try {
+	if (typeof (net as any).setDefaultAutoSelectFamily === 'function') {
+		(net as any).setDefaultAutoSelectFamily(false);
+	}
 	dns.setDefaultResultOrder('ipv4first');
 } catch {}
 import { writeTags, readTags } from '@dantheman827/taglib-ts/simpleApi.js';
+import { FileRef } from '@dantheman827/taglib-ts/fileRef.js';
 import { APP_VERSION } from '$lib/version.js';
 import { searchMusicBrainz, getMusicBrainzRelease } from '$lib/server/musicbrainz.js';
 import {
@@ -18,7 +24,8 @@ import {
 	AUDIO_EXTENSIONS,
 	findLocalCoverArt,
 	importScannedAlbum,
-	invalidateScanCache
+	invalidateScanCache,
+	updateAlbumInScanCache
 } from '$lib/server/scanner.js';
 import {
 	updateAlbumAndTracksFromMusicBrainz,
@@ -246,9 +253,11 @@ export async function writeTagsToAudioFile(
 	tags: {
 		title?: string;
 		artist?: string;
+		albumArtist?: string;
 		album?: string;
 		year?: number;
 		track?: number;
+		disc?: number;
 		genre?: string;
 		comment?: string;
 	}
@@ -259,15 +268,73 @@ export async function writeTagsToAudioFile(
 		}
 
 		const fileBuffer = fs.readFileSync(filePath);
-		const updatedBytes = await writeTags(fileBuffer, {
-			title: tags.title,
-			artist: tags.artist,
-			album: tags.album,
-			year: tags.year,
-			track: tags.track,
-			genre: tags.genre,
-			comment: tags.comment
-		});
+		const filename = path.basename(filePath);
+
+		// First try: TagLib FileRef with PropertyMap for full multi-tag and ALBUMARTIST support
+		try {
+			const ref = await FileRef.fromByteArray(fileBuffer, filename, false);
+			if (ref && ref.isValid) {
+				const tag = ref.tag();
+				if (tag) {
+					if (tags.title !== undefined) tag.title = tags.title;
+					if (tags.artist !== undefined) tag.artist = tags.artist;
+					if (tags.album !== undefined) tag.album = tags.album;
+					if (tags.year !== undefined) tag.year = tags.year;
+					if (tags.track !== undefined) tag.track = tags.track;
+					if (tags.genre !== undefined) tag.genre = tags.genre;
+					if (tags.comment !== undefined) tag.comment = tags.comment;
+				}
+
+				const props = ref.properties();
+				if (tags.title !== undefined) props.replace('TITLE', [tags.title]);
+				if (tags.artist !== undefined) props.replace('ARTIST', [tags.artist]);
+				const albArt = tags.albumArtist || tags.artist;
+				if (albArt) {
+					props.replace('ALBUMARTIST', [albArt]);
+					props.replace('ALBUM ARTIST', [albArt]);
+				}
+				if (tags.album !== undefined) props.replace('ALBUM', [tags.album]);
+				if (tags.year !== undefined) {
+					props.replace('DATE', [String(tags.year)]);
+					props.replace('YEAR', [String(tags.year)]);
+				}
+				if (tags.track !== undefined) props.replace('TRACKNUMBER', [String(tags.track)]);
+				if (tags.disc !== undefined) props.replace('DISCNUMBER', [String(tags.disc)]);
+				if (tags.genre !== undefined) props.replace('GENRE', [tags.genre]);
+				if (tags.comment !== undefined) props.replace('COMMENT', [tags.comment]);
+
+				ref.setProperties(props);
+
+				const saved = await ref.save();
+				if (saved) {
+					const file = ref.file();
+					if (file) {
+						const stream = file.stream() as any;
+						const updatedBytes = typeof stream.data === 'function' ? stream.data().data : null;
+						if (updatedBytes && updatedBytes.length > 0) {
+							fs.writeFileSync(filePath, Buffer.from(updatedBytes));
+							return { success: true };
+						}
+					}
+				}
+			}
+		} catch (refErr: any) {
+			console.warn(`FileRef write attempt failed for ${filename}, falling back to writeTags:`, refErr.message);
+		}
+
+		// Fallback: simpleApi writeTags with explicit filename hint
+		const updatedBytes = await writeTags(
+			{ data: fileBuffer, filename },
+			{
+				title: tags.title,
+				artist: tags.artist,
+				album: tags.album,
+				year: tags.year,
+				track: tags.track,
+				genre: tags.genre,
+				comment: tags.comment
+			}
+		);
 
 		if (!updatedBytes) {
 			return { success: false, error: 'TagLib failed to encode updated tags for file format.' };
@@ -283,37 +350,63 @@ export async function writeTagsToAudioFile(
 
 /**
  * Downloads cover artwork from Cover Art Archive, archive.org, or direct URL and writes cover.jpg
- * Tries multiple fallback endpoints (front-500, direct archive.org index, front, release-group, etc.) with timeout protection
+ * Tries multiple fallback endpoints (direct archive.org, index.json, front-500, release-group, etc.) with timeout protection
  */
 export async function downloadAndSaveCover(
-	albumFolder: string,
+	albumFolderOrFolders: string | string[],
 	imageUrl: string,
 	fallbackUrls: string[] = []
 ): Promise<{ success: boolean; coverPath?: string; error?: string }> {
 	try {
-		if (!fs.existsSync(albumFolder)) {
-			return { success: false, error: `Album directory not found: ${albumFolder}` };
+		const targetFolders = (Array.isArray(albumFolderOrFolders) ? albumFolderOrFolders : [albumFolderOrFolders])
+			.filter(Boolean)
+			.map((f) => path.resolve(f));
+
+		const validFolders = targetFolders.filter((f) => fs.existsSync(f));
+		if (validFolders.length === 0) {
+			return { success: false, error: `None of the target album directories exist: ${targetFolders.join(', ')}` };
 		}
 
 		// Build prioritized candidate URLs list
 		const urlsToTry: string[] = [];
 
-		// If a primary imageUrl was given, add it
-		if (imageUrl) urlsToTry.push(imageUrl);
-
 		// Extract MBID to inject direct archive.org metadata endpoints as fast, reliable fallbacks
-		const mbidMatch = imageUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-		if (mbidMatch) {
-			const mbid = mbidMatch[0];
-			urlsToTry.push(`https://archive.org/download/mbid-${mbid}/index.json`);
-			urlsToTry.push(`https://coverartarchive.org/release/${mbid}/front-500`);
-			urlsToTry.push(`https://coverartarchive.org/release/${mbid}/front-250`);
-			urlsToTry.push(`https://coverartarchive.org/release/${mbid}/front`);
+		const allUrlCandidates = [imageUrl, ...fallbackUrls].filter(Boolean);
+		let extractedMbid: string | null = null;
+		for (const u of allUrlCandidates) {
+			const m = u.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+			if (m) {
+				extractedMbid = m[0];
+				break;
+			}
 		}
 
-		// Append any extra fallbacks passed in
+		// 1. Direct Archive.org metadata endpoints first (fastest and most reliable CDN without redirects)
+		if (extractedMbid) {
+			urlsToTry.push(`https://archive.org/download/mbid-${extractedMbid}/index.json`);
+		}
+
+		// 2. Add primary imageUrl
+		if (imageUrl && !urlsToTry.includes(imageUrl)) {
+			urlsToTry.push(imageUrl);
+		}
+
+		// 3. Add CoverArtArchive release endpoints
+		if (extractedMbid) {
+			urlsToTry.push(`https://coverartarchive.org/release/${extractedMbid}/front-500`);
+			urlsToTry.push(`https://coverartarchive.org/release/${extractedMbid}/front`);
+			urlsToTry.push(`https://coverartarchive.org/release/${extractedMbid}/front-250`);
+		}
+
+		// 4. Append any extra fallbacks passed in (e.g. release group URLs)
 		for (const u of fallbackUrls) {
 			if (u && !urlsToTry.includes(u)) {
+				const rgMatch = u.match(/release-group\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+				if (rgMatch) {
+					const rgMbid = rgMatch[1];
+					const rgIndex = `https://archive.org/download/mbid-${rgMbid}/index.json`;
+					if (!urlsToTry.includes(rgIndex)) urlsToTry.push(rgIndex);
+				}
 				urlsToTry.push(u);
 			}
 		}
@@ -324,34 +417,57 @@ export async function downloadAndSaveCover(
 			try {
 				// Special handling for archive.org index.json
 				if (url.endsWith('/index.json')) {
+					const mbid = url.match(/mbid-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1];
 					const controller = new AbortController();
-					const timeoutId = setTimeout(() => controller.abort(), 8000);
-					const metaRes = await fetch(url, {
-						signal: controller.signal,
-						headers: { 'User-Agent': `TraxVault/${APP_VERSION} ( contact@traxvault.local )` }
-					});
-					clearTimeout(timeoutId);
+					const timeoutId = setTimeout(() => controller.abort(), 15000);
+					let metaRes: Response;
+					try {
+						metaRes = await fetch(url, {
+							signal: controller.signal,
+							headers: { 'User-Agent': `TraxVault/${APP_VERSION} ( contact@traxvault.local )` }
+						});
+					} finally {
+						clearTimeout(timeoutId);
+					}
 
 					if (metaRes.ok) {
 						const meta = await metaRes.json();
 						const frontImg = meta.images?.find((i: any) => i.front) || meta.images?.[0];
-						const directImgUrl = frontImg?.thumbnails?.['500'] || frontImg?.thumbnails?.large || frontImg?.image;
-						if (directImgUrl) {
-							const imgCtrl = new AbortController();
-							const imgTimeout = setTimeout(() => imgCtrl.abort(), 12000);
-							const imgRes = await fetch(directImgUrl, {
-								redirect: 'follow',
-								signal: imgCtrl.signal,
-								headers: { 'User-Agent': `TraxVault/${APP_VERSION} ( contact@traxvault.local )` }
-							});
-							clearTimeout(imgTimeout);
+						if (frontImg) {
+							const directLinks: string[] = [];
+							if (mbid && frontImg.id) {
+								directLinks.push(`https://archive.org/download/mbid-${mbid}/mbid-${mbid}-${frontImg.id}_thumb500.jpg`);
+								directLinks.push(`https://archive.org/download/mbid-${mbid}/mbid-${mbid}-${frontImg.id}.jpg`);
+								directLinks.push(`https://archive.org/download/mbid-${mbid}/mbid-${mbid}-${frontImg.id}_thumb1200.jpg`);
+							}
+							if (frontImg.thumbnails?.['500']) directLinks.push(frontImg.thumbnails['500']);
+							if (frontImg.image) directLinks.push(frontImg.image);
 
-							if (imgRes.ok) {
-								const buffer = Buffer.from(await imgRes.arrayBuffer());
-								if (buffer.length > 1000) {
-									const coverFilePath = path.join(albumFolder, 'cover.jpg');
-									fs.writeFileSync(coverFilePath, buffer);
-									return { success: true, coverPath: coverFilePath };
+							for (const directUrl of directLinks) {
+								try {
+									const imgCtrl = new AbortController();
+									const imgTimeout = setTimeout(() => imgCtrl.abort(), 20000);
+									const imgRes = await fetch(directUrl, {
+										redirect: 'follow',
+										signal: imgCtrl.signal,
+										headers: { 'User-Agent': `TraxVault/${APP_VERSION} ( contact@traxvault.local )` }
+									});
+									clearTimeout(imgTimeout);
+
+									if (imgRes.ok) {
+										const buffer = Buffer.from(await imgRes.arrayBuffer());
+										if (buffer.length > 1000) {
+											let firstSavedPath = '';
+											for (const folder of validFolders) {
+												const standardJpgPath = path.join(folder, 'cover.jpg');
+												fs.writeFileSync(standardJpgPath, buffer);
+												if (!firstSavedPath) firstSavedPath = standardJpgPath;
+											}
+											return { success: true, coverPath: firstSavedPath };
+										}
+									}
+								} catch (subErr: any) {
+									console.warn(`Direct archive.org image fetch failed for ${directUrl}:`, subErr.message);
 								}
 							}
 						}
@@ -360,7 +476,7 @@ export async function downloadAndSaveCover(
 				}
 
 				const controller = new AbortController();
-				const timeoutId = setTimeout(() => controller.abort(), 10000);
+				const timeoutId = setTimeout(() => controller.abort(), 18000);
 
 				const res = await fetch(url, {
 					redirect: 'follow',
@@ -386,18 +502,20 @@ export async function downloadAndSaveCover(
 				}
 
 				const ext = contentType.includes('png') ? '.png' : '.jpg';
-				const coverFilePath = path.join(albumFolder, `cover${ext}`);
-				fs.writeFileSync(coverFilePath, buffer);
+				let firstSavedPath = '';
 
-				// Always guarantee standard cover.jpg exists for universal server / third-party compatibility
-				const standardJpgPath = path.join(albumFolder, 'cover.jpg');
-				if (ext !== '.jpg' || coverFilePath !== standardJpgPath) {
-					try {
-						fs.writeFileSync(standardJpgPath, buffer);
-					} catch {}
+				for (const folder of validFolders) {
+					const standardJpgPath = path.join(folder, 'cover.jpg');
+					fs.writeFileSync(standardJpgPath, buffer);
+					if (ext !== '.jpg') {
+						try {
+							fs.writeFileSync(path.join(folder, `cover${ext}`), buffer);
+						} catch {}
+					}
+					if (!firstSavedPath) firstSavedPath = standardJpgPath;
 				}
 
-				return { success: true, coverPath: standardJpgPath };
+				return { success: true, coverPath: firstSavedPath };
 			} catch (fetchErr: any) {
 				lastError = fetchErr.message || 'Fetch failed';
 				console.warn(`Cover download attempt failed for ${url}:`, fetchErr.message);
@@ -456,20 +574,25 @@ export async function applyAlbumTags(
 	const album = albumRes.album;
 	const localTracks: Track[] = albumRes.tracks;
 
-	// Resolve album folder path
-	let albumFolder: string | null = null;
+	// Resolve album folder paths
+	const trackFolders = new Set<string>();
 	for (const t of localTracks) {
 		const resolved = resolveTrackFilePath(t);
 		if (resolved) {
-			albumFolder = path.dirname(resolved);
-			break;
+			trackFolders.add(path.dirname(resolved));
+		} else if (t.file_path) {
+			const musicDir = getMusicDirectory();
+			const direct = path.resolve(musicDir, t.file_path.replace(/^[/\\]+/, ''));
+			trackFolders.add(path.dirname(direct));
 		}
 	}
+	const targetFoldersList = Array.from(trackFolders);
+	let albumFolder: string | null = targetFoldersList[0] || null;
 
 	// 1. Download cover art if requested and available
 	let newCoverUrl = album.cover_url;
 	let coverRes: { success: boolean; coverPath?: string; error?: string } | undefined;
-	if (options.updateCover && albumFolder) {
+	if (options.updateCover && targetFoldersList.length > 0) {
 		const fallbacks = [
 			`https://coverartarchive.org/release/${release.id}/front`,
 			release.release_group_id ? `https://coverartarchive.org/release-group/${release.release_group_id}/front-500` : '',
@@ -477,7 +600,7 @@ export async function applyAlbumTags(
 		].filter(Boolean);
 
 		const primaryUrl = release.cover_url || `https://coverartarchive.org/release/${release.id}/front-500`;
-		coverRes = await downloadAndSaveCover(albumFolder, primaryUrl, fallbacks);
+		coverRes = await downloadAndSaveCover(targetFoldersList, primaryUrl, fallbacks);
 		if (coverRes.success && coverRes.coverPath) {
 			const musicDir = getMusicDirectory();
 			const relPath = path.relative(musicDir, coverRes.coverPath);
@@ -496,6 +619,8 @@ export async function applyAlbumTags(
 		disc_number?: number;
 	}> = [];
 
+	const targetAlbumArtist = options.updateArtist ? release.artist : album.artist;
+
 	for (const match of confirmedMatches) {
 		const localTr = localTracks.find((t: Track) => t.id === match.localTrackId);
 		if (!localTr || localTr.is_missing === 1 || !localTr.file_path) continue;
@@ -511,9 +636,11 @@ export async function applyAlbumTags(
 			await writeTagsToAudioFile(diskPath, {
 				title: targetTitle,
 				artist: targetArtist,
+				albumArtist: targetAlbumArtist,
 				album: options.updateAlbumTitle ? release.title : album.title,
 				year: options.updateYear && release.release_year ? release.release_year : (album.release_year || undefined),
-				track: targetTrackNum
+				track: targetTrackNum,
+				disc: targetDiscNum
 			});
 		}
 
@@ -565,6 +692,16 @@ export async function applyAlbumTags(
 	const updated = updateAlbumAndTracksFromMusicBrainz(albumId, albumUpdate, trackUpdates, missingTracksToAdd);
 	if (!updated) {
 		throw new Error('Failed to update album in database');
+	}
+
+	for (const folder of targetFoldersList) {
+		updateAlbumInScanCache(folder, {
+			title: options.updateAlbumTitle ? release.title : album.title,
+			artist: options.updateArtist ? release.artist : album.artist,
+			year: options.updateYear && release.release_year ? release.release_year : album.release_year,
+			cover_url: newCoverUrl
+		});
+		invalidateScanCache(folder);
 	}
 
 	return {
@@ -676,7 +813,10 @@ export async function scanFolderForTagger(folderPath: string): Promise<{
 
 	const first = rawTracks[0];
 	const folderTitle = first?.album || path.basename(canonicalTarget);
-	const folderArtist = rawTracks.find((t) => t.album_artist)?.album_artist || first?.artist || 'Unknown Artist';
+	const validArtistTrack =
+		rawTracks.find((t) => t.album_artist && t.album_artist.trim().toLowerCase() !== 'unknown artist') ||
+		rawTracks.find((t) => t.artist && t.artist.trim().toLowerCase() !== 'unknown artist');
+	const folderArtist = validArtistTrack?.album_artist || validArtistTrack?.artist || first?.artist || 'Unknown Artist';
 	const folderYear = rawTracks.find((t) => t.year)?.year || null;
 	const mbId = rawTracks.find((t) => t.musicbrainz_album_id)?.musicbrainz_album_id || null;
 
@@ -774,6 +914,10 @@ export async function applyFolderTags(
 	success: boolean;
 	updatedTracksCount: number;
 	importedAlbumId?: number | null;
+	folderTitle?: string;
+	folderArtist?: string;
+	folderYear?: number | null;
+	coverUrl?: string | null;
 	coverPath?: string;
 	coverDownloaded?: boolean;
 	error?: string;
@@ -793,9 +937,20 @@ export async function applyFolderTags(
 		throw new Error(`MusicBrainz release ${releaseMbid} not found.`);
 	}
 
+	// Resolve all folders containing tracks (including subfolders or root canonical target)
+	const trackFolders = new Set<string>();
+	trackFolders.add(canonicalTarget);
+	for (const t of folderData.tracks) {
+		if (t.file_path) {
+			trackFolders.add(path.dirname(t.file_path));
+		}
+	}
+	const targetFoldersList = Array.from(trackFolders);
+
 	// 1. Download cover art if requested
 	let coverPath: string | undefined;
 	let coverUrl: string | null = folderData.cover_url;
+	let coverDownloaded = false;
 	if (options.updateCover) {
 		const fallbacks = [
 			`https://coverartarchive.org/release/${release.id}/front`,
@@ -804,9 +959,10 @@ export async function applyFolderTags(
 		].filter(Boolean);
 
 		const primaryUrl = release.cover_url || `https://coverartarchive.org/release/${release.id}/front-500`;
-		const coverRes = await downloadAndSaveCover(canonicalTarget, primaryUrl, fallbacks);
+		const coverRes = await downloadAndSaveCover(targetFoldersList, primaryUrl, fallbacks);
 		if (coverRes.success && coverRes.coverPath) {
 			coverPath = coverRes.coverPath;
+			coverDownloaded = true;
 			const relPath = path.relative(canonicalMusicDir, coverPath);
 			const containerPath = `/music/${relPath.replace(/^\/+/, '')}`;
 			coverUrl = `/api/library/cover?path=${encodeURIComponent(containerPath)}&t=${Date.now()}`;
@@ -816,6 +972,7 @@ export async function applyFolderTags(
 	// 2. Write audio tags to disk
 	let updatedTracksCount = 0;
 	const targetAlbumTitle = options.updateAlbumTitle ? release.title : folderData.folder_title;
+	const targetArtist = options.updateArtist ? release.artist : folderData.folder_artist;
 	const targetYear =
 		options.updateYear && release.release_year ? release.release_year : folderData.folder_year || undefined;
 
@@ -826,19 +983,24 @@ export async function applyFolderTags(
 
 		if (diskPath && fs.existsSync(diskPath)) {
 			const targetTitle = match.title.trim();
-			const targetArtist = match.artist?.trim() || release.artist;
+			const trackArtist = match.artist?.trim() || targetArtist;
 			const targetTrackNum = match.trackNumber;
+			const targetDiscNum = match.discNumber || localTr?.disc_number || 1;
 
 			const tagResult = await writeTagsToAudioFile(diskPath, {
 				title: targetTitle,
-				artist: targetArtist,
+				artist: trackArtist,
+				albumArtist: targetArtist,
 				album: targetAlbumTitle,
 				year: targetYear,
-				track: targetTrackNum
+				track: targetTrackNum,
+				disc: targetDiscNum
 			});
 
 			if (tagResult.success) {
 				updatedTracksCount++;
+			} else {
+				console.warn(`Failed writing tags to ${diskPath}:`, tagResult.error);
 			}
 		}
 	}
@@ -974,12 +1136,24 @@ export async function applyFolderTags(
 		}
 	}
 
-	invalidateScanCache();
+	for (const folder of targetFoldersList) {
+		updateAlbumInScanCache(folder, {
+			title: targetAlbumTitle,
+			artist: targetArtist,
+			year: targetYear || null,
+			cover_url: coverUrl
+		});
+		invalidateScanCache(folder);
+	}
 
 	return {
 		success: true,
 		updatedTracksCount,
 		importedAlbumId,
+		folderTitle: targetAlbumTitle,
+		folderArtist: targetArtist,
+		folderYear: targetYear || null,
+		coverUrl,
 		coverPath,
 		coverDownloaded: Boolean(coverPath && fs.existsSync(coverPath))
 	};

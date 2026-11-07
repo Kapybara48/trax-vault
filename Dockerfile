@@ -1,7 +1,7 @@
 # --- Build stage ---
 FROM node:22-bookworm-slim AS builder
 
-ARG APP_VERSION=1.7.1
+ARG APP_VERSION=1.7.2
 ENV APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
@@ -23,7 +23,7 @@ RUN npm prune --production
 # --- Production runner stage ---
 FROM node:22-bookworm-slim AS runner
 
-ARG APP_VERSION=1.7.1
+ARG APP_VERSION=1.7.2
 
 WORKDIR /app
 
@@ -31,6 +31,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     DATA_DIR=/app/data \
     BODY_SIZE_LIMIT=Infinity \
+    NODE_OPTIONS="--no-network-family-autoselection" \
     APP_VERSION=${APP_VERSION}
 
 # Create data directory

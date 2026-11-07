@@ -45,6 +45,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			success: true,
 			updatedTracksCount: result.updatedTracksCount,
 			importedAlbumId: result.importedAlbumId || null,
+			folderTitle: result.folderTitle,
+			folderArtist: result.folderArtist,
+			folderYear: result.folderYear,
+			coverUrl: result.coverUrl,
 			coverPath: result.coverPath || null,
 			coverDownloaded: result.coverDownloaded || false
 		});

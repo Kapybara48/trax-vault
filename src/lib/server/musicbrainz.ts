@@ -1,4 +1,5 @@
 import dns from 'node:dns';
+import net from 'node:net';
 import type {
 	MusicBrainzReleaseItem,
 	MusicBrainzReleaseDetail,
@@ -7,6 +8,9 @@ import type {
 import { APP_VERSION } from '$lib/version.js';
 
 try {
+	if (typeof (net as any).setDefaultAutoSelectFamily === 'function') {
+		(net as any).setDefaultAutoSelectFamily(false);
+	}
 	dns.setDefaultResultOrder('ipv4first');
 } catch {}
 

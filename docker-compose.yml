@@ -13,6 +13,7 @@ services:
       - PORT=3000
       - DATA_DIR=/app/data
       - MUSIC_DIR=/music
+      - NODE_OPTIONS=--no-network-family-autoselection
       # Set to true if you want Trax Vault to automatically import all albums found in /music into the Vault on startup
       # Default is false so you can preview, tag, and import albums manually via /scan
       - AUTO_SYNC_LIBRARY=false
