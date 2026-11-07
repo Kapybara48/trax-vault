@@ -165,7 +165,7 @@ export async function searchMusicBrainz(query: string, artist?: string): Promise
 export async function getMusicBrainzRelease(releaseId: string): Promise<MusicBrainzReleaseDetail | null> {
 	if (!releaseId) return null;
 
-	const url = `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artists+media+labels&fmt=json`;
+	const url = `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artists+media+labels+release-groups&fmt=json`;
 
 	try {
 		const res = await rateLimitedFetch(url);
@@ -209,9 +209,21 @@ export async function getMusicBrainzRelease(releaseId: string): Promise<MusicBra
 			}
 		}
 
-		// Check if cover art exists from Cover Art Archive
+		// Check if cover art exists from Cover Art Archive (release front, or release-group fallback)
+		const rgId = rel['release-group']?.id;
 		const hasCover = rel['cover-art-archive']?.front || rel['cover-art-archive']?.artwork;
-		const coverUrl = hasCover ? `https://coverartarchive.org/release/${rel.id}/front-500` : null;
+		const hasRgCover = rel['release-group']?.['cover-art-archive']?.front || rel['release-group']?.['cover-art-archive']?.artwork;
+
+		let coverUrl: string | null = null;
+		if (hasCover) {
+			coverUrl = `https://coverartarchive.org/release/${rel.id}/front-500`;
+		} else if (hasRgCover && rgId) {
+			coverUrl = `https://coverartarchive.org/release-group/${rgId}/front-500`;
+		} else {
+			// Even if boolean flags are absent in initial payload, single releases or newly added releases
+			// often have artwork at either the release or release-group front endpoint
+			coverUrl = `https://coverartarchive.org/release/${rel.id}/front-500`;
+		}
 
 		return {
 			id: rel.id,
@@ -221,6 +233,7 @@ export async function getMusicBrainzRelease(releaseId: string): Promise<MusicBra
 			cover_url: coverUrl,
 			media_type: mediaType,
 			barcode: rel.barcode || null,
+			release_group_id: rgId || null,
 			tracks
 		};
 	} catch (err) {

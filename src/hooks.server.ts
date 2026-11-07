@@ -1,6 +1,15 @@
 import { redirect, json, type RequestEvent } from '@sveltejs/kit';
+import dns from 'node:dns';
 import { isAuthDisabled, hasAnyUser, validateSession, SESSION_COOKIE_NAME } from '$lib/server/auth.js';
 import { backfillTrackBitrates, syncLibraryFromDisk, scanLibraryDirectory } from '$lib/server/scanner.js';
+
+// Prioritize IPv4 over IPv6 in Node.js DNS resolution to prevent ETIMEDOUT when external APIs
+// like coverartarchive.org or musicbrainz.org advertise IPv6 addresses unreachable on host network
+try {
+	dns.setDefaultResultOrder('ipv4first');
+} catch {
+	// Ignore if unsupported in environment
+}
 
 if (!process.env.BODY_SIZE_LIMIT) {
 	process.env.BODY_SIZE_LIMIT = 'Infinity';

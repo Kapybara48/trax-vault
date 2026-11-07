@@ -188,6 +188,7 @@ export interface MusicBrainzReleaseDetail {
 	cover_url: string | null;
 	media_type: string | null;
 	barcode?: string | null;
+	release_group_id?: string | null;
 	tracks: MusicBrainzReleaseTrack[];
 }
 

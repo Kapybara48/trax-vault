@@ -142,7 +142,7 @@
 	let optUpdateAlbumTitle = $state(true);
 	let optUpdateArtist = $state(true);
 	let optUpdateYear = $state(true);
-	let optImportToVault = $state(true);
+	let optImportToVault = $state(false);
 
 	// Filtered Library Albums
 	const filteredAlbums = $derived(
@@ -521,7 +521,7 @@
 					};
 				}
 				if (currentFolderData) {
-					currentFolderData.already_in_vault = true;
+					currentFolderData.already_in_vault = Boolean(json.importedAlbumId || currentFolderData.already_in_vault);
 					currentFolderData.existing_album_id = json.importedAlbumId || currentFolderData.existing_album_id;
 				}
 
