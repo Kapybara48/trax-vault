@@ -45,7 +45,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			success: true,
 			updatedTracksCount: result.updatedTracksCount,
 			importedAlbumId: result.importedAlbumId || null,
-			coverPath: result.coverPath || null
+			coverPath: result.coverPath || null,
+			coverDownloaded: result.coverDownloaded || false
 		});
 	} catch (err: any) {
 		console.error('Failed to apply folder tags:', err);

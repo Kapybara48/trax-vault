@@ -1,9 +1,14 @@
+import dns from 'node:dns';
 import type {
 	MusicBrainzReleaseItem,
 	MusicBrainzReleaseDetail,
 	MusicBrainzReleaseTrack
 } from '$lib/types/index.js';
 import { APP_VERSION } from '$lib/version.js';
+
+try {
+	dns.setDefaultResultOrder('ipv4first');
+} catch {}
 
 const USER_AGENT = `TraxVault/${APP_VERSION} ( mailto:daniel.krejci44@gmail.com )`;
 let lastRequestEndTime = 0;

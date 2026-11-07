@@ -1,5 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import dns from 'node:dns';
+
+// Ensure IPv4 is prioritized in DNS resolution
+try {
+	dns.setDefaultResultOrder('ipv4first');
+} catch {}
 import { writeTags, readTags } from '@dantheman827/taglib-ts/simpleApi.js';
 import { APP_VERSION } from '$lib/version.js';
 import { searchMusicBrainz, getMusicBrainzRelease } from '$lib/server/musicbrainz.js';
@@ -276,8 +282,8 @@ export async function writeTagsToAudioFile(
 }
 
 /**
- * Downloads cover artwork from Cover Art Archive or direct URL and writes cover.jpg
- * Tries multiple fallback endpoints (front-500, front, release-group, etc.) with timeout protection
+ * Downloads cover artwork from Cover Art Archive, archive.org, or direct URL and writes cover.jpg
+ * Tries multiple fallback endpoints (front-500, direct archive.org index, front, release-group, etc.) with timeout protection
  */
 export async function downloadAndSaveCover(
 	albumFolder: string,
@@ -289,11 +295,70 @@ export async function downloadAndSaveCover(
 			return { success: false, error: `Album directory not found: ${albumFolder}` };
 		}
 
-		const urlsToTry = [imageUrl, ...fallbackUrls].filter(Boolean);
+		// Build prioritized candidate URLs list
+		const urlsToTry: string[] = [];
+
+		// If a primary imageUrl was given, add it
+		if (imageUrl) urlsToTry.push(imageUrl);
+
+		// Extract MBID to inject direct archive.org metadata endpoints as fast, reliable fallbacks
+		const mbidMatch = imageUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+		if (mbidMatch) {
+			const mbid = mbidMatch[0];
+			urlsToTry.push(`https://archive.org/download/mbid-${mbid}/index.json`);
+			urlsToTry.push(`https://coverartarchive.org/release/${mbid}/front-500`);
+			urlsToTry.push(`https://coverartarchive.org/release/${mbid}/front-250`);
+			urlsToTry.push(`https://coverartarchive.org/release/${mbid}/front`);
+		}
+
+		// Append any extra fallbacks passed in
+		for (const u of fallbackUrls) {
+			if (u && !urlsToTry.includes(u)) {
+				urlsToTry.push(u);
+			}
+		}
+
 		let lastError = 'No image candidate URLs provided';
 
 		for (const url of urlsToTry) {
 			try {
+				// Special handling for archive.org index.json
+				if (url.endsWith('/index.json')) {
+					const controller = new AbortController();
+					const timeoutId = setTimeout(() => controller.abort(), 8000);
+					const metaRes = await fetch(url, {
+						signal: controller.signal,
+						headers: { 'User-Agent': `TraxVault/${APP_VERSION} ( contact@traxvault.local )` }
+					});
+					clearTimeout(timeoutId);
+
+					if (metaRes.ok) {
+						const meta = await metaRes.json();
+						const frontImg = meta.images?.find((i: any) => i.front) || meta.images?.[0];
+						const directImgUrl = frontImg?.thumbnails?.['500'] || frontImg?.thumbnails?.large || frontImg?.image;
+						if (directImgUrl) {
+							const imgCtrl = new AbortController();
+							const imgTimeout = setTimeout(() => imgCtrl.abort(), 12000);
+							const imgRes = await fetch(directImgUrl, {
+								redirect: 'follow',
+								signal: imgCtrl.signal,
+								headers: { 'User-Agent': `TraxVault/${APP_VERSION} ( contact@traxvault.local )` }
+							});
+							clearTimeout(imgTimeout);
+
+							if (imgRes.ok) {
+								const buffer = Buffer.from(await imgRes.arrayBuffer());
+								if (buffer.length > 1000) {
+									const coverFilePath = path.join(albumFolder, 'cover.jpg');
+									fs.writeFileSync(coverFilePath, buffer);
+									return { success: true, coverPath: coverFilePath };
+								}
+							}
+						}
+					}
+					continue;
+				}
+
 				const controller = new AbortController();
 				const timeoutId = setTimeout(() => controller.abort(), 10000);
 
@@ -324,19 +389,15 @@ export async function downloadAndSaveCover(
 				const coverFilePath = path.join(albumFolder, `cover${ext}`);
 				fs.writeFileSync(coverFilePath, buffer);
 
-				// Also ensure standard cover.jpg exists if PNG was downloaded
-				if (ext !== '.jpg') {
+				// Always guarantee standard cover.jpg exists for universal server / third-party compatibility
+				const standardJpgPath = path.join(albumFolder, 'cover.jpg');
+				if (ext !== '.jpg' || coverFilePath !== standardJpgPath) {
 					try {
-						const jpgPath = path.join(albumFolder, 'cover.jpg');
-						if (!fs.existsSync(jpgPath)) {
-							fs.writeFileSync(jpgPath, buffer);
-						}
-					} catch {
-						// Ignore secondary copy error
-					}
+						fs.writeFileSync(standardJpgPath, buffer);
+					} catch {}
 				}
 
-				return { success: true, coverPath: coverFilePath };
+				return { success: true, coverPath: standardJpgPath };
 			} catch (fetchErr: any) {
 				lastError = fetchErr.message || 'Fetch failed';
 				console.warn(`Cover download attempt failed for ${url}:`, fetchErr.message);
@@ -378,6 +439,8 @@ export async function applyAlbumTags(
 	updatedTracksCount: number;
 	album: Album;
 	tracks: Track[];
+	coverPath?: string;
+	coverDownloaded?: boolean;
 	error?: string;
 }> {
 	const albumRes = getAlbumWithTracks(albumId);
@@ -405,6 +468,7 @@ export async function applyAlbumTags(
 
 	// 1. Download cover art if requested and available
 	let newCoverUrl = album.cover_url;
+	let coverRes: { success: boolean; coverPath?: string; error?: string } | undefined;
 	if (options.updateCover && albumFolder) {
 		const fallbacks = [
 			`https://coverartarchive.org/release/${release.id}/front`,
@@ -413,7 +477,7 @@ export async function applyAlbumTags(
 		].filter(Boolean);
 
 		const primaryUrl = release.cover_url || `https://coverartarchive.org/release/${release.id}/front-500`;
-		const coverRes = await downloadAndSaveCover(albumFolder, primaryUrl, fallbacks);
+		coverRes = await downloadAndSaveCover(albumFolder, primaryUrl, fallbacks);
 		if (coverRes.success && coverRes.coverPath) {
 			const musicDir = getMusicDirectory();
 			const relPath = path.relative(musicDir, coverRes.coverPath);
@@ -507,7 +571,9 @@ export async function applyAlbumTags(
 		success: true,
 		updatedTracksCount,
 		album: updated.album,
-		tracks: updated.tracks
+		tracks: updated.tracks,
+		coverPath: coverRes?.coverPath || undefined,
+		coverDownloaded: Boolean(coverRes?.success && coverRes?.coverPath)
 	};
 }
 
@@ -709,6 +775,7 @@ export async function applyFolderTags(
 	updatedTracksCount: number;
 	importedAlbumId?: number | null;
 	coverPath?: string;
+	coverDownloaded?: boolean;
 	error?: string;
 }> {
 	const folderData = await scanFolderForTagger(folderPath);
@@ -913,7 +980,8 @@ export async function applyFolderTags(
 		success: true,
 		updatedTracksCount,
 		importedAlbumId,
-		coverPath
+		coverPath,
+		coverDownloaded: Boolean(coverPath && fs.existsSync(coverPath))
 	};
 }
 

@@ -43,7 +43,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			success: true,
 			updatedTracksCount: result.updatedTracksCount,
 			album: result.album,
-			tracks: result.tracks
+			tracks: result.tracks,
+			coverPath: result.coverPath || null,
+			coverDownloaded: result.coverDownloaded || false
 		});
 	} catch (err: any) {
 		console.error(`Failed to apply tags to album ${albumId}:`, err);

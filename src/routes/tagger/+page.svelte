@@ -451,9 +451,13 @@
 					};
 				}
 
+				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount} audio files`;
+				if (json.coverDownloaded) {
+					successMsg += ` and downloaded cover.jpg to album folder`;
+				}
 				statusMessage = {
 					type: 'success',
-					text: `Successfully wrote tags to ${json.updatedTracksCount} audio files and updated library!`
+					text: `${successMsg}!`
 				};
 
 				// Refresh alignment diff
@@ -526,6 +530,9 @@
 				}
 
 				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount} audio files`;
+				if (json.coverDownloaded) {
+					successMsg += ` and saved cover.jpg`;
+				}
 				let linkObj = undefined;
 
 				if (json.importedAlbumId) {
