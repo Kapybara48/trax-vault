@@ -92,7 +92,11 @@ export const GET: RequestHandler = async ({ url }) => {
 		});
 	} catch (err: any) {
 		console.error(`Folder matching error for ${folderPathParam}:`, err);
-		return json({ error: err.message || 'Matching failed' }, { status: 500 });
+		const isNotFound = err?.message?.includes('Directory not found') || err?.message?.includes('Access denied');
+		return json(
+			{ error: err.message || 'Matching failed' },
+			{ status: isNotFound ? 404 : 500 }
+		);
 	}
 };
 

@@ -41,10 +41,47 @@
 	let taggerMode = $state<'albums' | 'folders'>(data.initialFolderPath ? 'folders' : 'albums');
 
 	// Library albums list
-	let albums = $state<Album[]>([...data.albums]);
+	let albums = $state<Album[]>([...(data.albums || [])]);
+
+	function deduplicateFoldersList(items: ScannedFolderItem[]): ScannedFolderItem[] {
+		const map = new Map<string, ScannedFolderItem>();
+		for (const item of items || []) {
+			if (!item || !item.folder_path) continue;
+			const existing = map.get(item.folder_path);
+			if (existing) {
+				existing.track_count = (existing.track_count || 0) + (item.track_count || 0);
+				existing.already_in_vault = existing.already_in_vault || item.already_in_vault;
+				existing.cover_url = existing.cover_url || item.cover_url;
+			} else {
+				map.set(item.folder_path, { ...item });
+			}
+		}
+		return Array.from(map.values());
+	}
 
 	// Scanned music folders list
-	let folders = $state<ScannedFolderItem[]>([...(data.folders || [])]);
+	let folders = $state<ScannedFolderItem[]>(deduplicateFoldersList(data.folders || []));
+	let isRefreshingFolders = $state(false);
+
+	async function refreshFolders(force = true) {
+		isRefreshingFolders = true;
+		try {
+			const res = await fetch(`/api/tagger/folders?force=${force ? 'true' : 'false'}`);
+			if (res.ok) {
+				const json = await res.json();
+				if (Array.isArray(json.folders)) {
+					folders = deduplicateFoldersList(json.folders);
+					if (taggerMode === 'folders' && (!selectedFolderPath || !folders.some((f) => f.folder_path === selectedFolderPath))) {
+						selectedFolderPath = folders[0]?.folder_path || null;
+					}
+				}
+			}
+		} catch (err) {
+			console.error('Failed to refresh folders:', err);
+		} finally {
+			isRefreshingFolders = false;
+		}
+	}
 
 	// Sidebar filter state for albums
 	let sidebarSearch = $state('');
@@ -110,10 +147,11 @@
 	// Filtered Library Albums
 	const filteredAlbums = $derived(
 		albums.filter((a) => {
+			const q = sidebarSearch.trim().toLowerCase();
 			const matchesText =
-				!sidebarSearch.trim() ||
-				a.title.toLowerCase().includes(sidebarSearch.toLowerCase()) ||
-				a.artist.toLowerCase().includes(sidebarSearch.toLowerCase());
+				!q ||
+				String(a.title || '').toLowerCase().includes(q) ||
+				String(a.artist || '').toLowerCase().includes(q);
 
 			if (!matchesText) return false;
 
@@ -133,11 +171,12 @@
 	// Filtered Scanned Folders
 	const filteredFolders = $derived(
 		folders.filter((f) => {
+			const q = folderSearch.trim().toLowerCase();
 			const matchesText =
-				!folderSearch.trim() ||
-				f.title.toLowerCase().includes(folderSearch.toLowerCase()) ||
-				f.artist.toLowerCase().includes(folderSearch.toLowerCase()) ||
-				f.folder_path.toLowerCase().includes(folderSearch.toLowerCase());
+				!q ||
+				String(f.title || '').toLowerCase().includes(q) ||
+				String(f.artist || '').toLowerCase().includes(q) ||
+				String(f.folder_path || '').toLowerCase().includes(q);
 
 			if (!matchesText) return false;
 
@@ -636,7 +675,9 @@
 					type="button"
 					onclick={() => {
 						taggerMode = 'folders';
-						if (!selectedFolderPath && folders.length > 0) {
+						if (folders.length === 0) {
+							refreshFolders(false);
+						} else if (!selectedFolderPath || !folders.some((f) => f.folder_path === selectedFolderPath)) {
 							selectedFolderPath = folders[0].folder_path;
 						}
 					}}
@@ -738,14 +779,25 @@
 			{:else}
 				<!-- Folders Mode Search & Filter -->
 				<div class="space-y-2">
-					<div class="relative">
-						<Search class="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-500" />
-						<input
-							type="text"
-							bind:value={folderSearch}
-							placeholder="Search scanned folder or artist..."
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-9 pr-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-						/>
+					<div class="flex items-center gap-1.5">
+						<div class="relative flex-1">
+							<Search class="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-500" />
+							<input
+								type="text"
+								bind:value={folderSearch}
+								placeholder="Search scanned folder or artist..."
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-9 pr-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+						<button
+							type="button"
+							onclick={() => refreshFolders(true)}
+							disabled={isRefreshingFolders}
+							title="Rescan music directory folders"
+							class="p-2 rounded-xl border border-neutral-700 bg-neutral-900 text-neutral-300 hover:text-emerald-400 hover:border-emerald-600 transition disabled:opacity-50 cursor-pointer"
+						>
+							<RefreshCw class="h-3.5 w-3.5 {isRefreshingFolders ? 'animate-spin text-emerald-400' : ''}" />
+						</button>
 					</div>
 
 					<div class="flex items-center gap-1 overflow-x-auto pb-1 text-[11px]">
@@ -775,7 +827,7 @@
 
 				<!-- Scanned Folder Cards List -->
 				<div class="space-y-1.5 max-h-[580px] overflow-y-auto pr-1">
-					{#each filteredFolders as fld (fld.folder_path)}
+					{#each filteredFolders as fld, idx (`${fld.folder_path}::${idx}`)}
 						<button
 							type="button"
 							onclick={() => {

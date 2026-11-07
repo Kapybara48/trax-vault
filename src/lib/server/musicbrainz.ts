@@ -56,7 +56,7 @@ async function rateLimitedFetch(url: string, retries = 2): Promise<Response> {
  */
 function escapeLucene(str: string): string {
 	// Escape Lucene special characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /
-	return str.replace(/([+\-!(){}[\]^"~*?:\\])/g, '\\$1');
+	return String(str || '').replace(/([+\-!(){}[\]^"~*?:\\/]|&&|\|\|)/g, '\\$1');
 }
 
 /**

@@ -6,6 +6,7 @@
 	import GlobalMiniPlayer from '$lib/components/GlobalMiniPlayer.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import { player } from '$lib/services/player.svelte.js';
+	import { APP_VERSION } from '$lib/version.js';
 	import type { LayoutData } from './$types.js';
 
 	let { data, children }: { data: LayoutData; children: any } = $props();
@@ -53,7 +54,7 @@
 		<footer class="border-t border-neutral-900 bg-neutral-950 py-6 text-center text-xs text-neutral-500 {player.currentTrack ? 'mb-16' : ''}">
 			<div class="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
 				<p>
-					<span class="font-bold text-neutral-400">Trax Vault v1.7</span> • Self-hosted with SQLite & MusicBrainz
+					<span class="font-bold text-neutral-400">Trax Vault v{APP_VERSION}</span> • Self-hosted with SQLite & MusicBrainz
 				</p>
 				<p class="text-[11px] text-neutral-600">
 					Track FLAC/MP3 formats, bad quality encodes, lyrics (.lrc/plain), and censored tracks.

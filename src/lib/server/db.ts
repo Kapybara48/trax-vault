@@ -19,7 +19,8 @@ import type {
 	FixerRules,
 	SearchFilters,
 	Playlist,
-	InternetRadioStation
+	InternetRadioStation,
+	ScannedTrack
 } from '$lib/types/index.js';
 import { parseSearchQuery } from '$lib/search.js';
 import { stripLrcMetadataHeaders } from '$lib/utils.js';
@@ -2024,4 +2025,468 @@ export function deleteInternetRadioStation(id: number): boolean {
 	const info = db.prepare('DELETE FROM internet_radio_stations WHERE id = ?').run(id);
 	return info.changes > 0;
 }
+
+function normalizeMergeText(str: string | null | undefined): string {
+	if (!str) return '';
+	return String(str)
+		.toLowerCase()
+		.replace(/[‘’]/g, "'")
+		.replace(/[“”]/g, '"')
+		.replace(/[–—]/g, '-')
+		.replace(/^\d{1,3}[\s.\-_]+/, '')
+		.replace(/\s*[\(\[\{]?(?:explicit|clean|remaster(?:ed)?|deluxe(?: edition)?|bonus track|flac|mp3)[\)\]\}]?/gi, '')
+		.replace(/[^a-z0-9\s]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+function getFormatQualityScore(format?: AudioFormat | null, quality?: QualityRating | null, bitrate?: number | null): number {
+	let score = 0;
+	if (format === 'FLAC' || format === 'ALAC' || format === 'WAV' || format === 'AIFF') {
+		score += 1000;
+	} else if (format === 'MP3_320' || format === 'MP3_V0' || format === 'AAC_256') {
+		score += 500;
+	} else if (format === 'OGG' || format === 'MP3_192') {
+		score += 300;
+	} else if (format === 'MP3_128') {
+		score += 150;
+	} else {
+		score += 200;
+	}
+
+	if (quality === 'perfect') score += 400;
+	else if (quality === 'good') score += 300;
+	else if (quality === 'acceptable') score += 200;
+	else if (quality === 'needs_upgrade') score += 50;
+	else if (quality === 'bad') score += 10;
+
+	if (bitrate && bitrate > 0) {
+		score += Math.min(300, Math.round(bitrate / 10));
+	}
+	return score;
+}
+
+/**
+ * Merges / upgrades scanned tracks from disk into an existing Vault album.
+ * Matches tracks by file_path, (disc_number, track_number), or normalized title,
+ * upgrading audio fidelity, file paths, and lyrics while preserving track IDs,
+ * play counts, playlists, and manual verification state.
+ */
+export function mergeScannedTracksIntoVaultAlbum(
+	targetAlbumId: number,
+	scannedTracks: ScannedTrack[],
+	options?: {
+		overwriteTags?: boolean;
+		sourceAlbumId?: number | null;
+		coverUrl?: string | null;
+		musicbrainzId?: string | null;
+	}
+): {
+	album: Album;
+	tracks: Track[];
+	upgradedCount: number;
+	addedCount: number;
+} | null {
+	const targetRes = getAlbumWithTracks(targetAlbumId);
+	if (!targetRes) return null;
+
+	const rules = getAlbumFixerRules(targetAlbumId);
+	let upgradedCount = 0;
+	let addedCount = 0;
+
+	const tx = db.transaction(() => {
+		// If sourceAlbumId is also in Vault and distinct from targetAlbumId, merge it first
+		if (options?.sourceAlbumId && options.sourceAlbumId !== targetAlbumId) {
+			const srcExists = db.prepare('SELECT id FROM albums WHERE id = ?').get(options.sourceAlbumId);
+			if (srcExists) {
+				mergeVaultAlbums(targetAlbumId, options.sourceAlbumId);
+			}
+		}
+
+		// Re-fetch current tracks in target album
+		const currentTracks = db
+			.prepare('SELECT * FROM tracks WHERE album_id = ? ORDER BY disc_number ASC, track_number ASC, id ASC')
+			.all(targetAlbumId) as Track[];
+
+		const matchedDbIds = new Set<number>();
+
+		const updateStmt = db.prepare(`
+			UPDATE tracks SET
+				disc_number = ?,
+				track_number = ?,
+				title = ?,
+				artist = ?,
+				duration_ms = COALESCE(?, duration_ms),
+				format = ?,
+				bitrate_kbps = ?,
+				sample_rate = ?,
+				bits_per_sample = ?,
+				quality_rating = ?,
+				censorship = ?,
+				lyrics = ?,
+				lyrics_text = COALESCE(?, lyrics_text),
+				file_path = ?,
+				is_missing = 0,
+				needs_attention = ?,
+				notes = ?,
+				updated_at = datetime('now')
+			WHERE id = ?
+		`);
+
+		for (const st of scannedTracks) {
+			const normStTitle = normalizeMergeText(st.title);
+			const stDisc = st.disc_number || 1;
+			const stNum = st.track_number || 1;
+
+			// 1. Match by exact file_path
+			let match = currentTracks.find(
+				(dt) => !matchedDbIds.has(dt.id) && dt.file_path && path.resolve(dt.file_path) === path.resolve(st.file_path)
+			);
+
+			// 2. Match by disc_number + track_number
+			if (!match) {
+				match = currentTracks.find(
+					(dt) => !matchedDbIds.has(dt.id) && (dt.disc_number || 1) === stDisc && dt.track_number === stNum
+				);
+			}
+
+			// 3. Match by normalized title
+			if (!match && normStTitle) {
+				match = currentTracks.find(
+					(dt) => !matchedDbIds.has(dt.id) && normalizeMergeText(dt.title) === normStTitle
+				);
+			}
+
+			if (match) {
+				matchedDbIds.add(match.id);
+
+				const useNewTags = Boolean(options?.overwriteTags || match.is_missing === 1);
+				const newTitle = useNewTags && st.title ? st.title.trim() : match.title;
+				const newArtist = useNewTags
+					? (st.artist && st.artist !== targetRes.album.artist ? st.artist.trim() : match.artist)
+					: (match.artist || (st.artist && st.artist !== targetRes.album.artist ? st.artist.trim() : null));
+				const newDisc = useNewTags ? stDisc : (match.disc_number || stDisc);
+				const newNum = useNewTags ? stNum : (match.track_number || stNum);
+
+				const newFormat = st.format || match.format;
+				const newQuality = st.quality_rating || match.quality_rating;
+				const newCensorship =
+					st.censorship && st.censorship !== 'unknown'
+						? st.censorship
+						: match.censorship && match.censorship !== 'unknown'
+							? match.censorship
+							: 'unknown';
+				const newLyrics: LyricsStatus =
+					st.lyrics && st.lyrics !== 'missing'
+						? st.lyrics
+						: match.lyrics && match.lyrics !== 'missing'
+							? match.lyrics
+							: 'missing';
+				const newLyricsText = st.lyrics_content || match.lyrics_text || null;
+
+				const needsAtt = computeNeedsAttention(
+					newQuality,
+					newCensorship,
+					newLyrics,
+					newFormat,
+					rules,
+					0
+				);
+
+				updateStmt.run(
+					newDisc,
+					newNum,
+					newTitle,
+					newArtist,
+					st.duration_ms,
+					newFormat,
+					st.bitrate_kbps ?? match.bitrate_kbps ?? null,
+					st.sample_rate ?? match.sample_rate ?? null,
+					st.bits_per_sample ?? match.bits_per_sample ?? null,
+					newQuality,
+					newCensorship,
+					newLyrics,
+					newLyricsText,
+					st.file_path,
+					needsAtt,
+					`Upgraded/merged from: ${path.basename(st.file_path)}`,
+					match.id
+				);
+				upgradedCount++;
+			} else {
+				addTrackToAlbum(targetAlbumId, {
+					disc_number: stDisc,
+					track_number: stNum,
+					title: st.title,
+					artist: st.artist !== targetRes.album.artist ? st.artist : null,
+					duration_ms: st.duration_ms,
+					format: st.format,
+					bitrate_kbps: st.bitrate_kbps,
+					sample_rate: st.sample_rate,
+					bits_per_sample: st.bits_per_sample,
+					quality_rating: st.quality_rating,
+					censorship: st.censorship,
+					lyrics: st.lyrics,
+					file_path: st.file_path,
+					lyrics_text: st.lyrics_content ?? null,
+					notes: `Imported via album merge: ${path.basename(st.file_path)}`
+				});
+				addedCount++;
+			}
+		}
+
+		// Clean up any leftover duplicate rows in targetAlbumId that had the same (disc, track_number)
+		// as a matched track when their old file_path no longer exists on disk
+		for (const dt of currentTracks) {
+			if (matchedDbIds.has(dt.id)) continue;
+			const hasUpgradedSibling = currentTracks.some(
+				(other) =>
+					matchedDbIds.has(other.id) &&
+					(other.disc_number || 1) === (dt.disc_number || 1) &&
+					other.track_number === dt.track_number
+			);
+			if (hasUpgradedSibling && (!dt.file_path || !fs.existsSync(dt.file_path))) {
+				db.prepare('DELETE FROM tracks WHERE id = ?').run(dt.id);
+			}
+		}
+
+		// Update album media_type / cover / mbid if improved
+		const allTargetTracks = db
+			.prepare('SELECT format FROM tracks WHERE album_id = ?')
+			.all(targetAlbumId) as Array<{ format: AudioFormat }>;
+		const hasLossless = allTargetTracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC');
+
+		const albumUpdates: string[] = ["updated_at = datetime('now')"];
+		const albumParams: any[] = [];
+		if (hasLossless && targetRes.album.media_type !== 'FLAC Digital') {
+			albumUpdates.push("media_type = 'FLAC Digital'");
+		}
+		if (options?.coverUrl && !targetRes.album.cover_url) {
+			albumUpdates.push('cover_url = ?');
+			albumParams.push(options.coverUrl);
+		}
+		if (options?.musicbrainzId && !targetRes.album.musicbrainz_id) {
+			albumUpdates.push('musicbrainz_id = ?');
+			albumParams.push(options.musicbrainzId);
+		}
+		albumParams.push(targetAlbumId);
+		db.prepare(`UPDATE albums SET ${albumUpdates.join(', ')} WHERE id = ?`).run(...albumParams);
+	});
+
+	tx();
+
+	const updated = getAlbumWithTracks(targetAlbumId);
+	if (!updated) return null;
+
+	return {
+		album: updated.album,
+		tracks: updated.tracks,
+		upgradedCount,
+		addedCount
+	};
+}
+
+/**
+ * Merges sourceAlbumId into targetAlbumId inside the Vault database,
+ * keeping the highest-quality track files, preserving playlists & play counts,
+ * and deleting sourceAlbumId.
+ */
+export function mergeVaultAlbums(
+	targetAlbumId: number,
+	sourceAlbumId: number
+): {
+	album: Album;
+	tracks: Track[];
+	mergedCount: number;
+} | null {
+	if (targetAlbumId === sourceAlbumId) {
+		const res = getAlbumWithTracks(targetAlbumId);
+		return res ? { ...res, mergedCount: 0 } : null;
+	}
+
+	const targetRes = getAlbumWithTracks(targetAlbumId);
+	const sourceRes = getAlbumWithTracks(sourceAlbumId);
+	if (!targetRes || !sourceRes) return null;
+
+	const rules = getAlbumFixerRules(targetAlbumId);
+	let mergedCount = 0;
+
+	const tx = db.transaction(() => {
+		const targetTracks = [...targetRes.tracks];
+		const matchedTargetIds = new Set<number>();
+
+		for (const srcTr of sourceRes.tracks) {
+			const normSrcTitle = normalizeMergeText(srcTr.title);
+			const srcDisc = srcTr.disc_number || 1;
+			const srcNum = srcTr.track_number || 1;
+
+			let tgtTr = targetTracks.find(
+				(dt) => !matchedTargetIds.has(dt.id) && (dt.disc_number || 1) === srcDisc && dt.track_number === srcNum
+			);
+			if (!tgtTr && normSrcTitle) {
+				tgtTr = targetTracks.find(
+					(dt) => !matchedTargetIds.has(dt.id) && normalizeMergeText(dt.title) === normSrcTitle
+				);
+			}
+
+			if (tgtTr) {
+				matchedTargetIds.add(tgtTr.id);
+
+				const srcExists = Boolean(srcTr.file_path && fs.existsSync(srcTr.file_path));
+				const tgtExists = Boolean(tgtTr.file_path && fs.existsSync(tgtTr.file_path));
+
+				const srcScore = getFormatQualityScore(srcTr.format, srcTr.quality_rating, srcTr.bitrate_kbps);
+				const tgtScore = getFormatQualityScore(tgtTr.format, tgtTr.quality_rating, tgtTr.bitrate_kbps);
+
+				const preferSourceAudio =
+					(tgtTr.is_missing === 1 && srcTr.is_missing !== 1) ||
+					(!tgtExists && srcExists) ||
+					(srcTr.is_missing !== 1 && srcScore >= tgtScore);
+
+				const bestFormat = preferSourceAudio ? srcTr.format : tgtTr.format;
+				const bestQuality = preferSourceAudio ? srcTr.quality_rating : tgtTr.quality_rating;
+				const bestBitrate = preferSourceAudio
+					? (srcTr.bitrate_kbps ?? tgtTr.bitrate_kbps ?? null)
+					: (tgtTr.bitrate_kbps ?? srcTr.bitrate_kbps ?? null);
+				const bestSampleRate = preferSourceAudio
+					? (srcTr.sample_rate ?? tgtTr.sample_rate ?? null)
+					: (tgtTr.sample_rate ?? srcTr.sample_rate ?? null);
+				const bestBitsPerSample = preferSourceAudio
+					? (srcTr.bits_per_sample ?? tgtTr.bits_per_sample ?? null)
+					: (tgtTr.bits_per_sample ?? srcTr.bits_per_sample ?? null);
+				const bestFilePath = preferSourceAudio
+					? (srcTr.file_path || tgtTr.file_path || null)
+					: (tgtTr.file_path || srcTr.file_path || null);
+				const bestDuration = preferSourceAudio
+					? (srcTr.duration_ms ?? tgtTr.duration_ms ?? null)
+					: (tgtTr.duration_ms ?? srcTr.duration_ms ?? null);
+
+				const bestCensorship =
+					preferSourceAudio && srcTr.censorship !== 'unknown'
+						? srcTr.censorship
+						: tgtTr.censorship !== 'unknown'
+							? tgtTr.censorship
+							: srcTr.censorship;
+
+				const bestLyrics: LyricsStatus =
+					tgtTr.lyrics === 'synced_lrc' || srcTr.lyrics === 'synced_lrc'
+						? 'synced_lrc'
+						: tgtTr.lyrics === 'instrumental' || srcTr.lyrics === 'instrumental'
+							? 'instrumental'
+							: preferSourceAudio && srcTr.lyrics !== 'missing'
+								? srcTr.lyrics
+								: tgtTr.lyrics !== 'missing'
+									? tgtTr.lyrics
+									: srcTr.lyrics;
+
+				const bestLyricsText =
+					(preferSourceAudio ? srcTr.lyrics_text : tgtTr.lyrics_text) ||
+					tgtTr.lyrics_text ||
+					srcTr.lyrics_text ||
+					null;
+
+				const isMissing = bestFilePath ? 0 : 1;
+				const combinedChecked = Math.max(tgtTr.manually_checked || 0, srcTr.manually_checked || 0);
+				const combinedPlays = (tgtTr.play_count || 0) + (srcTr.play_count || 0);
+				const needsAtt = computeNeedsAttention(bestQuality, bestCensorship, bestLyrics, bestFormat, rules, isMissing);
+
+				db.prepare(`
+					UPDATE tracks SET
+						duration_ms = ?,
+						format = ?,
+						bitrate_kbps = ?,
+						sample_rate = ?,
+						bits_per_sample = ?,
+						quality_rating = ?,
+						censorship = ?,
+						lyrics = ?,
+						lyrics_text = ?,
+						file_path = ?,
+						is_missing = ?,
+						manually_checked = ?,
+						play_count = ?,
+						needs_attention = ?,
+						updated_at = datetime('now')
+					WHERE id = ?
+				`).run(
+					bestDuration,
+					bestFormat,
+					bestBitrate,
+					bestSampleRate,
+					bestBitsPerSample,
+					bestQuality,
+					bestCensorship,
+					bestLyrics,
+					bestLyricsText,
+					bestFilePath,
+					isMissing,
+					combinedChecked,
+					combinedPlays,
+					needsAtt,
+					tgtTr.id
+				);
+
+				// Re-point playlist tracks and starred items from srcTr.id to tgtTr.id
+				db.prepare('UPDATE playlist_tracks SET track_id = ? WHERE track_id = ?').run(tgtTr.id, srcTr.id);
+				db.prepare(`
+					UPDATE OR IGNORE starred_items
+					SET item_id = ?
+					WHERE item_type = 'track' AND item_id = ?
+				`).run(tgtTr.id, srcTr.id);
+
+				mergedCount++;
+			} else {
+				// Move unique track from source album to target album
+				db.prepare("UPDATE tracks SET album_id = ?, updated_at = datetime('now') WHERE id = ?").run(
+					targetAlbumId,
+					srcTr.id
+				);
+				mergedCount++;
+			}
+		}
+
+		// Merge album-level metadata if target is missing fields
+		const newCover = targetRes.album.cover_url || sourceRes.album.cover_url || null;
+		const newMbId = targetRes.album.musicbrainz_id || sourceRes.album.musicbrainz_id || null;
+		const newYear = targetRes.album.release_year || sourceRes.album.release_year || null;
+		const newGenre = targetRes.album.genre || sourceRes.album.genre || null;
+		const newMediaType =
+			targetRes.album.media_type === 'FLAC Digital' || sourceRes.album.media_type === 'FLAC Digital'
+				? 'FLAC Digital'
+				: targetRes.album.media_type || sourceRes.album.media_type;
+
+		db.prepare(`
+			UPDATE albums SET
+				cover_url = ?,
+				musicbrainz_id = ?,
+				release_year = ?,
+				genre = ?,
+				media_type = ?,
+				updated_at = datetime('now')
+			WHERE id = ?
+		`).run(newCover, newMbId, newYear, newGenre, newMediaType, targetAlbumId);
+
+		// Preserve album star if source album was starred
+		db.prepare(`
+			UPDATE OR IGNORE starred_items
+			SET item_id = ?
+			WHERE item_type = 'album' AND item_id = ?
+		`).run(targetAlbumId, sourceAlbumId);
+
+		// Delete source album (remaining non-moved tracks cascade delete)
+		deleteAlbum(sourceAlbumId);
+	});
+
+	tx();
+
+	const updated = getAlbumWithTracks(targetAlbumId);
+	if (!updated) return null;
+
+	return {
+		album: updated.album,
+		tracks: updated.tracks,
+		mergedCount
+	};
+}
+
 

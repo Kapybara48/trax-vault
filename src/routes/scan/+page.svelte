@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
-	import type { ScannedAlbum, ScannedTrack } from '$lib/types/index.js';
+	import type { Album, ScannedAlbum, ScannedTrack } from '$lib/types/index.js';
 	import {
 		formatDuration,
 		FORMAT_OPTIONS,
@@ -29,7 +29,8 @@
 		Filter,
 		RotateCcw,
 		Tag,
-		Trash2
+		Trash2,
+		X
 	} from '@lucide/svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
@@ -40,9 +41,174 @@
 	let libraryPathInput = $state(data.libraryPath);
 	let isScanning = $state(false);
 	let scannedAlbums = $state<ScannedAlbum[]>(structuredClone(data.albums));
+	let vaultAlbums = $state<Album[]>(structuredClone(data.vaultAlbums || []));
 	let totalFiles = $state(data.totalFiles);
 	let dirExists = $state(data.exists);
 	let scannedAt = $state<number | null>(data.scannedAt || null);
+
+	// Merge / Quality Upgrade Modal State
+	let mergeModalOpen = $state(false);
+	let mergeSourceAlbum = $state<ScannedAlbum | null>(null);
+	let mergeMode = $state<'into_vault' | 'scanned_albums'>('into_vault');
+	let mergeTargetVaultId = $state<number | null>(null);
+	let mergeTargetScannedKey = $state<string>('');
+	let mergeOverwriteTags = $state(true);
+	let isMerging = $state(false);
+
+	function normKey(str: string): string {
+		return (str || '')
+			.toLowerCase()
+			.replace(/\s*[\(\[][^)\]]*(?:explicit|clean|deluxe|remaster|edition|version|expanded|bonus|anniversary|special|flac|hi-res|24bit|16bit|web)[^)\]]*[\)\]]/gi, '')
+			.replace(/[^a-z0-9\u00c0-\u024f]+/g, ' ')
+			.trim();
+	}
+
+	function findMatchingScannedAlbums(album: ScannedAlbum): ScannedAlbum[] {
+		const nTitle = normKey(album.title);
+		const nArtist = normKey(album.artist);
+		return scannedAlbums.filter(
+			(other) =>
+				other.album_key !== album.album_key &&
+				(other.folder_path === album.folder_path ||
+					(normKey(other.title) === nTitle && (normKey(other.artist) === nArtist || nTitle.length > 3)))
+		);
+	}
+
+	function findMatchingVaultAlbums(album: ScannedAlbum): Album[] {
+		const nTitle = normKey(album.title);
+		const nArtist = normKey(album.artist);
+		return vaultAlbums.filter(
+			(va) =>
+				va.id === album.existing_album_id ||
+				(normKey(va.title) === nTitle && (normKey(va.artist) === nArtist || nTitle.length > 3))
+		);
+	}
+
+	const duplicateScannedPairs = $derived.by(() => {
+		const pairs: Array<{ primary: ScannedAlbum; secondary: ScannedAlbum }> = [];
+		const seen = new Set<string>();
+		for (const alb of scannedAlbums) {
+			if (seen.has(alb.album_key)) continue;
+			const matches = findMatchingScannedAlbums(alb);
+			if (matches.length > 0) {
+				const primary = alb.already_in_vault ? alb : matches.find((m) => m.already_in_vault) || alb;
+				const secondary = primary.album_key === alb.album_key ? matches[0] : alb;
+				seen.add(primary.album_key);
+				seen.add(secondary.album_key);
+				pairs.push({ primary, secondary });
+			}
+		}
+		return pairs;
+	});
+
+	function openMergeModal(album: ScannedAlbum) {
+		mergeSourceAlbum = album;
+		const matchingScanned = findMatchingScannedAlbums(album);
+		const matchingVault = findMatchingVaultAlbums(album);
+
+		if (matchingScanned.length > 0) {
+			mergeTargetScannedKey = matchingScanned[0].album_key;
+		} else {
+			const otherScanned = scannedAlbums.find((a) => a.album_key !== album.album_key);
+			mergeTargetScannedKey = otherScanned?.album_key || '';
+		}
+
+		if (matchingVault.length > 0) {
+			mergeTargetVaultId = matchingVault[0].id;
+		} else {
+			mergeTargetVaultId = vaultAlbums[0]?.id ?? null;
+		}
+
+		if (matchingScanned.length > 0 && !album.already_in_vault && matchingScanned[0].already_in_vault && matchingScanned[0].existing_album_id) {
+			mergeMode = 'into_vault';
+			mergeTargetVaultId = matchingScanned[0].existing_album_id;
+		} else if (matchingVault.length > 0) {
+			mergeMode = 'into_vault';
+		} else if (matchingScanned.length > 0) {
+			mergeMode = 'scanned_albums';
+		} else {
+			mergeMode = vaultAlbums.length > 0 ? 'into_vault' : 'scanned_albums';
+		}
+
+		mergeOverwriteTags = true;
+		mergeModalOpen = true;
+	}
+
+	async function executeMerge() {
+		if (!mergeSourceAlbum) return;
+		isMerging = true;
+		try {
+			if (mergeMode === 'into_vault') {
+				if (!mergeTargetVaultId) {
+					await alertAction('Please select a target Vault album to merge into.', 'Warning');
+					return;
+				}
+				const selectedTracks = mergeSourceAlbum.tracks.filter((t) => t.selected);
+				const tracksToUse = selectedTracks.length > 0 ? selectedTracks : mergeSourceAlbum.tracks;
+
+				const res = await fetch('/api/library/merge', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						type: 'into_vault',
+						targetAlbumId: mergeTargetVaultId,
+						sourceAlbumId: mergeSourceAlbum.existing_album_id || undefined,
+						scannedAlbumKey: mergeSourceAlbum.album_key,
+						tracks: tracksToUse,
+						overwriteTags: mergeOverwriteTags,
+						coverUrl: mergeSourceAlbum.cover_url,
+						musicbrainzId: mergeSourceAlbum.musicbrainz_id,
+						year: mergeSourceAlbum.year,
+						title: mergeSourceAlbum.title,
+						artist: mergeSourceAlbum.artist
+					})
+				});
+				const result = await res.json();
+				if (!res.ok) {
+					await alertAction(result.error || 'Failed to merge into Vault album.', 'Error');
+					return;
+				}
+				mergeModalOpen = false;
+				await invalidateAll();
+				await rescan();
+				await alertAction(
+					`Upgraded ${result.upgradedCount} track(s) and added ${result.insertedCount} new track(s) into "${result.album?.title || 'Vault Album'}".`,
+					'Album Merged & Upgraded'
+				);
+			} else {
+				if (!mergeTargetScannedKey) {
+					await alertAction('Please select another scanned album to combine with.', 'Warning');
+					return;
+				}
+				const res = await fetch('/api/library/merge', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						type: 'scanned_albums',
+						sourceAlbumKey: mergeSourceAlbum.album_key,
+						targetAlbumKey: mergeTargetScannedKey
+					})
+				});
+				const result = await res.json();
+				if (!res.ok) {
+					await alertAction(result.error || 'Failed to merge scanned albums.', 'Error');
+					return;
+				}
+				scannedAlbums = result.albums || scannedAlbums;
+				mergeModalOpen = false;
+				await invalidateAll();
+				await alertAction(
+					`Combined into "${result.mergedAlbum?.title || 'Album'}" (${result.mergedAlbum?.track_count || 0} tracks).`,
+					'Scanned Albums Combined'
+				);
+			}
+		} catch (err: any) {
+			console.error('Merge failed:', err);
+			await alertAction(`Merge error: ${err.message || 'Unknown error'}`, 'Error');
+		} finally {
+			isMerging = false;
+		}
+	}
 
 	function formatScannedAt(timestamp: number | null): string {
 		if (!timestamp) return 'Never scanned';
@@ -89,6 +255,7 @@
 	// Keep updated if server data changes
 	$effect(() => {
 		scannedAlbums = structuredClone(data.albums);
+		vaultAlbums = structuredClone(data.vaultAlbums || []);
 		totalFiles = data.totalFiles;
 		dirExists = data.exists;
 		libraryPathInput = data.libraryPath;
@@ -192,7 +359,7 @@
 	async function importSingleAlbum(album: ScannedAlbum) {
 		const selectedPaths = album.tracks.filter((t) => t.selected).map((t) => t.file_path);
 		if (selectedPaths.length === 0) {
-			alert('Please select at least one song to import from this album.');
+			await alertAction('Please select at least one song to import from this album.', 'Warning');
 			return;
 		}
 
@@ -213,11 +380,11 @@
 				importedAlbumIds[album.album_key] = data.albumId;
 				await invalidateAll();
 			} else {
-				alert('Failed to import album. Please verify file access.');
+				await alertAction('Failed to import album. Please verify file access.', 'Error');
 			}
 		} catch (err) {
 			console.error('Import failed:', err);
-			alert('Import error occurred');
+			await alertAction('Import error occurred', 'Error');
 		} finally {
 			importingAlbumKey = null;
 		}
@@ -226,7 +393,7 @@
 	async function importAllSelected() {
 		const toImport = selectedAlbumsToImport;
 		if (toImport.length === 0) {
-			alert('No selected albums to import.');
+			await alertAction('No selected albums to import.', 'Warning');
 			return;
 		}
 
@@ -258,7 +425,7 @@
 			await invalidateAll();
 		} catch (err) {
 			console.error('Batch import failed:', err);
-			alert('Some albums could not be imported.');
+			await alertAction('Some albums could not be imported.', 'Error');
 		} finally {
 			isBatchImporting = false;
 		}
@@ -524,6 +691,37 @@
 			<span>Open Tagger Studio</span>
 		</a>
 	</div>
+
+	{#if duplicateScannedPairs.length > 0}
+		<div class="mb-6 rounded-2xl border border-amber-500/40 bg-amber-950/25 p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+			<div class="flex items-start gap-3.5">
+				<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-400">
+					<Layers class="h-5 w-5" />
+				</div>
+				<div class="text-xs leading-relaxed">
+					<div class="flex items-center gap-2">
+						<h3 class="font-bold text-white text-sm">
+							{duplicateScannedPairs.length} Duplicate / Upgraded Album{duplicateScannedPairs.length > 1 ? 's' : ''} Detected
+						</h3>
+						<span class="rounded-md bg-amber-900/60 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase tracking-wider">
+							Quality Upgrade Ready
+						</span>
+					</div>
+					<p class="text-neutral-300 mt-1">
+						We detected albums with matching titles (e.g. <strong class="text-white">{duplicateScannedPairs[0].primary.title}</strong>). Use <strong class="text-amber-300">Merge / Upgrade</strong> to combine them and upgrade existing Vault tracks in-place without losing play counts or playlists.
+					</p>
+				</div>
+			</div>
+			<button
+				type="button"
+				onclick={() => openMergeModal(duplicateScannedPairs[0].secondary)}
+				class="shrink-0 flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-amber-600/30 hover:bg-amber-500 transition active:scale-95 cursor-pointer"
+			>
+				<Layers class="h-4 w-4" />
+				<span>Merge / Upgrade "{duplicateScannedPairs[0].secondary.title}"</span>
+			</button>
+		</div>
+	{/if}
 
 	<!-- Library Path Configuration Box with Autocomplete -->
 	<div class="mb-8 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-4 sm:p-5">
@@ -794,6 +992,21 @@
 											</span>
 										{/if}
 
+										{#if findMatchingScannedAlbums(album).length > 0 || (!album.already_in_vault && findMatchingVaultAlbums(album).length > 0)}
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													openMergeModal(album);
+												}}
+												class="inline-flex items-center gap-1 rounded-full bg-amber-950/80 px-2 py-0.5 text-[10px] font-semibold text-amber-300 border border-amber-600/60 hover:bg-amber-900/80 hover:text-white transition cursor-pointer"
+												title="Matching album found — click to merge or upgrade audio quality"
+											>
+												<Layers class="h-3 w-3" />
+												Duplicate / Upgrade Ready
+											</button>
+										{/if}
+
 										{#if album.musicbrainz_id}
 											<a
 												href="https://musicbrainz.org/release/{album.musicbrainz_id}"
@@ -834,7 +1047,17 @@
 						</div>
 
 						<!-- Action Controls -->
-						<div class="flex items-center gap-2 sm:justify-end">
+						<div class="flex flex-wrap items-center gap-2 sm:justify-end">
+							<button
+								type="button"
+								onclick={() => openMergeModal(album)}
+								class="flex items-center gap-1.5 rounded-xl bg-neutral-800/80 px-3 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-950/60 hover:text-amber-200 border border-neutral-700/60 hover:border-amber-600/50 transition cursor-pointer"
+								title="Merge with another album or upgrade existing Vault album tracks"
+							>
+								<Layers class="h-3.5 w-3.5" />
+								<span>Merge / Upgrade</span>
+							</button>
+
 							<a
 								href="/tagger?folderPath={encodeURIComponent(album.folder_path)}"
 								class="flex items-center gap-1.5 rounded-xl bg-neutral-800/80 px-3 py-2 text-xs font-semibold text-emerald-400 hover:bg-neutral-700 hover:text-emerald-300 border border-neutral-700/60 transition"
@@ -1059,3 +1282,170 @@ volumes:
 		</div>
 	{/if}
 </div>
+
+<!-- Merge & Quality Upgrade Modal -->
+{#if mergeModalOpen && mergeSourceAlbum}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+		role="dialog"
+		aria-modal="true"
+	>
+		<div class="w-full max-w-xl rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
+			<!-- Modal Header -->
+			<div class="flex items-center justify-between border-b border-neutral-800 bg-neutral-950/60 px-5 py-4">
+				<div class="flex items-center gap-2.5">
+					<div class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-400">
+						<Layers class="h-4.5 w-4.5" />
+					</div>
+					<div>
+						<h3 class="text-sm font-bold text-white">Merge & Quality Upgrade Album</h3>
+						<p class="text-[11px] text-neutral-400">
+							Combine split albums or upgrade audio files in your Vault without losing play history
+						</p>
+					</div>
+				</div>
+				<button
+					type="button"
+					onclick={() => (mergeModalOpen = false)}
+					class="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white transition cursor-pointer"
+				>
+					<X class="h-4 w-4" />
+				</button>
+			</div>
+
+			<div class="p-5 space-y-4 text-xs">
+				<!-- Source Album Card -->
+				<div class="rounded-xl border border-neutral-800 bg-neutral-950/80 p-3.5">
+					<div class="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+						Source Scanned Album
+					</div>
+					<div class="font-bold text-white text-sm">{mergeSourceAlbum.title}</div>
+					<div class="text-neutral-300 mt-0.5">
+						{mergeSourceAlbum.artist} • {mergeSourceAlbum.track_count} tracks
+					</div>
+					<div class="text-[11px] font-mono text-neutral-500 mt-1 truncate">
+						{mergeSourceAlbum.folder_path}
+					</div>
+				</div>
+
+				<!-- Mode Selector -->
+				<div class="grid grid-cols-2 gap-2">
+					<button
+						type="button"
+						onclick={() => (mergeMode = 'into_vault')}
+						class="rounded-xl border p-3 text-left transition cursor-pointer {mergeMode === 'into_vault'
+							? 'border-emerald-500/60 bg-emerald-950/30 text-white'
+							: 'border-neutral-800 bg-neutral-950/50 text-neutral-400 hover:text-neutral-200'}"
+					>
+						<div class="font-bold text-xs flex items-center gap-1.5">
+							<Sparkles class="h-3.5 w-3.5 text-emerald-400" />
+							<span>Upgrade Vault Album</span>
+						</div>
+						<p class="text-[11px] text-neutral-400 mt-1">
+							Replace/upgrade audio files in an existing Vault album in-place.
+						</p>
+					</button>
+
+					<button
+						type="button"
+						onclick={() => (mergeMode = 'scanned_albums')}
+						class="rounded-xl border p-3 text-left transition cursor-pointer {mergeMode === 'scanned_albums'
+							? 'border-amber-500/60 bg-amber-950/30 text-white'
+							: 'border-neutral-800 bg-neutral-950/50 text-neutral-400 hover:text-neutral-200'}"
+					>
+						<div class="font-bold text-xs flex items-center gap-1.5">
+							<Layers class="h-3.5 w-3.5 text-amber-400" />
+							<span>Combine Scanned Albums</span>
+						</div>
+						<p class="text-[11px] text-neutral-400 mt-1">
+							Merge two split albums in Scanner, keeping the highest quality tracks.
+						</p>
+					</button>
+				</div>
+
+				{#if mergeMode === 'into_vault'}
+					<div class="space-y-3">
+						<div>
+							<label for="merge-target-vault" class="block text-xs font-semibold text-neutral-300 mb-1.5">
+								Target Vault Album to Upgrade
+							</label>
+							{#if vaultAlbums.length > 0}
+								<select
+									id="merge-target-vault"
+									bind:value={mergeTargetVaultId}
+									class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+								>
+									{#each vaultAlbums as va (va.id)}
+										<option value={va.id}>
+											{va.title} — {va.artist} ({va.track_count} tracks{va.release_year ? `, ${va.release_year}` : ''})
+										</option>
+									{/each}
+								</select>
+							{:else}
+								<div class="rounded-xl border border-neutral-800 bg-neutral-950 p-3 text-neutral-400">
+									No albums are currently in your Vault. Switch to "Combine Scanned Albums" or import an album first.
+								</div>
+							{/if}
+						</div>
+
+						<label class="flex items-center gap-2.5 cursor-pointer select-none text-neutral-300">
+							<input
+								type="checkbox"
+								bind:checked={mergeOverwriteTags}
+								class="rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-emerald-500"
+							/>
+							<span>Update album metadata & cover art from scanned files</span>
+						</label>
+
+						<div class="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3 text-[11px] text-neutral-300 leading-relaxed">
+							Tracks are matched by track number or song title. Format, bitrate, quality rating, and file paths are upgraded in-place while preserving play counts, playlists, starred status, and manual verification.
+						</div>
+					</div>
+				{:else}
+					<div class="space-y-3">
+						<div>
+							<label for="merge-target-scanned" class="block text-xs font-semibold text-neutral-300 mb-1.5">
+								Target Scanned Album to Combine Into
+							</label>
+							<select
+								id="merge-target-scanned"
+								bind:value={mergeTargetScannedKey}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+							>
+								{#each scannedAlbums.filter((a) => a.album_key !== mergeSourceAlbum?.album_key) as sa (sa.album_key)}
+									<option value={sa.album_key}>
+										{sa.title} — {sa.artist} ({sa.track_count} tracks{sa.already_in_vault ? ' • In Vault' : ''})
+									</option>
+								{/each}
+							</select>
+						</div>
+
+						<div class="rounded-xl border border-amber-900/50 bg-amber-950/20 p-3 text-[11px] text-neutral-300 leading-relaxed">
+							Both scanned entries will be combined into a single album. When the same song exists in both entries, Trax Vault automatically keeps the higher-quality audio file (e.g. FLAC / Hi-Res over MP3).
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Modal Footer -->
+			<div class="flex items-center justify-end gap-2 border-t border-neutral-800 bg-neutral-950/60 px-5 py-3.5">
+				<button
+					type="button"
+					onclick={() => (mergeModalOpen = false)}
+					class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 transition cursor-pointer"
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					onclick={executeMerge}
+					disabled={isMerging || (mergeMode === 'into_vault' ? !mergeTargetVaultId : !mergeTargetScannedKey)}
+					class="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 hover:bg-emerald-500 disabled:opacity-50 transition cursor-pointer"
+				>
+					<Layers class="h-3.5 w-3.5" />
+					<span>{isMerging ? 'Merging...' : 'Merge & Upgrade Now'}</span>
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

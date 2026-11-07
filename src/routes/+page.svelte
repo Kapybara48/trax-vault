@@ -47,6 +47,7 @@
 
 	let selectedAlbumIds = $state<number[]>([]);
 	let isBatchDeleting = $state(false);
+	let isBatchMerging = $state(false);
 
 	const activeFilterCount = $derived(
 		(selectedFormat !== 'all' && selectedFormat !== '' ? 1 : 0) +
@@ -112,6 +113,48 @@
 			await alertAction(`Failed to remove albums: ${err.message}`, 'Error');
 		} finally {
 			isBatchDeleting = false;
+		}
+	}
+
+	async function handleBatchMerge() {
+		if (selectedAlbumIds.length < 2) return;
+		const targetId = selectedAlbumIds[0];
+		const sourceIds = selectedAlbumIds.slice(1);
+		const targetAlbum = data.albums.find((a) => a.id === targetId);
+
+		const confirmed = await confirmAction({
+			title: 'Merge Selected Vault Albums',
+			message: `Merge ${selectedAlbumIds.length} selected albums into "${targetAlbum?.title || 'Primary Album'}"?\n\nMatching tracks will automatically keep the higher-quality audio file (e.g. FLAC over MP3) while preserving play counts, playlists, and starred items.`,
+			confirmText: `Merge ${selectedAlbumIds.length} Albums`
+		});
+		if (!confirmed) return;
+
+		isBatchMerging = true;
+		try {
+			for (const srcId of sourceIds) {
+				const res = await fetch('/api/library/merge', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						type: 'vault_albums',
+						targetAlbumId: targetId,
+						sourceAlbumId: srcId
+					})
+				});
+				if (!res.ok) {
+					const errData = await res.json().catch(() => ({}));
+					await alertAction(`Failed to merge album: ${errData.error || res.statusText}`, 'Error');
+					return;
+				}
+			}
+			selectedAlbumIds = [];
+			await invalidateAll();
+			await alertAction('Selected albums have been merged and upgraded.', 'Albums Merged');
+		} catch (err: any) {
+			console.error('Failed to merge albums:', err);
+			await alertAction(`Failed to merge albums: ${err.message}`, 'Error');
+		} finally {
+			isBatchMerging = false;
 		}
 	}
 
@@ -516,6 +559,18 @@
 						>
 							Clear selection
 						</button>
+						{#if selectedAlbumIds.length >= 2}
+							<button
+								type="button"
+								onclick={handleBatchMerge}
+								disabled={isBatchMerging || isBatchDeleting}
+								class="flex items-center gap-1.5 rounded-lg bg-amber-600/90 hover:bg-amber-600 text-white px-3 py-1 text-xs font-semibold shadow-md shadow-amber-950/30 transition disabled:opacity-50 cursor-pointer"
+								title="Merge selected albums and keep the highest quality audio tracks"
+							>
+								<Layers class="h-3.5 w-3.5" />
+								<span>{isBatchMerging ? 'Merging...' : `Merge Selected (${selectedAlbumIds.length})`}</span>
+							</button>
+						{/if}
 						<button
 							type="button"
 							onclick={handleBatchDelete}
@@ -815,6 +870,18 @@
 				>
 					Clear
 				</button>
+
+				{#if selectedAlbumIds.length >= 2}
+					<button
+						type="button"
+						onclick={handleBatchMerge}
+						disabled={isBatchMerging || isBatchDeleting}
+						class="flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg shadow-amber-950/50 transition disabled:opacity-50 cursor-pointer"
+					>
+						<Layers class="h-4 w-4" />
+						<span>{isBatchMerging ? 'Merging...' : 'Merge Albums'}</span>
+					</button>
+				{/if}
 
 				<button
 					type="button"

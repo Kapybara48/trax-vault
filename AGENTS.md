@@ -592,6 +592,19 @@ This document preserves persistent context, architectural conventions, recent ch
     - Resolved SvelteKit `adapter-node` default 512KB limit (`413 Payload Too Large: Content-length exceeds limit of 524288 bytes`) by setting `BODY_SIZE_LIMIT=Infinity` across `Dockerfile`, `docker-compose.yml`, `.env.example`, `src/hooks.server.ts`, and `vite.config.ts`.
     - Added `scripts/postbuild.js` which automatically generates `build/env-defaults.js` and injects it into `build/index.js`, ensuring standalone Node deployments default to `BODY_SIZE_LIMIT=Infinity` without requiring external env configurations.
     - Enhanced `UploadTracksModal.svelte` to upload staged songs sequentially one-by-one with an animated progress bar, percentage counter, and per-file status badges (idle, uploading, success, error), enabling seamless uploads of high-resolution tracks (100MB+ each) and multi-gigabyte albums (2GB+) without reverse proxy timeouts or memory spikes.
+45. **Git Tag Versioning, Forgejo Runner (`ubuntu-latest`), Tagger Scanned Folders 500 Fix, & Album Merge / Quality Upgrade (`v1.7.1`)**:
+    - **Forgejo Runner & Git Tag Versioning (`.forgejo/workflows/docker-publish.yml`, `Dockerfile`, `vite.config.ts`, `src/lib/version.ts`)**:
+      - Updated `.forgejo/workflows/docker-publish.yml` to run on `ubuntu-latest` (matching available Forgejo runner labels `ubuntu-latest`, `debian`, `node`).
+      - Replaced `paths:` with `paths-ignore` so pushing `v*` Git tags reliably triggers Docker image builds and publishes both `:vX.Y.Z` and `:X.Y.Z` tags alongside `:latest`.
+      - Injected `APP_VERSION` at build time via `vite.config.ts` (`__APP_VERSION__` resolved from `APP_VERSION` env, `git describe --tags`, or `package.json`) and `Dockerfile` `ARG APP_VERSION`.
+    - **Tagger Scanned Folders 500 Internal Error Fix (`src/routes/tagger/+page.svelte`, `src/routes/tagger/+page.server.ts`, `src/lib/server/scanner.ts`, `src/lib/server/tagger.ts`)**:
+      - Fixed Svelte 5 `each_key_duplicate` SSR/client crash (`500 Internal Error`) when switching to `Scanned Folders` in `/tagger` caused by multiple `ScannedAlbum` groups sharing the same `folder_path` on disk.
+      - Deduplicated `folders` by `folder_path` in `src/routes/tagger/+page.server.ts`, `src/routes/api/tagger/folders/+server.ts`, and `src/routes/tagger/+page.svelte`.
+      - Added `resolveMusicFolderPath()` in `scanner.ts` to safely resolve host vs container `/music` paths in `scanFolderForTagger()`.
+    - **Album Merging & Quality Upgrade (`src/lib/server/db.ts`, `src/lib/server/scanner.ts`, `src/routes/api/library/merge/+server.ts`, `src/routes/scan/+page.svelte`, `src/routes/+page.svelte`)**:
+      - Prevented `scanLibraryDirectory()` from splitting a single album folder into 2 albums when tracks are replaced with higher-quality files lacking or having different `musicbrainz_album_id` tags or edition suffixes, and auto-coalesced split entries in cached snapshots via `reconcileScanAlbumsWithVault()`.
+      - Implemented `mergeScannedTracksIntoVaultAlbum()`, `mergeVaultAlbums()`, and `mergeScannedAlbumsInCache()` + `POST /api/library/merge` so replaced/upgraded files upgrade existing Vault tracks in-place while preserving track IDs, `play_count`, `playlists`, `starred_items`, and `manually_checked`.
+      - Added interactive **Merge & Quality Upgrade Modal** and duplicate detection banner in `/scan`, plus batch **Merge Selected** action in Vault (`/`).
 
 ---
 

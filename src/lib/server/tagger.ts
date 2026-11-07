@@ -5,14 +5,21 @@ import { APP_VERSION } from '$lib/version.js';
 import { searchMusicBrainz, getMusicBrainzRelease } from '$lib/server/musicbrainz.js';
 import {
 	resolveTrackFilePath,
+	resolveMusicFolderPath,
 	getMusicDirectory,
 	isPathWithin,
 	scanAudioFile,
 	AUDIO_EXTENSIONS,
 	findLocalCoverArt,
-	importScannedAlbum
+	importScannedAlbum,
+	invalidateScanCache
 } from '$lib/server/scanner.js';
-import { updateAlbumAndTracksFromMusicBrainz, getAlbumWithTracks, db } from '$lib/server/db.js';
+import {
+	updateAlbumAndTracksFromMusicBrainz,
+	mergeScannedTracksIntoVaultAlbum,
+	getAlbumWithTracks,
+	db
+} from '$lib/server/db.js';
 import type {
 	Track,
 	Album,
@@ -33,7 +40,7 @@ export { searchMusicBrainz, getMusicBrainzRelease };
  */
 export function normalizeString(str: string): string {
 	if (!str) return '';
-	return str
+	return String(str)
 		.toLowerCase()
 		.replace(/[‘’]/g, "'")
 		.replace(/[“”]/g, '"')
@@ -496,7 +503,8 @@ export async function scanFolderForTagger(folderPath: string): Promise<{
 		canonicalMusicDir = path.resolve(musicDir);
 	}
 
-	const requested = path.resolve(folderPath);
+	const resolvedFolder = resolveMusicFolderPath(folderPath);
+	const requested = resolvedFolder || path.resolve(folderPath);
 	let canonicalTarget: string;
 	try {
 		canonicalTarget = fs.existsSync(requested) ? fs.realpathSync(requested) : requested;
@@ -780,30 +788,42 @@ export async function applyFolderTags(
 				updateAlbumAndTracksFromMusicBrainz(folderData.existing_album_id, albumUpdate, trackUpdates, missingTracksToAdd);
 			}
 		} else {
-			// Not in vault: re-scan folder now that tags are written, then import into Vault
+			// Re-scan folder now that tags are written
 			const rescan = await scanFolderForTagger(canonicalTarget);
-			const scannedAlbum: ScannedAlbum = {
-				album_key: `dir:${canonicalTarget}`,
-				title: options.updateAlbumTitle ? release.title : rescan.folder_title,
-				artist: options.updateArtist ? release.artist : rescan.folder_artist,
-				year: options.updateYear && release.release_year ? release.release_year : rescan.folder_year,
-				folder_path: canonicalTarget,
-				musicbrainz_id: release.id,
-				cover_url: coverUrl || rescan.cover_url,
-				track_count: rescan.raw_tracks.length,
-				has_flac: rescan.raw_tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC'),
-				has_lrc: rescan.raw_tracks.some((t) => t.lyrics === 'synced_lrc' || t.lyrics === 'censored_lrc'),
-				already_in_vault: false,
-				tracks: rescan.raw_tracks,
-				selected: true
-			};
 
-			importedAlbumId = await importScannedAlbum(scannedAlbum);
+			// Check if after writing the new tags, this album now matches an existing Vault album!
+			if (rescan.already_in_vault && rescan.existing_album_id) {
+				const merged = mergeScannedTracksIntoVaultAlbum(rescan.existing_album_id, rescan.raw_tracks, {
+					overwriteTags: true,
+					coverUrl: coverUrl || rescan.cover_url,
+					musicbrainzId: release.id
+				});
+				importedAlbumId = merged ? merged.album.id : rescan.existing_album_id;
+			} else {
+				const scannedAlbum: ScannedAlbum = {
+					album_key: `dir:${canonicalTarget}`,
+					title: options.updateAlbumTitle ? release.title : rescan.folder_title,
+					artist: options.updateArtist ? release.artist : rescan.folder_artist,
+					year: options.updateYear && release.release_year ? release.release_year : rescan.folder_year,
+					folder_path: canonicalTarget,
+					musicbrainz_id: release.id,
+					cover_url: coverUrl || rescan.cover_url,
+					track_count: rescan.raw_tracks.length,
+					has_flac: rescan.raw_tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC'),
+					has_lrc: rescan.raw_tracks.some((t) => t.lyrics === 'synced_lrc' || t.lyrics === 'censored_lrc'),
+					already_in_vault: false,
+					tracks: rescan.raw_tracks,
+					selected: true
+				};
+
+				importedAlbumId = await importScannedAlbum(scannedAlbum);
+			}
 
 			// Insert missing tracks from the release that have no local audio files
 			const importedTrackNumbers = new Set(rescan.raw_tracks.map((t) => t.track_number));
 			const missingReleaseTracks = release.tracks.filter((rt) => !importedTrackNumbers.has(rt.track_number));
-			if (missingReleaseTracks.length > 0) {
+			if (missingReleaseTracks.length > 0 && importedAlbumId) {
+				const checkTrackStmt = db.prepare('SELECT id FROM tracks WHERE album_id = ? AND disc_number = ? AND track_number = ?');
 				const insertMissingStmt = db.prepare(`
 					INSERT INTO tracks (
 						album_id, disc_number, track_number, title, artist, duration_ms,
@@ -816,18 +836,23 @@ export async function applyFolderTags(
 					)
 				`);
 				for (const mt of missingReleaseTracks) {
-					insertMissingStmt.run(
-						importedAlbumId,
-						mt.disc_number,
-						mt.track_number,
-						mt.title.trim(),
-						mt.artist?.trim() ?? release.artist,
-						mt.duration_ms ?? null
-					);
+					const existing = checkTrackStmt.get(importedAlbumId, mt.disc_number, mt.track_number);
+					if (!existing) {
+						insertMissingStmt.run(
+							importedAlbumId,
+							mt.disc_number,
+							mt.track_number,
+							mt.title.trim(),
+							mt.artist?.trim() ?? release.artist,
+							mt.duration_ms ?? null
+						);
+					}
 				}
 			}
 		}
 	}
+
+	invalidateScanCache();
 
 	return {
 		success: true,

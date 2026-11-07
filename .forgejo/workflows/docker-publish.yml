@@ -6,17 +6,11 @@ on:
       - main
     tags:
       - 'v*'
-    paths:
-      - 'src/**'
-      - 'static/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - 'vite.config.ts'
-      - 'docker-compose.yml'
-      - '.forgejo/**'
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'LICENSE.md'
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:
@@ -30,13 +24,15 @@ env:
 jobs:
   build-and-push:
     name: Build & Push Container
-    runs-on: pve1
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Ensure Docker CLI is available
         run: |
@@ -52,18 +48,30 @@ jobs:
           AUTH_USER="${{ secrets.REGISTRY_USER || github.actor }}"
           echo "$AUTH_TOKEN" | docker login ${{ env.REGISTRY }} -u "$AUTH_USER" --password-stdin
 
-      - name: Build Docker image
+      - name: Build & Push Docker image
         run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            RAW_TAG="${{ github.ref_name }}"
+            APP_VERSION="${RAW_TAG#v}"
+          else
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.7.1")
+            APP_VERSION="${LATEST_TAG#v}"
+          fi
+          echo "Building Trax Vault version: ${APP_VERSION}"
+
           TAG_ARGS="-t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           if [ "${{ github.ref_type }}" = "tag" ]; then
-            TAG_ARGS="$TAG_ARGS -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
+            TAG_ARGS="$TAG_ARGS -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${APP_VERSION}"
           fi
-          docker build $TAG_ARGS -f Dockerfile .
 
-      - name: Push Docker image
-        run: |
+          docker build \
+            --build-arg APP_VERSION="${APP_VERSION}" \
+            $TAG_ARGS \
+            -f Dockerfile .
+
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           if [ "${{ github.ref_type }}" = "tag" ]; then
             docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${APP_VERSION}
           fi
