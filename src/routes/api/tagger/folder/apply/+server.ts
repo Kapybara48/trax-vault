@@ -9,6 +9,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			folderPath,
 			mbid,
 			matches,
+			coverUrl,
 			updateCover = true,
 			updateAlbumTitle = true,
 			updateArtist = true,
@@ -34,6 +35,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			matches,
 			{
 				updateCover,
+				coverUrl,
 				updateAlbumTitle,
 				updateArtist,
 				updateYear,

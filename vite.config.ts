@@ -28,7 +28,7 @@ function resolveAppVersion(): string {
 	} catch {
 		// Ignore
 	}
-	return '1.7.3';
+	return '1.7.4';
 }
 
 const appVersion = resolveAppVersion();

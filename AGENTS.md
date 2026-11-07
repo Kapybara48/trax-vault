@@ -626,12 +626,21 @@ This document preserves persistent context, architectural conventions, recent ch
       - Fixed `formatArtistCredit` to properly include `a.joinphrase` (e.g. "Ez Mil" + " & " + "Eminem" -> "Ez Mil & Eminem").
     - **Cover Art Archive Fast Direct Download**:
       - Removed failing `archive.org/download/.../index.json` path (which returned 500 errors after 10+ seconds) in `downloadAndSaveCover()`.
-      - Prioritized direct Cover Art Archive front endpoints (`/front-500`, `/front`) with 6s timeout, successfully streaming high-resolution 500px cover images directly to disk as `cover.jpg` in 2-4 seconds.
       - Reordered `applyFolderTags()` and `applyAlbumTags()` so physical audio tags are written to disk FIRST, and cover art download runs second in a non-fatal block, ensuring files are always tagged even if the remote cover server is slow or unavailable.
     - **Postbuild IPv4 Network Defaults**:
       - Injected `net.setDefaultAutoSelectFamily(false)` and `dns.setDefaultResultOrder('ipv4first')` into `build/env-defaults.js` via `scripts/postbuild.js`, running before all application code on container boot.
     - **Resilient UI Error Reporting**:
       - Added `formatErrorMessage()` in `src/routes/tagger/+page.svelte` transforming raw browser `NetworkError when attempting to fetch resource` into informative guidance.
+44. **Cover Art Archive Multi-Hop Timeout Fix & Direct Storage Fallback (v1.7.4)**:
+    - **Root Cause Resolution**:
+      - Identified that multi-hop redirects on Cover Art Archive / Archive.org (`coverartarchive.org` -> `archive.org/download/...` -> `dn720005.ca.archive.org/...`) naturally take ~10 seconds under real-world connection latencies.
+      - Fixed aggressive 6-second timeout (`timeoutMs = 6000`) in `fetchImageBuffer()`, increasing to 25 seconds (`timeoutMs = 25000`) so images download completely without premature abortion.
+    - **Direct Front & Full-Res Priority**:
+      - Prioritized `https://coverartarchive.org/release/${extractedMbid}/front` (original direct image, 183KB) ahead of thumbnailers.
+    - **Archive.org Metadata Storage Direct Download Strategy**:
+      - Added Strategy 2 querying `https://archive.org/metadata/mbid-${extractedMbid}` to discover exact backend storage server cluster (e.g. `ia600503.us.archive.org`) and download files directly without intermediate redirect hops.
+    - **Frontend Cover URL Propagation**:
+      - Passed `coverUrl` directly from the frontend `releaseDetail.cover_url` in `/api/tagger/folder/apply` and `/api/tagger/albums/[id]/apply`, giving the tagger an immediate verified candidate URL.
 
 ---
 

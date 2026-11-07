@@ -13,6 +13,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		const {
 			mbid,
 			matches,
+			coverUrl,
 			updateCover = true,
 			updateAlbumTitle = true,
 			updateArtist = true,
@@ -33,6 +34,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			matches,
 			{
 				updateCover,
+				coverUrl,
 				updateAlbumTitle,
 				updateArtist,
 				updateYear

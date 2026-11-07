@@ -438,6 +438,7 @@
 					body: JSON.stringify({
 						mbid: selectedReleaseMbid,
 						matches: confirmed,
+						coverUrl: releaseDetail?.cover_url || null,
 						updateCover: optUpdateCover,
 						updateAlbumTitle: optUpdateAlbumTitle,
 						updateArtist: optUpdateArtist,
@@ -510,6 +511,7 @@
 						folderPath: selectedFolderPath,
 						mbid: selectedReleaseMbid,
 						matches: confirmed,
+						coverUrl: releaseDetail?.cover_url || null,
 						updateCover: optUpdateCover,
 						updateAlbumTitle: optUpdateAlbumTitle,
 						updateArtist: optUpdateArtist,
