@@ -605,6 +605,20 @@ This document preserves persistent context, architectural conventions, recent ch
       - Prevented `scanLibraryDirectory()` from splitting a single album folder into 2 albums when tracks are replaced with higher-quality files lacking or having different `musicbrainz_album_id` tags or edition suffixes, and auto-coalesced split entries in cached snapshots via `reconcileScanAlbumsWithVault()`.
       - Implemented `mergeScannedTracksIntoVaultAlbum()`, `mergeVaultAlbums()`, and `mergeScannedAlbumsInCache()` + `POST /api/library/merge` so replaced/upgraded files upgrade existing Vault tracks in-place while preserving track IDs, `play_count`, `playlists`, `starred_items`, and `manually_checked`.
       - Added interactive **Merge & Quality Upgrade Modal** and duplicate detection banner in `/scan`, plus batch **Merge Selected** action in Vault (`/`).
+42. **Fix Tagger Cover Download & Artist Metadata Persistence (v1.7.2)**:
+    - **Cover Art Archive & Archive.org IPv6 Timeout Remediation**:
+      - Disabled Node.js Happy Eyeballs autoSelectFamily (`net.setDefaultAutoSelectFamily(false)`) and prioritized IPv4 DNS order in `src/hooks.server.ts`, `src/lib/server/tagger.ts`, and `src/lib/server/musicbrainz.ts`.
+      - Added `NODE_OPTIONS="--no-network-family-autoselection"` to `Dockerfile`, `docker-compose.yml`, and `docker-compose.server.yml` preventing `AggregateError [ETIMEDOUT]` crashes on servers without IPv6 routing.
+    - **Fast Direct Archive.org Image Resolution**:
+      - Enhanced `downloadAndSaveCover()` to fetch `https://archive.org/download/mbid-${mbid}/index.json` and immediately download direct images (`mbid-${mbid}-${imgId}_thumb500.jpg`, `mbid-${mbid}-${imgId}.jpg`) directly from Archive.org CDN, bypassing slow or timed-out CAA redirect gateways.
+      - Saved `cover.jpg` directly into all folders containing tracks (including subfolders and canonical album target).
+    - **Audio File Tag Writing & Multi-Tag Properties**:
+      - Rewrote `writeTagsToAudioFile()` using `@dantheman827/taglib-ts/fileRef.js` with `PropertyMap` to write `ALBUMARTIST`, `ARTIST`, `TITLE`, `ALBUM`, `DATE`, `YEAR`, `TRACKNUMBER`, and `DISCNUMBER` tags directly to physical files on disk with fallback to `writeTags`.
+      - Ensured `ALBUMARTIST` is persisted so `music-metadata` and `scanAudioFile` identify the release artist without falling back to "Unknown Artist".
+    - **Scan Cache & UI Reactive Synchronization**:
+      - Added `updateAlbumInScanCache()` and proper cache deletion in `invalidateScanCache()`, ensuring both in-memory cache and persistent disk snapshots reflect new artists and cover URLs immediately upon tagging.
+      - Updated `scanFolderForTagger()` to filter out 'Unknown Artist' when resolving album artist from scanned tracks.
+      - Updated `POST /api/tagger/folder/apply` response and `src/routes/tagger/+page.svelte` to update `currentFolderData` and `folders` state reactively without requiring full page reloads.
 
 ---
 
