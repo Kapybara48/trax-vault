@@ -215,6 +215,14 @@
 		}
 	});
 
+	function formatErrorMessage(err: any, fallback: string): string {
+		const msg = err?.message || String(err || '');
+		if (/networkerror|failed to fetch|load failed|network request failed/i.test(msg)) {
+			return 'Network connection error or request timed out. Please check server connectivity or try again.';
+		}
+		return `${fallback}: ${msg}`;
+	}
+
 	async function loadAlbumAndMatch(albumId: number, targetMbid?: string) {
 		isLoadingMatches = true;
 		statusMessage = null;
@@ -225,7 +233,8 @@
 
 		const currentAlb = albums.find((a) => a.id === albumId);
 		if (currentAlb) {
-			mbSearchQuery = `${currentAlb.title} - ${currentAlb.artist}`;
+			const isUnknown = !currentAlb.artist || /^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(currentAlb.artist.trim());
+			mbSearchQuery = isUnknown ? currentAlb.title : `${currentAlb.title} - ${currentAlb.artist}`;
 		}
 
 		try {
@@ -266,7 +275,7 @@
 			}
 		} catch (err: any) {
 			console.error('Match error:', err);
-			statusMessage = { type: 'error', text: `Error loading matches: ${err.message}` };
+			statusMessage = { type: 'error', text: formatErrorMessage(err, 'Error loading matches') };
 		} finally {
 			isLoadingMatches = false;
 		}
@@ -301,7 +310,8 @@
 				existing_album_id: resData.existing_album_id
 			};
 
-			mbSearchQuery = `${resData.folder_title} - ${resData.folder_artist}`;
+			const isUnknown = !resData.folder_artist || /^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(resData.folder_artist.trim());
+			mbSearchQuery = isUnknown ? resData.folder_title : `${resData.folder_title} - ${resData.folder_artist}`;
 			candidateReleases = resData.candidates || [];
 			releaseDetail = resData.release || null;
 			selectedReleaseMbid = resData.release?.id || null;
@@ -327,7 +337,7 @@
 			}
 		} catch (err: any) {
 			console.error('Folder match error:', err);
-			statusMessage = { type: 'error', text: `Error loading folder matches: ${err.message}` };
+			statusMessage = { type: 'error', text: formatErrorMessage(err, 'Error loading folder matches') };
 		} finally {
 			isLoadingMatches = false;
 		}
@@ -356,7 +366,7 @@
 				}
 			}
 		} catch (err: any) {
-			statusMessage = { type: 'error', text: `Search failed: ${err.message}` };
+			statusMessage = { type: 'error', text: formatErrorMessage(err, 'Search failed') };
 		} finally {
 			isSearchingMB = false;
 		}
@@ -464,7 +474,7 @@
 				await loadAlbumAndMatch(selectedAlbumId, selectedReleaseMbid);
 			} catch (err: any) {
 				console.error('Apply error:', err);
-				statusMessage = { type: 'error', text: `Failed to write tags: ${err.message}` };
+				statusMessage = { type: 'error', text: formatErrorMessage(err, 'Failed to write tags') };
 			} finally {
 				isApplyingTags = false;
 			}
@@ -565,7 +575,7 @@
 				await loadFolderAndMatch(selectedFolderPath, selectedReleaseMbid);
 			} catch (err: any) {
 				console.error('Apply folder error:', err);
-				statusMessage = { type: 'error', text: `Failed to write tags: ${err.message}` };
+				statusMessage = { type: 'error', text: formatErrorMessage(err, 'Failed to write tags') };
 			} finally {
 				isApplyingTags = false;
 			}

@@ -619,6 +619,19 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added `updateAlbumInScanCache()` and proper cache deletion in `invalidateScanCache()`, ensuring both in-memory cache and persistent disk snapshots reflect new artists and cover URLs immediately upon tagging.
       - Updated `scanFolderForTagger()` to filter out 'Unknown Artist' when resolving album artist from scanned tracks.
       - Updated `POST /api/tagger/folder/apply` response and `src/routes/tagger/+page.svelte` to update `currentFolderData` and `folders` state reactively without requiring full page reloads.
+43. **Fix NetworkError in Fetch Calls, Queue Deadlock & Cover Art Download (v1.7.3)**:
+    - **MusicBrainz Queue Timeout & Auto-Recovery**:
+      - Protected `rateLimitedFetch()` in `src/lib/server/musicbrainz.ts` with strict 8-second `AbortController` timeouts so hanging external API requests never deadlock `requestQueue`.
+      - Sanitized `searchMusicBrainz(query, artist)` so queries with `artist = "Unknown Artist"` or empty strings search title-only, preventing zero-result failures when matching untagged tracks like "MADARA".
+      - Fixed `formatArtistCredit` to properly include `a.joinphrase` (e.g. "Ez Mil" + " & " + "Eminem" -> "Ez Mil & Eminem").
+    - **Cover Art Archive Fast Direct Download**:
+      - Removed failing `archive.org/download/.../index.json` path (which returned 500 errors after 10+ seconds) in `downloadAndSaveCover()`.
+      - Prioritized direct Cover Art Archive front endpoints (`/front-500`, `/front`) with 6s timeout, successfully streaming high-resolution 500px cover images directly to disk as `cover.jpg` in 2-4 seconds.
+      - Reordered `applyFolderTags()` and `applyAlbumTags()` so physical audio tags are written to disk FIRST, and cover art download runs second in a non-fatal block, ensuring files are always tagged even if the remote cover server is slow or unavailable.
+    - **Postbuild IPv4 Network Defaults**:
+      - Injected `net.setDefaultAutoSelectFamily(false)` and `dns.setDefaultResultOrder('ipv4first')` into `build/env-defaults.js` via `scripts/postbuild.js`, running before all application code on container boot.
+    - **Resilient UI Error Reporting**:
+      - Added `formatErrorMessage()` in `src/routes/tagger/+page.svelte` transforming raw browser `NetworkError when attempting to fetch resource` into informative guidance.
 
 ---
 

@@ -20,13 +20,18 @@ export const GET: RequestHandler = async ({ url }) => {
 		let targetMbid = url.searchParams.get('mbid') || folderData.musicbrainz_id || null;
 		let candidates: MusicBrainzReleaseItem[] = [];
 
+		const rawArtist = folderData.folder_artist?.trim() || '';
+		const effectiveArtist = !/^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(rawArtist)
+			? rawArtist
+			: undefined;
+
 		if (!targetMbid) {
-			candidates = await searchMusicBrainz(folderData.folder_title, folderData.folder_artist);
+			candidates = await searchMusicBrainz(folderData.folder_title, effectiveArtist);
 			if (candidates.length > 0) {
 				targetMbid = candidates[0].id;
 			}
 		} else {
-			candidates = await searchMusicBrainz(folderData.folder_title, folderData.folder_artist);
+			candidates = await searchMusicBrainz(folderData.folder_title, effectiveArtist);
 		}
 
 		if (!targetMbid) {

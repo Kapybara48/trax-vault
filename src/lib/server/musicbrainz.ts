@@ -19,7 +19,8 @@ let lastRequestEndTime = 0;
 let requestQueue: Promise<any> = Promise.resolve();
 
 /**
- * Throttle requests to respect MusicBrainz rate limit (1 request/sec) with serialized queue and 503 retry
+ * Throttle requests to respect MusicBrainz rate limit (1 request/sec) with serialized queue and 503 retry.
+ * Protected with an AbortController timeout (8s) so stalled connections never deadlock the queue.
  */
 async function rateLimitedFetch(url: string, retries = 2): Promise<Response> {
 	return new Promise((resolve, reject) => {
@@ -31,22 +32,37 @@ async function rateLimitedFetch(url: string, retries = 2): Promise<Response> {
 					await new Promise((r) => setTimeout(r, 1200 - elapsed));
 				}
 
-				let res = await fetch(url, {
-					headers: {
-						'User-Agent': USER_AGENT,
-						Accept: 'application/json'
-					}
-				});
-
-				if (res.status === 503 && retries > 0) {
-					console.warn(`MusicBrainz 503 rate limit hit, backing off 1.5s (retries left: ${retries})...`);
-					await new Promise((r) => setTimeout(r, 1500));
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 8000);
+				let res: Response;
+				try {
 					res = await fetch(url, {
+						signal: controller.signal,
 						headers: {
 							'User-Agent': USER_AGENT,
 							Accept: 'application/json'
 						}
 					});
+				} finally {
+					clearTimeout(timeoutId);
+				}
+
+				if (res.status === 503 && retries > 0) {
+					console.warn(`MusicBrainz 503 rate limit hit, backing off 1.5s (retries left: ${retries})...`);
+					await new Promise((r) => setTimeout(r, 1500));
+					const retryCtrl = new AbortController();
+					const retryTimeout = setTimeout(() => retryCtrl.abort(), 8000);
+					try {
+						res = await fetch(url, {
+							signal: retryCtrl.signal,
+							headers: {
+								'User-Agent': USER_AGENT,
+								Accept: 'application/json'
+							}
+						});
+					} finally {
+						clearTimeout(retryTimeout);
+					}
 				}
 
 				lastRequestEndTime = Date.now();
@@ -69,6 +85,18 @@ function escapeLucene(str: string): string {
 }
 
 /**
+ * Helper to format MusicBrainz artist-credit array into a complete string with join phrases (e.g. 'Ez Mil & Eminem')
+ */
+function formatArtistCredit(credit: any): string {
+	if (!credit || !Array.isArray(credit)) return 'Unknown Artist';
+	const formatted = credit
+		.map((a: any) => (typeof a === 'string' ? a : (a.name || '') + (a.joinphrase || '')))
+		.join('')
+		.trim();
+	return formatted || 'Unknown Artist';
+}
+
+/**
  * Search MusicBrainz for releases matching a query and optional artist
  */
 export async function searchMusicBrainz(query: string, artist?: string): Promise<MusicBrainzReleaseItem[]> {
@@ -76,7 +104,8 @@ export async function searchMusicBrainz(query: string, artist?: string): Promise
 
 	let luceneQuery = '';
 	const cleanQuery = query?.trim() || '';
-	const cleanArtist = artist?.trim() || '';
+	const rawArtist = artist?.trim() || '';
+	const cleanArtist = !/^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(rawArtist) ? rawArtist : '';
 
 	if (cleanQuery && cleanArtist) {
 		// Both album title and artist specified
@@ -136,9 +165,7 @@ export async function searchMusicBrainz(query: string, artist?: string): Promise
 		}
 
 		return data.releases.map((rel: any): MusicBrainzReleaseItem => {
-			const artist = rel['artist-credit']
-				? rel['artist-credit'].map((a: any) => (typeof a === 'string' ? a : a.name)).join('')
-				: 'Unknown Artist';
+			const artist = formatArtistCredit(rel['artist-credit']);
 
 			const year = rel.date ? parseInt(rel.date.substring(0, 4), 10) : null;
 			const mediaFormat = rel.media?.[0]?.format || 'Digital';
@@ -184,9 +211,7 @@ export async function getMusicBrainzRelease(releaseId: string): Promise<MusicBra
 		}
 
 		const rel = await res.json();
-		const artist = rel['artist-credit']
-			? rel['artist-credit'].map((a: any) => (typeof a === 'string' ? a : a.name)).join('')
-			: 'Unknown Artist';
+		const artist = formatArtistCredit(rel['artist-credit']);
 
 		const year = rel.date ? parseInt(rel.date.substring(0, 4), 10) : null;
 		const mediaType = rel.media?.[0]?.format || 'Digital';
@@ -199,9 +224,7 @@ export async function getMusicBrainzRelease(releaseId: string): Promise<MusicBra
 				const discNumber = media.position || discIdx++;
 				if (media.tracks && Array.isArray(media.tracks)) {
 					for (const tr of media.tracks) {
-						const trArtist = tr['artist-credit']
-							? tr['artist-credit'].map((a: any) => (typeof a === 'string' ? a : a.name)).join('')
-							: artist;
+						const trArtist = tr['artist-credit'] ? formatArtistCredit(tr['artist-credit']) : artist;
 
 						const trackNum = parseInt(tr.number || `${tr.position}`, 10) || tr.position || tracks.length + 1;
 
