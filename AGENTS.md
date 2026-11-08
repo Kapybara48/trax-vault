@@ -689,6 +689,30 @@ This document preserves persistent context, architectural conventions, recent ch
         - High-resolution modal with natural aspect ratio, source attribution, and direct external link to uncompressed original.
         - Segmented before-and-after tab toggle (`[ Target MusicBrainz Cover (CAA) ]` vs `[ Current Local Cover (cover.jpg) ]`) enabling instant side-by-side comparison before writing tags or downloading artwork.
         - Added `[Preview Artwork]` action button in the hero header.
+49. **Interactive Album Merge Studio & Non-Colliding Track Allocation (v1.7.9)**:
+    - **Track Matching & Collision Prevention Bug Fix (`areTracksSameSong`)**:
+      - Fixed core bug in `mergeVaultAlbums()` and `mergeScannedTracksIntoVaultAlbum()` where tracks were matched purely by `track_number === track_number` regardless of title, causing distinct songs (e.g. Track 1 "The Ringer" vs Track 1 "Venom") to collide and overwrite each other when merging split albums.
+      - Added string similarity utilities (`normalizeString`, `levenshteinDistance`, `tokenSimilarity`, `computeStringSimilarity`) to `src/lib/utils.ts`.
+      - Implemented `areTracksSameSong(t1, t2)` in `src/lib/server/db.ts`: matches tracks by exact file path, identical normalized titles, or high fuzzy similarity (>= 85%). If song titles differ, tracks are recognized as distinct songs even if they share the same track number.
+      - Dynamic Track Number Allocation: When merging new tracks into a target album (e.g. split track 13 "Venom" or secondary track 1 "Venom"), non-colliding track numbers are computed automatically (`usedNumbers` set scanning 1..N), preventing track number collisions and preserving all songs from both albums.
+    - **Interactive Album Merge Preview API (`previewVaultAlbumsMerge`)**:
+      - Added `previewVaultAlbumsMerge(targetAlbumId, sourceAlbumId)` in `src/lib/server/db.ts` calculating exact merge operations without modifying the database.
+      - Classifies every song into clear action categories:
+        - `keep`: Existing primary album track retained.
+        - `upgrade`: Duplicate song matched with higher audio fidelity (e.g. FLAC replacing MP3, higher bitrate, or missing local file replacement).
+        - `add`: Brand-new song from secondary album allocated into next available track slot.
+        - `duplicate_skip`: Duplicate song from secondary album with equal or lower fidelity, excluded from the final merged album.
+      - Added `GET /api/library/merge?targetId=X&sourceId=Y` returning structured preview data and summary counters.
+      - Updated `POST /api/library/merge` supporting custom track mappings (`customTracks`) and metadata preference (`keepMetadataFrom: 'primary' | 'secondary'`).
+    - **Interactive Merge Albums Studio Modal (`MergeAlbumsModal.svelte`)**:
+      - Created comprehensive modal dialog with step-by-step workflow:
+        1. **Album Selection & Direction**: Visual cards for Primary (Keeper) and Secondary (Merged & Removed) albums with a 1-click **Swap Direction** button. Suggested candidate dropdown highlights matching albums by artist and title.
+        2. **Interactive Preview Table**: Side-by-side view with track numbers, song titles, audio format/bitrate badges, action pills (`+ Add Song`, `↑ Upgrade Quality`, `Keep Existing`, `Duplicate (Skip)`), and source badges.
+        3. **Customization & Renumbering**: Allows individual track number adjustments, custom song toggling (include/exclude), and a 1-click **"Renumber 1..N"** button for clean sequential ordering.
+        4. **Safety & Confirmation**: Live counter chips (`Keeping X`, `Adding Y`, `Upgrading Z`, `Skipping W`) and a confirmation alert reminding the user that the secondary album will be merged and safely removed.
+    - **Deep UI Integration**:
+      - Added **"Merge Album"** action button to Album Detail page (`src/routes/album/[id]/+page.svelte`).
+      - Upgraded Library Batch Merge on `src/routes/+page.svelte`: selecting two albums and clicking "Merge Selected" opens the Interactive Merge Studio pre-populated with both albums.
 
 ---
 

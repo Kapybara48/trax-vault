@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
-	import type { Track } from '$lib/types/index.js';
+	import type { Track, Album } from '$lib/types/index.js';
 	import AlbumCard from '$lib/components/AlbumCard.svelte';
 	import {
 		formatDuration,
@@ -32,6 +32,7 @@
 		Trash2
 	} from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
+	import MergeAlbumsModal from '$lib/components/MergeAlbumsModal.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { player } from '$lib/services/player.svelte.js';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -48,6 +49,9 @@
 	let selectedAlbumIds = $state<number[]>([]);
 	let isBatchDeleting = $state(false);
 	let isBatchMerging = $state(false);
+	let showBatchMergeModal = $state(false);
+	let mergeModalPrimaryAlbum = $state<Album | null>(null);
+	let mergeModalSecondaryAlbum = $state<Album | null>(null);
 
 	const activeFilterCount = $derived(
 		(selectedFormat !== 'all' && selectedFormat !== '' ? 1 : 0) +
@@ -116,46 +120,13 @@
 		}
 	}
 
-	async function handleBatchMerge() {
+	function handleBatchMerge() {
 		if (selectedAlbumIds.length < 2) return;
 		const targetId = selectedAlbumIds[0];
-		const sourceIds = selectedAlbumIds.slice(1);
-		const targetAlbum = data.albums.find((a) => a.id === targetId);
-
-		const confirmed = await confirmAction({
-			title: 'Merge Selected Vault Albums',
-			message: `Merge ${selectedAlbumIds.length} selected albums into "${targetAlbum?.title || 'Primary Album'}"?\n\nMatching tracks will automatically keep the higher-quality audio file (e.g. FLAC over MP3) while preserving play counts, playlists, and starred items.`,
-			confirmText: `Merge ${selectedAlbumIds.length} Albums`
-		});
-		if (!confirmed) return;
-
-		isBatchMerging = true;
-		try {
-			for (const srcId of sourceIds) {
-				const res = await fetch('/api/library/merge', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						type: 'vault_albums',
-						targetAlbumId: targetId,
-						sourceAlbumId: srcId
-					})
-				});
-				if (!res.ok) {
-					const errData = await res.json().catch(() => ({}));
-					await alertAction(`Failed to merge album: ${errData.error || res.statusText}`, 'Error');
-					return;
-				}
-			}
-			selectedAlbumIds = [];
-			await invalidateAll();
-			await alertAction('Selected albums have been merged and upgraded.', 'Albums Merged');
-		} catch (err: any) {
-			console.error('Failed to merge albums:', err);
-			await alertAction(`Failed to merge albums: ${err.message}`, 'Error');
-		} finally {
-			isBatchMerging = false;
-		}
+		const srcId = selectedAlbumIds[1];
+		mergeModalPrimaryAlbum = data.albums.find((a) => a.id === targetId) || null;
+		mergeModalSecondaryAlbum = data.albums.find((a) => a.id === srcId) || null;
+		showBatchMergeModal = true;
 	}
 
 	function applyFilters(overrides: {
@@ -900,4 +871,15 @@
 			</div>
 		</div>
 	{/if}
+
+	<MergeAlbumsModal
+		bind:isOpen={showBatchMergeModal}
+		initialPrimaryAlbum={mergeModalPrimaryAlbum}
+		initialSecondaryAlbum={mergeModalSecondaryAlbum}
+		allAlbums={data.albums}
+		onmerged={async () => {
+			selectedAlbumIds = [];
+			await invalidateAll();
+		}}
+	/>
 </div>

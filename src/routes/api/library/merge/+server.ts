@@ -1,13 +1,50 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { mergeScannedTracksIntoVaultAlbum, mergeVaultAlbums } from '$lib/server/db.js';
+import { mergeScannedTracksIntoVaultAlbum, mergeVaultAlbums, previewVaultAlbumsMerge } from '$lib/server/db.js';
 import { mergeScannedAlbumsInCache, invalidateScanCache, scanLibraryDirectory } from '$lib/server/scanner.js';
 import type { ScannedTrack } from '$lib/types/index.js';
+
+export const GET: RequestHandler = async ({ url }) => {
+	try {
+		const targetAlbumId = url.searchParams.get('targetAlbumId');
+		const sourceAlbumId = url.searchParams.get('sourceAlbumId');
+
+		if (!targetAlbumId || !sourceAlbumId) {
+			return json({ error: 'targetAlbumId and sourceAlbumId are required' }, { status: 400 });
+		}
+
+		const preview = previewVaultAlbumsMerge(Number(targetAlbumId), Number(sourceAlbumId));
+		if (!preview) {
+			return json({ error: 'Could not load preview. Ensure both albums exist and are distinct.' }, { status: 404 });
+		}
+
+		return json({
+			success: true,
+			preview
+		});
+	} catch (err: any) {
+		console.error('Merge preview error:', err);
+		return json({ error: err.message || 'Failed to preview merge' }, { status: 500 });
+	}
+};
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const body = await request.json();
-		const { type } = body;
+		const { type, action } = body;
+
+		// Preview action
+		if (action === 'preview' || type === 'preview') {
+			const { targetAlbumId, sourceAlbumId } = body;
+			if (!targetAlbumId || !sourceAlbumId) {
+				return json({ error: 'targetAlbumId and sourceAlbumId are required' }, { status: 400 });
+			}
+			const preview = previewVaultAlbumsMerge(Number(targetAlbumId), Number(sourceAlbumId));
+			if (!preview) {
+				return json({ error: 'Could not load preview. Ensure both albums exist and are distinct.' }, { status: 404 });
+			}
+			return json({ success: true, preview });
+		}
 
 		if (type === 'into_vault') {
 			const { targetAlbumId, tracks, scannedAlbumKey, overwriteTags, sourceAlbumId, coverUrl, musicbrainzId } = body;
@@ -68,12 +105,15 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		if (type === 'vault_albums') {
-			const { targetAlbumId, sourceAlbumId } = body;
+			const { targetAlbumId, sourceAlbumId, options, customTracks } = body;
 			if (!targetAlbumId || !sourceAlbumId) {
 				return json({ error: 'targetAlbumId and sourceAlbumId are required' }, { status: 400 });
 			}
 
-			const result = mergeVaultAlbums(targetAlbumId, sourceAlbumId);
+			const result = mergeVaultAlbums(Number(targetAlbumId), Number(sourceAlbumId), {
+				keepMetadataFrom: options?.keepMetadataFrom || 'primary',
+				customTracks
+			});
 			if (!result) {
 				return json({ error: 'Could not find one or both albums in Vault' }, { status: 404 });
 			}
@@ -81,9 +121,11 @@ export const POST: RequestHandler = async ({ request }) => {
 			invalidateScanCache();
 			return json({
 				success: true,
-				albumId: targetAlbumId,
+				albumId: Number(targetAlbumId),
 				mergedCount: result.mergedCount,
-				message: `Successfully merged albums into "${result.album.title}".`
+				addedCount: result.addedCount,
+				upgradedCount: result.upgradedCount,
+				message: `Successfully merged albums into "${result.album.title}". Added ${result.addedCount} new tracks and upgraded ${result.upgradedCount} tracks.`
 			});
 		}
 

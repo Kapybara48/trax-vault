@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseFile } from 'music-metadata';
+import { computeStringSimilarity } from '$lib/utils.js';
 import {
 	db,
 	createAlbum,
@@ -802,21 +803,33 @@ function scoreScannedTrackQuality(t: ScannedTrack): number {
 function mergeTracksLists(targetTracks: ScannedTrack[], sourceTracks: ScannedTrack[]): ScannedTrack[] {
 	const merged = [...targetTracks];
 	for (const srcTr of sourceTracks) {
-		if (merged.some((t) => t.file_path === srcTr.file_path)) continue;
+		if (merged.some((t) => t.file_path && srcTr.file_path && path.resolve(t.file_path) === path.resolve(srcTr.file_path))) {
+			continue;
+		}
 
 		const normSrcTitle = normalizeAlbumGroupKey(srcTr.title);
-		const existingIdx = merged.findIndex(
-			(t) =>
-				(t.disc_number === srcTr.disc_number && t.track_number === srcTr.track_number) ||
-				(normSrcTitle && normalizeAlbumGroupKey(t.title) === normSrcTitle && t.disc_number === srcTr.disc_number)
-		);
+		const existingIdx = merged.findIndex((t) => {
+			if (t.file_path && srcTr.file_path && path.resolve(t.file_path) === path.resolve(srcTr.file_path)) {
+				return true;
+			}
+			const normT = normalizeAlbumGroupKey(t.title);
+			if (normSrcTitle && normT && normSrcTitle === normT) {
+				return true;
+			}
+			if (normSrcTitle && normT && computeStringSimilarity(normSrcTitle, normT) >= 0.88) {
+				if (t.duration_ms && srcTr.duration_ms) {
+					return Math.abs(t.duration_ms - srcTr.duration_ms) <= 6000;
+				}
+				return true;
+			}
+			return false;
+		});
 
 		if (existingIdx !== -1) {
 			const existingTr = merged[existingIdx];
 			const srcScore = scoreScannedTrackQuality(srcTr);
 			const existingScore = scoreScannedTrackQuality(existingTr);
 			if (srcScore >= existingScore) {
-				// Keep best lyrics if existing had synced lyrics and new didn't
 				const bestLyrics =
 					srcTr.lyrics !== 'missing' ? srcTr.lyrics : existingTr.lyrics;
 				const bestLyricsContent = srcTr.lyrics_content || existingTr.lyrics_content || null;
@@ -829,7 +842,18 @@ function mergeTracksLists(targetTracks: ScannedTrack[], sourceTracks: ScannedTra
 				};
 			}
 		} else {
-			merged.push(srcTr);
+			// New unique track: ensure track number doesn't collide on same disc
+			const srcDisc = srcTr.disc_number || 1;
+			const usedNumbers = new Set(
+				merged.filter((t) => (t.disc_number || 1) === srcDisc).map((t) => t.track_number)
+			);
+			let finalNum = srcTr.track_number || 1;
+			if (usedNumbers.has(finalNum)) {
+				let n = 1;
+				while (usedNumbers.has(n)) n++;
+				finalNum = n;
+			}
+			merged.push({ ...srcTr, track_number: finalNum });
 		}
 	}
 

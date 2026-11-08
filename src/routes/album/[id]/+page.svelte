@@ -35,6 +35,7 @@
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
 	import BatchLyricsModal from '$lib/components/BatchLyricsModal.svelte';
 	import UploadTracksModal from '$lib/components/UploadTracksModal.svelte';
+	import MergeAlbumsModal from '$lib/components/MergeAlbumsModal.svelte';
 	import type { LrcLibCandidate } from '$lib/types/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { confirmAction } from '$lib/services/dialog.svelte.js';
@@ -48,6 +49,7 @@
 
 	let showUploadModal = $state(false);
 	let showBatchLyricsModal = $state(false);
+	let showMergeModal = $state(false);
 
 	// Track Fixer Rules state
 	let showFixerRulesModal = $state(false);
@@ -683,6 +685,16 @@
 					<Sparkles class="h-3.5 w-3.5 text-emerald-400" />
 					<span>Auto-Tag with MusicBrainz</span>
 				</a>
+
+				<button
+					type="button"
+					onclick={() => (showMergeModal = true)}
+					class="flex items-center gap-1.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border border-purple-700/60 hover:border-purple-500 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+					title="Merge another album into this one (combine split albums, add missing songs, or upgrade quality)"
+				>
+					<Layers class="h-3.5 w-3.5 text-purple-400" />
+					<span>Merge Album</span>
+				</button>
 
 				<button
 					type="button"
@@ -1630,4 +1642,13 @@
 	isOpen={showUploadModal}
 	onClose={() => (showUploadModal = false)}
 	onUploadSuccess={handleUploadSuccess}
+/>
+
+<MergeAlbumsModal
+	bind:isOpen={showMergeModal}
+	initialPrimaryAlbum={album}
+	allAlbums={data.allAlbums || []}
+	onmerged={(newAlbumId) => {
+		goto(`/album/${newAlbumId}`, { invalidateAll: true });
+	}}
 />

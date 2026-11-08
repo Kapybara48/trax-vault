@@ -274,3 +274,72 @@ export function extractMusicBrainzId(
 	return null;
 }
 
+/**
+ * Normalizes title/artist text for fuzzy track and album comparisons
+ */
+export function normalizeString(str: string | null | undefined): string {
+	if (!str) return '';
+	return String(str)
+		.toLowerCase()
+		.replace(/[‘’]/g, "'")
+		.replace(/[“”]/g, '"')
+		.replace(/[–—]/g, '-')
+		.replace(/^\d{1,3}[\s.\-_]+/, '') // strip leading track numbers like "01 - " or "1. "
+		.replace(/\s*[\(\[\{]?(?:feat\.?|ft\.?|featuring|with)\s+[^)\]\}]+[\)\]\}]?/gi, '') // strip featured artists
+		.replace(/\s*[\(\[\{]?(?:explicit|clean|remaster(?:ed)?|bonus track|deluxe(?: edition)?|anniversary edition)[\)\]\}]?/gi, '') // strip tags
+		.replace(/[^a-z0-9\s]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+/**
+ * Calculates standard Levenshtein edit distance between two strings
+ */
+export function levenshteinDistance(a: string, b: string): number {
+	if (a === b) return 0;
+	if (!a.length) return b.length;
+	if (!b.length) return a.length;
+	const v0 = new Array(b.length + 1);
+	const v1 = new Array(b.length + 1);
+	for (let i = 0; i <= b.length; i++) v0[i] = i;
+	for (let i = 0; i < a.length; i++) {
+		v1[0] = i + 1;
+		for (let j = 0; j < b.length; j++) {
+			const cost = a[i] === b[j] ? 0 : 1;
+			v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+		}
+		for (let j = 0; j <= b.length; j++) v0[j] = v1[j];
+	}
+	return v0[b.length];
+}
+
+/**
+ * Word token similarity (Dice coefficient over unique word tokens)
+ */
+export function tokenSimilarity(a: string, b: string): number {
+	const setA = new Set(a.split(' ').filter(Boolean));
+	const setB = new Set(b.split(' ').filter(Boolean));
+	if (setA.size === 0 && setB.size === 0) return 1;
+	if (setA.size === 0 || setB.size === 0) return 0;
+	let intersection = 0;
+	for (const item of setA) {
+		if (setB.has(item)) intersection++;
+	}
+	return (2 * intersection) / (setA.size + setB.size);
+}
+
+/**
+ * Returns string similarity ratio between 0.0 and 1.0
+ */
+export function computeStringSimilarity(strA: string, strB: string): number {
+	const normA = normalizeString(strA);
+	const normB = normalizeString(strB);
+	if (normA === normB) return 1.0;
+	if (!normA || !normB) return 0.0;
+	const maxLen = Math.max(normA.length, normB.length);
+	const levRatio = 1 - levenshteinDistance(normA, normB) / maxLen;
+	const tokRatio = tokenSimilarity(normA, normB);
+	return Math.max(0, Math.max(levRatio, tokRatio));
+}
+
+

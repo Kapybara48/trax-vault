@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types.js';
-import { getAlbumById } from '$lib/server/db.js';
+import { getAlbumById, getAlbums } from '$lib/server/db.js';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const id = parseInt(params.id, 10);
@@ -13,8 +13,11 @@ export const load: PageServerLoad = async ({ params }) => {
 		throw error(404, 'Album not found');
 	}
 
+	const allAlbums = getAlbums();
+
 	return {
 		album: result.album,
-		tracks: result.tracks
+		tracks: result.tracks,
+		allAlbums
 	};
 };
