@@ -34,7 +34,9 @@
 		Image as ImageIcon,
 		CheckCheck,
 		Hash,
-		Copy
+		Copy,
+		ZoomIn,
+		Eye
 	} from '@lucide/svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -132,6 +134,42 @@
 	let mbidInput = $state('');
 	let isLookingUpMbid = $state(false);
 	let mbidError = $state<string | null>(null);
+
+	// Artwork Preview Modal State
+	let isArtworkModalOpen = $state(false);
+	let previewArtworkUrl = $state<string | null>(null);
+	let previewArtworkTitle = $state<string>('');
+	let previewArtworkSubtitle = $state<string>('');
+	let previewArtworkSource = $state<string>('');
+	let previewArtworkTab = $state<'musicbrainz' | 'local'>('musicbrainz');
+
+	let currentCoverUrl = $derived(
+		taggerMode === 'albums' ? selectedAlbum?.cover_url : currentFolderData?.cover_url
+	);
+	let currentSourceTitle = $derived(
+		taggerMode === 'albums' ? (selectedAlbum?.title || '') : (currentFolderData?.folder_title || 'Unknown Title')
+	);
+	let currentSourceArtist = $derived(
+		taggerMode === 'albums' ? (selectedAlbum?.artist || '') : (currentFolderData?.folder_artist || 'Unknown Artist')
+	);
+	let isCurrentArtistUnknown = $derived(
+		!currentSourceArtist || /^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(currentSourceArtist.trim())
+	);
+
+	function openArtworkModal(
+		url: string,
+		title: string,
+		subtitle: string,
+		source: string,
+		defaultTab: 'musicbrainz' | 'local' = 'musicbrainz'
+	) {
+		previewArtworkUrl = url;
+		previewArtworkTitle = title;
+		previewArtworkSubtitle = subtitle;
+		previewArtworkSource = source;
+		previewArtworkTab = defaultTab;
+		isArtworkModalOpen = true;
+	}
 
 	// Alignment Matches State
 	interface EditableMatch {
@@ -1092,27 +1130,94 @@
 			{:else}
 				<!-- Album / Folder Active Hero & MusicBrainz Search Box -->
 				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-xl shadow-xl space-y-5">
-					<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-						<div class="flex items-center gap-3.5">
-							<div class="h-14 w-14 shrink-0 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-700 shadow-md">
-								{#if taggerMode === 'albums' && selectedAlbum?.cover_url}
-									<img src={selectedAlbum.cover_url} alt={selectedAlbum.title} class="h-full w-full object-cover" />
-								{:else if taggerMode === 'folders' && currentFolderData?.cover_url}
-									<img src={currentFolderData.cover_url} alt={currentFolderData.folder_title} class="h-full w-full object-cover" />
-								{:else}
-									<div class="h-full w-full flex items-center justify-center text-neutral-600">
-										{#if taggerMode === 'folders'}
-											<FolderSync class="h-6 w-6 text-emerald-400" />
+					<div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+						<div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 min-w-0 flex-1">
+							<!-- Album Artwork Preview Strip / Comparison Cards -->
+							<div class="flex items-center gap-2.5 shrink-0">
+								<!-- Current Local Artwork Card -->
+								<div class="flex flex-col items-center gap-1">
+									<div
+										class="h-20 w-20 sm:h-24 sm:w-24 shrink-0 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-700 shadow-lg relative group/art cursor-pointer"
+										onclick={() => {
+											if (currentCoverUrl) {
+												openArtworkModal(currentCoverUrl, currentSourceTitle, currentSourceArtist, 'Local Folder (cover.jpg)', 'local');
+											}
+										}}
+										title={currentCoverUrl ? 'Click to preview local artwork' : 'No local cover image found'}
+										role="button"
+										tabindex="0"
+										onkeydown={(e) => {
+											if ((e.key === 'Enter' || e.key === ' ') && currentCoverUrl) {
+												openArtworkModal(currentCoverUrl, currentSourceTitle, currentSourceArtist, 'Local Folder (cover.jpg)', 'local');
+											}
+										}}
+									>
+										{#if currentCoverUrl}
+											<img src={currentCoverUrl} alt={currentSourceTitle} class="h-full w-full object-cover" />
+											<div class="absolute inset-0 bg-black/60 opacity-0 group-hover/art:opacity-100 flex flex-col items-center justify-center gap-1 text-white transition">
+												<ZoomIn class="h-5 w-5" />
+												<span class="text-[9px] font-bold">Preview</span>
+											</div>
 										{:else}
-											<Music class="h-6 w-6" />
+											<div class="h-full w-full flex flex-col items-center justify-center text-neutral-600 gap-1 p-2 text-center">
+												{#if taggerMode === 'folders'}
+													<FolderSync class="h-6 w-6 text-emerald-400" />
+												{:else}
+													<Music class="h-6 w-6" />
+												{/if}
+												<span class="text-[8px] text-neutral-500 font-semibold leading-tight">No Local Cover</span>
+											</div>
 										{/if}
+									</div>
+									<span class="text-[9px] font-bold uppercase tracking-wider text-neutral-400">Local Art</span>
+								</div>
+
+								{#if releaseDetail}
+									<div class="flex flex-col items-center justify-center px-0.5">
+										<ArrowRight class="h-4 w-4 text-emerald-400" />
+									</div>
+
+									<!-- Target MusicBrainz Cover Art Card -->
+									<div class="flex flex-col items-center gap-1">
+										<div
+											class="h-20 w-20 sm:h-24 sm:w-24 shrink-0 rounded-2xl overflow-hidden bg-neutral-950 border {releaseDetail.cover_url ? 'border-emerald-500/80 shadow-emerald-950/60 ring-1 ring-emerald-500/40' : 'border-neutral-800'} shadow-lg relative group/art cursor-pointer"
+											onclick={() => {
+												if (releaseDetail?.cover_url) {
+													openArtworkModal(releaseDetail.cover_url, releaseDetail.title, releaseDetail.artist, 'MusicBrainz Cover Art Archive', 'musicbrainz');
+												}
+											}}
+											title={releaseDetail.cover_url ? 'Click to preview high-res MusicBrainz artwork' : 'No Cover Art Archive image found'}
+											role="button"
+											tabindex="0"
+											onkeydown={(e) => {
+												if ((e.key === 'Enter' || e.key === ' ') && releaseDetail?.cover_url) {
+													openArtworkModal(releaseDetail.cover_url, releaseDetail.title, releaseDetail.artist, 'MusicBrainz Cover Art Archive', 'musicbrainz');
+												}
+											}}
+										>
+											{#if releaseDetail.cover_url}
+												<img src={releaseDetail.cover_url} alt={releaseDetail.title} class="h-full w-full object-cover" />
+												<div class="absolute inset-0 bg-black/60 opacity-0 group-hover/art:opacity-100 flex flex-col items-center justify-center gap-1 text-emerald-300 transition">
+													<ZoomIn class="h-5 w-5" />
+													<span class="text-[9px] font-bold">Preview 500px</span>
+												</div>
+											{:else}
+												<div class="h-full w-full flex flex-col items-center justify-center text-neutral-600 gap-1 p-2 text-center">
+													<ImageIcon class="h-6 w-6" />
+													<span class="text-[8px] text-neutral-500 font-semibold leading-tight">No CAA Art</span>
+												</div>
+											{/if}
+										</div>
+										<span class="text-[9px] font-bold uppercase tracking-wider text-emerald-400">MusicBrainz Art</span>
 									</div>
 								{/if}
 							</div>
-							<div>
-								<div class="flex items-center gap-2">
+
+							<!-- Release Title, Artist & Diff Info -->
+							<div class="min-w-0 flex-1 space-y-1">
+								<div class="flex items-center gap-2 flex-wrap">
 									<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
-										{taggerMode === 'albums' ? 'Current Library Album' : 'Scanned Music Folder'}
+										{taggerMode === 'albums' ? 'Library Album' : 'Scanned Folder'}
 									</span>
 									{#if taggerMode === 'folders'}
 										{#if currentFolderData?.already_in_vault}
@@ -1125,45 +1230,84 @@
 											</span>
 										{/if}
 									{/if}
+									{#if releaseDetail && releaseDetail.tracks.length === 1}
+										<span class="rounded-full bg-purple-950/80 border border-purple-500/50 px-2 py-0.2 text-[9px] font-bold text-purple-300">
+											Single Track
+										</span>
+									{/if}
 								</div>
 
-								<h2 class="text-lg font-black text-white">
-									{taggerMode === 'albums' ? selectedAlbum?.title : (currentFolderData?.folder_title || 'Loading folder...')}
-								</h2>
-								<p class="text-xs text-neutral-300 font-medium">
-									{#if taggerMode === 'albums'}
-										{selectedAlbum?.artist} {selectedAlbum?.release_year ? `(${selectedAlbum.release_year})` : ''} • {selectedAlbum?.track_count} tracks
-									{:else}
-										{currentFolderData?.folder_artist || 'Unknown Artist'} {currentFolderData?.folder_year ? `(${currentFolderData.folder_year})` : ''} • {matches.length} tracks discovered
-									{/if}
-								</p>
+								{#if releaseDetail}
+									<!-- Matched MusicBrainz Target Title & Artist -->
+									<h2 class="text-xl font-black text-white flex items-center gap-2 truncate" title={releaseDetail.title}>
+										{releaseDetail.title}
+									</h2>
+									<div class="text-sm font-extrabold text-emerald-400 flex items-center gap-1.5 flex-wrap">
+										<span>{releaseDetail.artist}</span>
+										{#if releaseDetail.release_year}<span>• {releaseDetail.release_year}</span>{/if}
+										<span>• {releaseDetail.media_type || 'Digital'}</span>
+										<span>• {releaseDetail.tracks.length} {releaseDetail.tracks.length === 1 ? 'track' : 'tracks'}</span>
+									</div>
+									<div class="text-[11px] text-neutral-400 flex items-center gap-1.5 flex-wrap pt-0.5">
+										<span class="text-neutral-500">Source:</span>
+										<span class="font-medium text-neutral-300">{currentSourceTitle}</span>
+										<span class="text-neutral-600">by</span>
+										<span class="{isCurrentArtistUnknown ? 'text-amber-400/90 italic font-semibold' : 'text-neutral-300'}">{currentSourceArtist}</span>
+										{#if isCurrentArtistUnknown}
+											<span class="text-[10px] text-emerald-300 font-bold bg-emerald-950/80 border border-emerald-500/50 px-1.5 py-0.5 rounded-full">➔ will update to {releaseDetail.artist}</span>
+										{/if}
+									</div>
+								{:else}
+									<!-- Default Folder / Album Heading -->
+									<h2 class="text-lg font-black text-white truncate">
+										{currentSourceTitle}
+									</h2>
+									<p class="text-xs text-neutral-300 font-medium">
+										{currentSourceArtist} {taggerMode === 'albums' ? (selectedAlbum?.release_year ? `(${selectedAlbum.release_year})` : '') : (currentFolderData?.folder_year ? `(${currentFolderData.folder_year})` : '')} • {taggerMode === 'albums' ? selectedAlbum?.track_count : matches.length} tracks
+									</p>
+								{/if}
+
 								{#if taggerMode === 'folders' && selectedFolderPath}
-									<p class="font-mono text-[10px] text-neutral-500 truncate max-w-md mt-0.5" title={selectedFolderPath}>
+									<p class="font-mono text-[10px] text-neutral-500 truncate max-w-md pt-0.5" title={selectedFolderPath}>
 										📁 {selectedFolderPath}
 									</p>
 								{/if}
 							</div>
 						</div>
 
-						<!-- Match Confidence Score -->
+						<!-- Match Confidence Score & Action Buttons -->
 						{#if releaseDetail}
-							<div class="flex flex-col items-end gap-1">
-								<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Match Confidence</span>
-								<div class="flex items-center gap-1.5">
-									<span class="rounded-full px-3 py-0.5 text-xs font-black border {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
+							<div class="flex flex-col items-start lg:items-end gap-2 shrink-0">
+								<div class="flex items-center gap-2">
+									<span class="rounded-full px-3 py-1 text-xs font-black border {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
 										{overallScore}% Match
 									</span>
 									<a
 										href="https://musicbrainz.org/release/{releaseDetail.id}"
 										target="_blank"
 										rel="noopener noreferrer"
-										class="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-mono font-semibold bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-purple-300 hover:border-purple-600 transition"
+										class="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-mono font-semibold bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-purple-300 hover:border-purple-600 transition"
 										title="Open release on MusicBrainz.org"
 									>
 										<span>MBID: {releaseDetail.id.slice(0, 8)}...</span>
 										<ExternalLink class="h-2.5 w-2.5 opacity-70" />
 									</a>
 								</div>
+
+								<!-- Dedicated Artwork Preview Button -->
+								<button
+									type="button"
+									onclick={() => {
+										const targetUrl = releaseDetail?.cover_url || currentCoverUrl || '';
+										if (targetUrl) {
+											openArtworkModal(targetUrl, releaseDetail ? releaseDetail.title : currentSourceTitle, releaseDetail ? releaseDetail.artist : currentSourceArtist, releaseDetail?.cover_url ? 'MusicBrainz Cover Art Archive' : 'Local Folder (cover.jpg)', releaseDetail?.cover_url ? 'musicbrainz' : 'local');
+										}
+									}}
+									class="flex items-center gap-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700 px-3 py-1 text-[11px] font-semibold text-neutral-200 transition cursor-pointer shadow-sm"
+								>
+									<Eye class="h-3.5 w-3.5 text-emerald-400" />
+									<span>Preview Artwork</span>
+								</button>
 							</div>
 						{/if}
 					</div>
@@ -1223,15 +1367,32 @@
 
 							<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto pr-1">
 								{#each candidateReleases as rel (rel.id)}
-									<button
-										type="button"
+									<div
+										role="button"
+										tabindex="0"
 										onclick={() => selectCandidateRelease(rel.id)}
-										class="p-2.5 rounded-2xl border text-left flex items-start gap-2.5 transition cursor-pointer {selectedReleaseMbid === rel.id ? 'bg-emerald-950/70 border-emerald-500 shadow-md shadow-emerald-950/60 ring-1 ring-emerald-500' : 'bg-neutral-950/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'}"
+										onkeydown={(e) => {
+											if (e.key === 'Enter' || e.key === ' ') {
+												selectCandidateRelease(rel.id);
+											}
+										}}
+										class="p-2.5 rounded-2xl border text-left flex items-start gap-2.5 transition cursor-pointer select-none {selectedReleaseMbid === rel.id ? 'bg-emerald-950/70 border-emerald-500 shadow-md shadow-emerald-950/60 ring-1 ring-emerald-500' : 'bg-neutral-950/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'}"
 									>
-										<!-- Release Thumbnail -->
-										<div class="h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800 relative">
+										<!-- Release Thumbnail with Zoom Preview -->
+										<div class="h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800 relative group/thumb">
 											{#if rel.cover_url}
 												<img src={rel.cover_url} alt={rel.title} class="h-full w-full object-cover" />
+												<button
+													type="button"
+													title="Preview high-res cover"
+													onclick={(e) => {
+														e.stopPropagation();
+														openArtworkModal(rel.cover_url!, rel.title, rel.artist, 'MusicBrainz Candidate Release', 'musicbrainz');
+													}}
+													class="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition cursor-pointer"
+												>
+													<ZoomIn class="h-3.5 w-3.5 text-white" />
+												</button>
 											{:else}
 												<div class="h-full w-full flex items-center justify-center text-neutral-600">
 													<Disc3 class="h-4 w-4" />
@@ -1256,7 +1417,7 @@
 												<span class="font-mono text-[8px] text-neutral-500 opacity-75 shrink-0">{rel.id.slice(0, 8)}</span>
 											</div>
 										</div>
-									</button>
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -1523,19 +1684,32 @@
 											<!-- Target MusicBrainz Track & Remap Dropdown -->
 											<td class="py-3 px-3 min-w-[260px]">
 												{#if releaseDetail}
-													<div class="flex items-center gap-2">
-														<select
-															value={m.mbTrack?.id || ''}
-															onchange={(e) => handleRemapTrack(i, e.currentTarget.value)}
-															class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-emerald-500 font-medium truncate cursor-pointer"
-														>
-															<option value="">(No Match / Skip)</option>
-															{#each releaseDetail.tracks as mbTr (mbTr.id)}
-																<option value={mbTr.id}>
-																	{mbTr.disc_number > 1 ? `${mbTr.disc_number}-` : ''}{mbTr.track_number.toString().padStart(2, '0')}. {mbTr.title} ({formatDuration(mbTr.duration_ms)})
-																</option>
-															{/each}
-														</select>
+													<div class="flex flex-col gap-1.5">
+														<div class="flex items-center gap-2">
+															<select
+																value={m.mbTrack?.id || ''}
+																onchange={(e) => handleRemapTrack(i, e.currentTarget.value)}
+																class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-emerald-500 font-medium truncate cursor-pointer"
+															>
+																<option value="">(No Match / Skip)</option>
+																{#each releaseDetail.tracks as mbTr (mbTr.id)}
+																	<option value={mbTr.id}>
+																		{mbTr.disc_number > 1 ? `${mbTr.disc_number}-` : ''}{mbTr.track_number.toString().padStart(2, '0')}. {mbTr.title} ({formatDuration(mbTr.duration_ms)})
+																	</option>
+																{/each}
+															</select>
+														</div>
+														{#if m.mbTrack}
+															<div class="flex items-center gap-1.5 text-[11px] px-1 truncate">
+																<span class="font-bold text-emerald-400 truncate" title={m.mbTrack.artist || releaseDetail.artist}>
+																	{m.mbTrack.artist || releaseDetail.artist}
+																</span>
+																<span class="text-neutral-600">•</span>
+																<span class="text-neutral-300 font-medium truncate" title={m.mbTrack.title}>
+																	{m.mbTrack.title}
+																</span>
+															</div>
+														{/if}
 													</div>
 												{/if}
 											</td>
@@ -1664,6 +1838,115 @@
 								<Check class="h-3.5 w-3.5" />
 								<span>Fetch & Match Release</span>
 							{/if}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Full-Size Album Artwork Preview Modal -->
+	{#if isArtworkModalOpen}
+		<div
+			class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
+			role="dialog"
+			aria-modal="true"
+		>
+			<div
+				class="relative w-full max-w-2xl rounded-3xl border border-neutral-800 bg-neutral-900/95 p-6 shadow-2xl backdrop-blur-xl animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[90vh]"
+			>
+				<!-- Close button -->
+				<button
+					type="button"
+					onclick={() => (isArtworkModalOpen = false)}
+					class="absolute right-5 top-5 rounded-full p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white transition cursor-pointer"
+					aria-label="Close dialog"
+				>
+					<X class="h-4 w-4" />
+				</button>
+
+				<!-- Modal Header -->
+				<div class="flex items-center gap-3 pr-8">
+					<div
+						class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300"
+					>
+						<ImageIcon class="h-5 w-5" />
+					</div>
+					<div class="min-w-0">
+						<h3 class="text-base font-bold text-white truncate">{previewArtworkTitle || currentSourceTitle}</h3>
+						<p class="text-xs text-neutral-400 truncate">{previewArtworkSubtitle || currentSourceArtist}</p>
+					</div>
+				</div>
+
+				<!-- Before / After Segmented Tabs if both local & target cover exist -->
+				{#if releaseDetail?.cover_url && currentCoverUrl}
+					<div class="flex items-center gap-1 rounded-xl bg-neutral-950 p-1 border border-neutral-800 text-xs font-semibold">
+						<button
+							type="button"
+							onclick={() => (previewArtworkTab = 'musicbrainz')}
+							class="flex-1 rounded-lg py-1.5 px-3 transition cursor-pointer flex items-center justify-center gap-1.5 {previewArtworkTab === 'musicbrainz' ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/50 shadow' : 'text-neutral-400 hover:text-white'}"
+						>
+							<Sparkles class="h-3.5 w-3.5" />
+							<span>Target MusicBrainz Cover (CAA)</span>
+						</button>
+						<button
+							type="button"
+							onclick={() => (previewArtworkTab = 'local')}
+							class="flex-1 rounded-lg py-1.5 px-3 transition cursor-pointer flex items-center justify-center gap-1.5 {previewArtworkTab === 'local' ? 'bg-neutral-800 text-white border border-neutral-700 shadow' : 'text-neutral-400 hover:text-white'}"
+						>
+							<Folder class="h-3.5 w-3.5" />
+							<span>Current Local Cover (cover.jpg)</span>
+						</button>
+					</div>
+				{/if}
+
+				<!-- Image Display Area -->
+				<div class="flex-1 min-h-0 flex items-center justify-center rounded-2xl bg-neutral-950/80 border border-neutral-800/80 p-3 overflow-hidden">
+					{#if previewArtworkTab === 'local' && currentCoverUrl}
+						<img
+							src={currentCoverUrl}
+							alt={currentSourceTitle}
+							class="max-h-[55vh] w-auto max-w-full rounded-xl object-contain shadow-2xl"
+						/>
+					{:else if previewArtworkUrl || releaseDetail?.cover_url}
+						<img
+							src={previewArtworkTab === 'local' ? (currentCoverUrl || previewArtworkUrl!) : (previewArtworkUrl || releaseDetail?.cover_url!)}
+							alt={previewArtworkTitle}
+							class="max-h-[55vh] w-auto max-w-full rounded-xl object-contain shadow-2xl"
+						/>
+					{:else}
+						<div class="flex flex-col items-center justify-center text-neutral-500 py-12 gap-2">
+							<ImageIcon class="h-10 w-10 text-neutral-600" />
+							<p class="text-xs">No artwork image available to preview</p>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Modal Footer Details & Actions -->
+				<div class="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-neutral-800 text-xs">
+					<div class="flex items-center gap-2 text-neutral-400 text-[11px]">
+						<span class="font-bold text-neutral-300">Source:</span>
+						<span>{previewArtworkTab === 'local' ? 'Local Album Folder (cover.jpg)' : previewArtworkSource}</span>
+					</div>
+
+					<div class="flex items-center gap-2">
+						{#if (previewArtworkTab === 'local' ? currentCoverUrl : (previewArtworkUrl || releaseDetail?.cover_url))}
+							<a
+								href={previewArtworkTab === 'local' ? currentCoverUrl : (previewArtworkUrl || releaseDetail?.cover_url)}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-800/70 hover:bg-neutral-800 px-3.5 py-1.5 text-neutral-200 transition text-xs font-semibold"
+							>
+								<span>Open Original in New Tab</span>
+								<ExternalLink class="h-3 w-3 opacity-70" />
+							</a>
+						{/if}
+						<button
+							type="button"
+							onclick={() => (isArtworkModalOpen = false)}
+							class="rounded-xl border border-neutral-800 bg-neutral-800/60 hover:bg-neutral-800 px-4 py-1.5 text-xs font-semibold text-neutral-300 transition cursor-pointer"
+						>
+							Close
 						</button>
 					</div>
 				</div>

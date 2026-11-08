@@ -671,6 +671,24 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added dedicated **"Lookup MBID"** button and modal dialog in `src/routes/tagger/+page.svelte` allowing users to paste any MusicBrainz release ID or URL with instant validation, track alignment, and error feedback.
       - Enabled auto-detection in the main search input: pasting an MBID or URL immediately triggers exact release lookup.
       - Added clickable MBID pills with external links to `musicbrainz.org/release/<id>` across active release details and candidate cards.
+48. **Single Track Artist Resolution & Interactive Album Artwork Preview (v1.7.8)**:
+    - **Smart Filename & Folder Artist Inference (`parseTrackDetailsFromFilename`)**:
+      - Added `parseTrackDetailsFromFilename()` in `src/lib/server/scanner.ts` parsing track numbers, artist credits, and titles from common patterns (`Artist - Title`, `01 - Artist - Title`, `01. Artist - Title`, `Artist - Album - Title`), while cleaning YouTube/web tags (`[Official Audio]`, `[Visualizer]`, etc.).
+      - Updated `scanAudioFile()` to use parsed artist/title whenever ID3 tags are missing or set to generic `'Unknown Artist'`, and cleaned titles where full filenames were previously retained.
+      - Updated `scanFolderForTagger()` in `src/lib/server/tagger.ts` to inspect the folder base name and single-track metadata when artist resolves to `'Unknown Artist'`, correctly attributing single tracks (e.g. `Ez Mil & Eminem - MADARA`) to their respective artists.
+      - Updated `alignTracks()` to automatically pair single local tracks with single MusicBrainz release tracks with high confidence.
+      - Enhanced `/api/tagger/albums/[id]/match` to ignore `'Unknown Artist'` as a restrictive artist filter.
+    - **Prominent Matched Artist & Collaboration Display in Tagger UI**:
+      - Updated hero header in `src/routes/tagger/+page.svelte` to prominently display matched target release title and full artist credit (`releaseDetail.artist`, e.g. `Ez Mil & Eminem`) with a `[Single Track]` badge when matching 1-track releases.
+      - Added visual source diff indicator clearly demonstrating before-and-after resolution: `Source: MADARA by Unknown Artist ➔ will update to Ez Mil & Eminem`.
+      - Updated Target MusicBrainz Track column (Column 4) in the diff table to render the full artist credit alongside track titles, making track collaborations immediately visible.
+    - **Interactive Album Cover Art Preview & Comparison**:
+      - Added Artwork Preview Strip directly in the active Tagger hero: displays side-by-side comparison cards for **Current Local Cover** (`cover.jpg`) and **MusicBrainz Cover** (`Cover Art Archive 500px`) with transition indicators.
+      - Added hover zoom actions on candidate release thumbnails in the candidate selector grid for quick artwork inspection.
+      - Added dedicated **Full-Size Album Artwork Preview Modal**:
+        - High-resolution modal with natural aspect ratio, source attribution, and direct external link to uncompressed original.
+        - Segmented before-and-after tab toggle (`[ Target MusicBrainz Cover (CAA) ]` vs `[ Current Local Cover (cover.jpg) ]`) enabling instant side-by-side comparison before writing tags or downloading artwork.
+        - Added `[Preview Artwork]` action button in the hero header.
 
 ---
 

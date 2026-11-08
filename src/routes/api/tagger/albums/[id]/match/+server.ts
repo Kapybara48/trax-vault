@@ -28,16 +28,21 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	let targetMbid = url.searchParams.get('mbid') || album.musicbrainz_id || null;
 	let candidates: MusicBrainzReleaseItem[] = [];
 
+	const rawArtist = album.artist?.trim() || '';
+	const effectiveArtist = !/^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(rawArtist)
+		? rawArtist
+		: undefined;
+
 	try {
 		// If no target MBID specified, search MusicBrainz automatically
 		if (!targetMbid) {
-			candidates = await searchMusicBrainz(album.title, album.artist);
+			candidates = await searchMusicBrainz(album.title, effectiveArtist);
 			if (candidates.length > 0) {
 				targetMbid = candidates[0].id;
 			}
 		} else {
 			// Fetch candidates for release selector drawer
-			candidates = await searchMusicBrainz(album.title, album.artist);
+			candidates = await searchMusicBrainz(album.title, effectiveArtist);
 		}
 
 		if (!targetMbid) {

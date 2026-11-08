@@ -527,6 +527,95 @@ function cleanMbId(val: any): string | null {
 }
 
 /**
+ * Intelligently parse artist, title, and track number from filename and parent directory
+ * when ID3 / audio tags are missing, empty, or generic ('Unknown Artist').
+ */
+export function parseTrackDetailsFromFilename(
+	fileName: string,
+	parentDirName?: string
+): { artist: string | null; title: string; trackNumber: number | null } {
+	// Strip file extension
+	const ext = path.extname(fileName);
+	let base = path.basename(fileName, ext).trim();
+
+	// Remove common web / youtube junk: e.g. [Official Audio], (Official Video), [HQ], etc.
+	base = base
+		.replace(/\s*[\[\(](?:official\s+(?:audio|video|music\s+video|visualizer|lyric\s+video)|hq|hd|lyrics|audio)[\]\)]/gi, '')
+		.trim();
+
+	let trackNumber: number | null = null;
+	// Check for leading track number: e.g. "01 - Title", "01. Title", "01 Title"
+	const trackNumMatch = base.match(/^(\d{1,3})[\s\.\-_]+(.+)$/);
+	if (trackNumMatch) {
+		const parsedNum = parseInt(trackNumMatch[1], 10);
+		if (!isNaN(parsedNum) && parsedNum > 0 && parsedNum < 1000) {
+			trackNumber = parsedNum;
+			base = trackNumMatch[2].trim();
+		}
+	}
+
+	// Check for "Artist - Title" split (also handle en-dash '–' and em-dash '—')
+	const dashMatch = base.split(/\s+[-–—]\s+/);
+	if (dashMatch.length === 2) {
+		const part0 = dashMatch[0].trim();
+		const part1 = dashMatch[1].trim();
+		if (part0 && part1) {
+			return {
+				artist: part0,
+				title: part1,
+				trackNumber
+			};
+		}
+	} else if (dashMatch.length >= 3) {
+		// e.g. "01 - Artist - Title" or "Artist - Album - Title"
+		const part0 = dashMatch[0].trim();
+		const part1 = dashMatch[1].trim();
+		const part2 = dashMatch[2].trim();
+		// If part0 is purely a number
+		if (/^\d{1,3}$/.test(part0)) {
+			trackNumber = parseInt(part0, 10);
+			return {
+				artist: part1,
+				title: part2,
+				trackNumber
+			};
+		}
+		// Otherwise assume Artist - Album - Title
+		return {
+			artist: part0,
+			title: part2,
+			trackNumber
+		};
+	}
+
+	// If no dash separator in filename, check parentDirName if provided
+	if (parentDirName) {
+		const cleanParent = path.basename(parentDirName).trim();
+		const parentDash = cleanParent.split(/\s+[-–—]\s+/);
+		if (parentDash.length >= 2) {
+			return {
+				artist: parentDash[0].trim(),
+				title: base,
+				trackNumber
+			};
+		} else if (cleanParent && !/^(music|songs|downloads|singles|albums|vault|tracks)$/i.test(cleanParent)) {
+			// Single folder name could be artist name
+			return {
+				artist: cleanParent,
+				title: base,
+				trackNumber
+			};
+		}
+	}
+
+	return {
+		artist: null,
+		title: base || fileName,
+		trackNumber
+	};
+}
+
+/**
  * Scan a single audio file and extract all tags + MusicBrainz data
  */
 export async function scanAudioFile(
@@ -539,12 +628,32 @@ export async function scanAudioFile(
 		const format = metadata.format;
 
 		const fileName = path.basename(filePath);
-		const title = common.title || path.basename(filePath, path.extname(filePath));
-		const artist = common.artist || common.albumartist || 'Unknown Artist';
-		const albumArtist = common.albumartist || common.artist || 'Unknown Artist';
-		const album = common.album || path.basename(path.dirname(filePath));
+		const parentDir = path.basename(path.dirname(filePath));
+		const rawTitle = common.title;
+		const rawArtist = common.artist || common.albumartist;
+		const isArtistUnknown = !rawArtist || /^(unknown(\s+artist)?)$/i.test(rawArtist.trim());
+
+		// Fallback parsing from filename and parent folder
+		const parsedFallback = parseTrackDetailsFromFilename(fileName, parentDir);
+
+		// Effective artist: prefer ID3 tag if valid, otherwise fallback to parsed filename artist
+		const artist = (!isArtistUnknown && rawArtist) ? rawArtist.trim() : (parsedFallback.artist || 'Unknown Artist');
+		const albumArtist = common.albumartist
+			? common.albumartist.trim()
+			: (!isArtistUnknown && rawArtist)
+				? rawArtist.trim()
+				: (parsedFallback.artist || 'Unknown Artist');
+
+		// Effective title: prefer ID3 tag, otherwise fallback to parsed filename title
+		let title = rawTitle?.trim() || parsedFallback.title;
+		// If ID3 title was identical to raw filename containing the artist (e.g. "Ez Mil & Eminem - MADARA"), clean it!
+		if (parsedFallback.artist && title.toLowerCase().startsWith(parsedFallback.artist.toLowerCase() + ' -')) {
+			title = parsedFallback.title;
+		}
+
+		const album = common.album || (parsedFallback.artist && parentDir.includes(' - ') ? parentDir.split(/\s+[-–—]\s+/)[1]?.trim() : parentDir);
 		const year = common.year || null;
-		const trackNumber = common.track?.no || 1;
+		const trackNumber = common.track?.no || parsedFallback.trackNumber || 1;
 		const discNumber = common.disk?.no || 1;
 		const durationMs = format.duration ? Math.round(format.duration * 1000) : null;
 

@@ -21,6 +21,7 @@ import {
 	getMusicDirectory,
 	isPathWithin,
 	scanAudioFile,
+	parseTrackDetailsFromFilename,
 	AUDIO_EXTENSIONS,
 	findLocalCoverArt,
 	importScannedAlbum,
@@ -226,6 +227,13 @@ export function alignTracks(
 		matchedLocalIds.add(pair.local.id);
 		matchedMbIds.add(pair.mb.id);
 		matches.push(buildTrackMatch(pair.local, pair.mb, pair.score));
+	}
+
+	// Special case for singles: 1 local track and 1 MusicBrainz release track
+	if (localTracks.length === 1 && mbTracks.length === 1 && matches.length === 0) {
+		const score = Math.max(85, calculatePairScore(localTracks[0], mbTracks[0]));
+		matches.push(buildTrackMatch(localTracks[0], mbTracks[0], score));
+		matchedLocalIds.add(localTracks[0].id);
 	}
 
 	// Any unassigned local tracks
@@ -996,11 +1004,34 @@ export async function scanFolderForTagger(folderPath: string): Promise<{
 	});
 
 	const first = rawTracks[0];
-	const folderTitle = first?.album || path.basename(canonicalTarget);
+	let folderTitle = first?.album || path.basename(canonicalTarget);
 	const validArtistTrack =
 		rawTracks.find((t) => t.album_artist && t.album_artist.trim().toLowerCase() !== 'unknown artist') ||
 		rawTracks.find((t) => t.artist && t.artist.trim().toLowerCase() !== 'unknown artist');
-	const folderArtist = validArtistTrack?.album_artist || validArtistTrack?.artist || first?.artist || 'Unknown Artist';
+	let folderArtist = validArtistTrack?.album_artist || validArtistTrack?.artist || first?.artist || 'Unknown Artist';
+
+	// If folderArtist is still Unknown Artist, inspect folder name
+	if (!folderArtist || folderArtist.trim().toLowerCase() === 'unknown artist') {
+		const folderBase = path.basename(canonicalTarget);
+		const parsedFolder = parseTrackDetailsFromFilename(folderBase);
+		if (parsedFolder.artist) {
+			folderArtist = parsedFolder.artist;
+			if (folderTitle === folderBase) {
+				folderTitle = parsedFolder.title;
+			}
+		}
+	}
+
+	// For single-track releases (e.g. singles like MADARA)
+	if (rawTracks.length === 1 && rawTracks[0]) {
+		if (rawTracks[0].artist && rawTracks[0].artist.trim().toLowerCase() !== 'unknown artist') {
+			folderArtist = rawTracks[0].artist;
+		}
+		if (rawTracks[0].title) {
+			folderTitle = rawTracks[0].title;
+		}
+	}
+
 	const folderYear = rawTracks.find((t) => t.year)?.year || null;
 	const mbId = rawTracks.find((t) => t.musicbrainz_album_id)?.musicbrainz_album_id || null;
 
