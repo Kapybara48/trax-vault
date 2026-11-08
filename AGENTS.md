@@ -651,6 +651,16 @@ This document preserves persistent context, architectural conventions, recent ch
       - Stopped silently swallowing `EACCES`, `EPERM`, and `EROFS` errors in `writeTagsToAudioFile()` and `downloadAndSaveCover()`.
       - Tag apply endpoints (`/api/tagger/folder/apply` and `/api/tagger/albums/[id]/apply`) now return HTTP 403 Forbidden when permission errors prevent updating files or saving covers, returning granular details on affected files.
       - Status toast in `/tagger` explicitly shows failure reasons and copyable fix commands instead of false positive successes.
+46. **Scanner Real-Time Synchronization, Coalescing by Folder, & Invalidation Fix (v1.7.6)**:
+    - **Auto-Sync Scanner Cache on Tagging (`refreshAlbumInScanCache`)**:
+      - Added `refreshAlbumInScanCache()` in `src/lib/server/scanner.ts` automatically re-scanning the album folder on disk immediately upon tagging, parsing fresh audio tags, updating in-memory `scanCache`, and updating persistent disk snapshots (`scan_snapshot_*.json`).
+      - Both `applyAlbumTags()` and `applyFolderTags()` in `src/lib/server/tagger.ts` now call `refreshAlbumInScanCache()`, eliminating the need to manually click "Rescan Library".
+    - **Single-Folder Album Coalescing**:
+      - Updated `reconcileScanAlbumsWithVault()` to coalesce albums strictly by `folder_path` for dedicated album directories, preventing a single physical folder from being split into two duplicate albums if tracks have differing or renamed album tags.
+    - **Path-Based Vault Reconciliation (`vaultRelFolderMap`)**:
+      - Added relative folder path mapping in `reconcileScanAlbumsWithVault()` resolving Vault albums by matching audio file paths, ensuring albums renamed to longer MusicBrainz release titles immediately remain recognized as `already_in_vault = true`.
+    - **Full Disk Snapshot Invalidation**:
+      - Updated `invalidateScanCache()` to remove all `scan_snapshot_*.json` files on disk when cleared globally or for parent/child paths, preventing stale snapshots from resurrecting on server restart or page loads.
 
 ---
 

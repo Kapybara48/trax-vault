@@ -1,7 +1,7 @@
 # --- Build stage ---
 FROM node:22-bookworm-slim AS builder
 
-ARG APP_VERSION=1.7.5
+ARG APP_VERSION=1.7.6
 ENV APP_VERSION=${APP_VERSION}
 
 WORKDIR /app

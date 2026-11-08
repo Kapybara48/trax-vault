@@ -25,7 +25,8 @@ import {
 	findLocalCoverArt,
 	importScannedAlbum,
 	invalidateScanCache,
-	updateAlbumInScanCache
+	updateAlbumInScanCache,
+	refreshAlbumInScanCache
 } from '$lib/server/scanner.js';
 import {
 	updateAlbumAndTracksFromMusicBrainz,
@@ -860,13 +861,14 @@ export async function applyAlbumTags(
 	}
 
 	for (const folder of targetFoldersList) {
-		updateAlbumInScanCache(folder, {
+		await refreshAlbumInScanCache(folder, {
 			title: options.updateAlbumTitle ? release.title : album.title,
 			artist: options.updateArtist ? release.artist : album.artist,
 			year: options.updateYear && release.release_year ? release.release_year : album.release_year,
-			cover_url: newCoverUrl
+			musicbrainzId: release.id,
+			coverUrl: newCoverUrl,
+			existingAlbumId: albumId
 		});
-		invalidateScanCache(folder);
 	}
 
 	const hasPermissionErrors =
@@ -1373,11 +1375,13 @@ export async function applyFolderTags(
 	}
 
 	for (const folder of targetFoldersList) {
-		updateAlbumInScanCache(folder, {
+		await refreshAlbumInScanCache(folder, {
 			title: targetAlbumTitle,
 			artist: targetArtist,
 			year: targetYear || null,
-			cover_url: coverUrl
+			musicbrainzId: release.id,
+			coverUrl: coverUrl,
+			existingAlbumId: importedAlbumId || folderData.existing_album_id || null
 		});
 	}
 

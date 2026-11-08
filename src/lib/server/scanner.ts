@@ -733,15 +733,29 @@ function mergeTracksLists(targetTracks: ScannedTrack[], sourceTracks: ScannedTra
 
 export function reconcileScanAlbumsWithVault(albums: ScannedAlbum[]): void {
 	try {
-		// 1. Coalesce any split album entries that share the exact same folder_path and normalized album title
+		const musicDir = getMusicDirectory();
+		let canonicalMusicDir: string;
+		try {
+			canonicalMusicDir = fs.existsSync(musicDir) ? fs.realpathSync(musicDir) : path.resolve(musicDir);
+		} catch {
+			canonicalMusicDir = path.resolve(musicDir);
+		}
+
+		// 1. Coalesce any split album entries that share the exact same folder_path
 		if (albums.length > 1) {
 			const coalesced: ScannedAlbum[] = [];
-			const byFolderAndTitle = new Map<string, ScannedAlbum>();
+			const byFolder = new Map<string, ScannedAlbum>();
 
 			for (const alb of albums) {
+				const isRootDir = alb.folder_path && path.resolve(alb.folder_path) === canonicalMusicDir;
 				const normTitle = normalizeAlbumGroupKey(alb.title) || normalizeAlbumGroupKey(path.basename(alb.folder_path));
-				const coalesceKey = `${alb.folder_path}:::${normTitle}`;
-				const existing = byFolderAndTitle.get(coalesceKey);
+				// For tracks directly in the root music directory, group by folder + title.
+				// For dedicated album folders, coalesce strictly by folder_path so a single physical folder is NEVER split into duplicate albums!
+				const coalesceKey = isRootDir
+					? `${alb.folder_path}:::${normTitle}`
+					: (alb.folder_path ? path.resolve(alb.folder_path) : alb.album_key);
+
+				const existing = byFolder.get(coalesceKey);
 				if (existing && existing !== alb) {
 					existing.tracks = mergeTracksLists(existing.tracks, alb.tracks);
 					existing.track_count = existing.tracks.length;
@@ -752,8 +766,18 @@ export function reconcileScanAlbumsWithVault(albums: ScannedAlbum[]): void {
 					existing.year = existing.year || alb.year;
 					existing.already_in_vault = existing.already_in_vault || alb.already_in_vault;
 					existing.existing_album_id = existing.existing_album_id || alb.existing_album_id;
+
+					// Prefer verified metadata (already in vault, has MusicBrainz ID, or more complete title)
+					if (
+						(!existing.already_in_vault && alb.already_in_vault) ||
+						(!existing.musicbrainz_id && alb.musicbrainz_id) ||
+						(alb.title && alb.title.length > existing.title.length)
+					) {
+						existing.title = alb.title;
+						existing.artist = alb.artist;
+					}
 				} else {
-					byFolderAndTitle.set(coalesceKey, alb);
+					byFolder.set(coalesceKey, alb);
 					coalesced.push(alb);
 				}
 			}
@@ -778,8 +802,10 @@ export function reconcileScanAlbumsWithVault(albums: ScannedAlbum[]): void {
 		const vaultMbIdMap = new Map<string, number>();
 		const vaultTitleArtistMap = new Map<string, number>();
 		const vaultNormTitleArtistMap = new Map<string, number>();
+		const vaultAlbumById = new Map<number, { title: string; artist: string; musicbrainz_id: string | null }>();
 
 		for (const va of vaultAlbums) {
+			vaultAlbumById.set(va.id, { title: va.title, artist: va.artist, musicbrainz_id: va.musicbrainz_id });
 			if (va.musicbrainz_id) {
 				vaultMbIdMap.set(va.musicbrainz_id.trim(), va.id);
 			}
@@ -788,6 +814,25 @@ export function reconcileScanAlbumsWithVault(albums: ScannedAlbum[]): void {
 			if (!vaultNormTitleArtistMap.has(normKey)) {
 				vaultNormTitleArtistMap.set(normKey, va.id);
 			}
+		}
+
+		// Also map relative folders from tracks already in Vault to match albums whose titles were renamed
+		const vaultRelFolderMap = new Map<string, number>();
+		try {
+			const vaultTrackRows = db.prepare(
+				'SELECT album_id, file_path FROM tracks WHERE file_path IS NOT NULL'
+			).all() as Array<{ album_id: number; file_path: string }>;
+
+			for (const trRow of vaultTrackRows) {
+				if (trRow.file_path) {
+					const rel = path.dirname(trRow.file_path.replace(/^[/\\]+/, '')).toLowerCase();
+					if (rel && rel !== '.' && rel !== '') {
+						vaultRelFolderMap.set(rel, trRow.album_id);
+					}
+				}
+			}
+		} catch {
+			// ignore if tracks table is busy
 		}
 
 		for (const alb of albums) {
@@ -806,6 +851,24 @@ export function reconcileScanAlbumsWithVault(albums: ScannedAlbum[]): void {
 				} else if (vaultNormTitleArtistMap.has(normKey)) {
 					alreadyInVault = true;
 					existingAlbumId = vaultNormTitleArtistMap.get(normKey)!;
+				} else if (alb.folder_path) {
+					// Check if album folder matches the relative folder of an album in the vault
+					const albCanonical = path.resolve(alb.folder_path);
+					const albRel = path.relative(canonicalMusicDir, albCanonical).toLowerCase();
+					if (vaultRelFolderMap.has(albRel)) {
+						alreadyInVault = true;
+						existingAlbumId = vaultRelFolderMap.get(albRel)!;
+					}
+				}
+			}
+
+			// If matched to an existing vault album, align title & artist so scanner and vault remain consistent
+			if (alreadyInVault && existingAlbumId && vaultAlbumById.has(existingAlbumId)) {
+				const va = vaultAlbumById.get(existingAlbumId)!;
+				alb.title = va.title;
+				alb.artist = va.artist;
+				if (va.musicbrainz_id && !alb.musicbrainz_id) {
+					alb.musicbrainz_id = va.musicbrainz_id;
 				}
 			}
 
@@ -913,12 +976,19 @@ export function mergeScannedAlbumsInCache(
 }
 
 export function invalidateScanCache(targetDir?: string): void {
+	const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve('./data');
 	if (targetDir) {
 		const canonical = path.resolve(targetDir);
 		scanCache.delete(canonical);
 		for (const key of Array.from(scanCache.keys())) {
 			if (key.startsWith(canonical) || canonical.startsWith(key)) {
 				scanCache.delete(key);
+				try {
+					const snapPath = getScanSnapshotPath(key);
+					if (fs.existsSync(snapPath)) {
+						fs.unlinkSync(snapPath);
+					}
+				} catch {}
 			}
 		}
 		try {
@@ -929,11 +999,179 @@ export function invalidateScanCache(targetDir?: string): void {
 		} catch {}
 	} else {
 		scanCache.clear();
+		try {
+			if (fs.existsSync(dataDir)) {
+				const files = fs.readdirSync(dataDir);
+				for (const f of files) {
+					if (f.startsWith('scan_snapshot_') && f.endsWith('.json')) {
+						try {
+							fs.unlinkSync(path.join(dataDir, f));
+						} catch {}
+					}
+				}
+			}
+		} catch {}
 	}
 }
 
 export function clearScanCache(targetDir?: string): void {
 	invalidateScanCache(targetDir);
+}
+
+/**
+ * Automatically re-scans a specific album folder on disk and updates both
+ * in-memory scanCache and persistent disk snapshots immediately.
+ * Ensures the Scanner tab is always in sync with tagger changes without manual rescans.
+ */
+export async function refreshAlbumInScanCache(
+	folderPath: string,
+	hint?: {
+		title?: string;
+		artist?: string;
+		year?: number | null;
+		musicbrainzId?: string | null;
+		coverUrl?: string | null;
+		existingAlbumId?: number | null;
+	}
+): Promise<void> {
+	try {
+		const canonical = path.resolve(folderPath);
+		const musicDir = getMusicDirectory();
+		let canonicalMusicDir: string;
+		try {
+			canonicalMusicDir = fs.existsSync(musicDir) ? fs.realpathSync(musicDir) : path.resolve(musicDir);
+		} catch {
+			canonicalMusicDir = path.resolve(musicDir);
+		}
+
+		// Find audio files in this folder (and subfolders like CD1/Disc 2)
+		const audioFiles: string[] = [];
+		const dirFilesCache = new Map<string, string[]>();
+
+		function walk(dir: string) {
+			try {
+				if (!fs.existsSync(dir)) return;
+				const entries = fs.readdirSync(dir, { withFileTypes: true });
+				const entryNames: string[] = [];
+				for (const entry of entries) {
+					if (entry.name.startsWith('.')) continue;
+					entryNames.push(entry.name);
+					const full = path.join(dir, entry.name);
+					if (entry.isDirectory()) {
+						walk(full);
+					} else if (entry.isFile()) {
+						const ext = path.extname(entry.name).toLowerCase();
+						if (AUDIO_EXTENSIONS.has(ext)) {
+							audioFiles.push(full);
+						}
+					}
+				}
+				dirFilesCache.set(dir, entryNames);
+			} catch (err) {
+				console.warn(`[Scanner] Error reading directory ${dir}:`, err);
+			}
+		}
+
+		walk(canonical);
+
+		// Ensure we have the library snapshot loaded
+		const targetKey = canonicalMusicDir;
+		let cached = scanCache.get(targetKey);
+		if (!cached) {
+			const disk = loadScanSnapshot(targetKey);
+			if (disk) {
+				cached = {
+					timestamp: disk.scannedAt || Date.now(),
+					result: disk
+				};
+				scanCache.set(targetKey, cached);
+			}
+		}
+
+		// Collect all scanCache entries that contain or match canonical
+		const cacheEntriesToUpdate: Array<{ key: string; entry: ScanCacheEntry }> = [];
+		if (cached) {
+			cacheEntriesToUpdate.push({ key: targetKey, entry: cached });
+		}
+		for (const [key, entry] of scanCache.entries()) {
+			if (key !== targetKey && (canonical.startsWith(key) || key.startsWith(canonical))) {
+				cacheEntriesToUpdate.push({ key, entry });
+			}
+		}
+
+		if (cacheEntriesToUpdate.length === 0) {
+			return;
+		}
+
+		// Parse the audio files in this folder
+		let refreshedAlbum: ScannedAlbum | null = null;
+		if (audioFiles.length > 0) {
+			const parsed = await asyncPool(16, audioFiles, (f) => scanAudioFile(f, dirFilesCache));
+			const tracks = parsed.filter((t): t is ScannedTrack => t !== null);
+			if (tracks.length > 0) {
+				tracks.sort((a, b) => {
+					if (a.disc_number !== b.disc_number) return a.disc_number - b.disc_number;
+					return a.track_number - b.track_number;
+				});
+
+				const first = tracks[0];
+				const albumTitle = hint?.title || first.album || path.basename(canonical);
+				const albumArtist =
+					hint?.artist || tracks.find((t) => t.album_artist)?.album_artist || first.artist || 'Unknown Artist';
+				const albumYear = hint?.year ?? tracks.find((t) => t.year)?.year ?? null;
+				const mbId = hint?.musicbrainzId || tracks.find((t) => t.musicbrainz_album_id)?.musicbrainz_album_id || null;
+				let coverUrl = hint?.coverUrl || findLocalCoverArt(canonical, dirFilesCache);
+				if (!coverUrl && mbId) {
+					coverUrl = `https://coverartarchive.org/release/${mbId}/front-500`;
+				}
+
+				const normAlbum = normalizeAlbumGroupKey(albumTitle) || normalizeAlbumGroupKey(path.basename(canonical));
+				const albumKey = normAlbum ? `${canonical}::${normAlbum}` : `dir:${canonical}`;
+
+				refreshedAlbum = {
+					album_key: albumKey,
+					title: albumTitle,
+					artist: albumArtist,
+					year: albumYear,
+					folder_path: canonical,
+					musicbrainz_id: mbId,
+					cover_url: coverUrl,
+					track_count: tracks.length,
+					has_flac: tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC'),
+					has_lrc: tracks.some((t) => t.lyrics === 'synced_lrc' || t.lyrics === 'censored_lrc'),
+					already_in_vault: hint?.existingAlbumId ? true : false,
+					existing_album_id: hint?.existingAlbumId ?? null,
+					tracks,
+					selected: false
+				};
+			}
+		}
+
+		for (const { key, entry } of cacheEntriesToUpdate) {
+			// Remove any old entries belonging to this folder (exact match or subdirectory)
+			const filteredAlbums = entry.result.albums.filter((alb) => {
+				if (!alb.folder_path) return true;
+				const albCanonical = path.resolve(alb.folder_path);
+				return albCanonical !== canonical && !albCanonical.startsWith(canonical) && !canonical.startsWith(albCanonical);
+			});
+
+			if (refreshedAlbum) {
+				filteredAlbums.push({ ...refreshedAlbum });
+			}
+
+			// Reconcile with Vault database so already_in_vault and existing_album_id are 100% accurate
+			reconcileScanAlbumsWithVault(filteredAlbums);
+
+			entry.result.albums = filteredAlbums;
+			entry.result.totalFiles = filteredAlbums.reduce((sum, a) => sum + a.track_count, 0);
+			entry.timestamp = Date.now();
+			entry.result.scannedAt = entry.timestamp;
+
+			saveScanSnapshot(key, entry.result);
+		}
+	} catch (err) {
+		console.warn('[Scanner] Failed to refresh album in scan cache:', err);
+	}
 }
 
 /**
@@ -946,25 +1184,21 @@ export function updateAlbumInScanCache(
 		artist?: string;
 		year?: number | null;
 		cover_url?: string | null;
+		musicbrainzId?: string | null;
+		existingAlbumId?: number | null;
 	}
 ): void {
-	const canonical = path.resolve(folderPath);
-
-	for (const [key, entry] of scanCache.entries()) {
-		let modified = false;
-		for (const alb of entry.result.albums) {
-			if (alb.folder_path && (path.resolve(alb.folder_path) === canonical || canonical.startsWith(path.resolve(alb.folder_path)))) {
-				if (updates.title) alb.title = updates.title;
-				if (updates.artist) alb.artist = updates.artist;
-				if (updates.year !== undefined) alb.year = updates.year;
-				if (updates.cover_url) alb.cover_url = updates.cover_url;
-				modified = true;
-			}
-		}
-		if (modified) {
-			saveScanSnapshot(key, entry.result);
-		}
-	}
+	// Delegate to async refreshAlbumInScanCache without blocking callers
+	refreshAlbumInScanCache(folderPath, {
+		title: updates.title,
+		artist: updates.artist,
+		year: updates.year,
+		coverUrl: updates.cover_url,
+		musicbrainzId: updates.musicbrainzId,
+		existingAlbumId: updates.existingAlbumId
+	}).catch((err) => {
+		console.warn('[Scanner] updateAlbumInScanCache refresh failed:', err);
+	});
 }
 
 /**
