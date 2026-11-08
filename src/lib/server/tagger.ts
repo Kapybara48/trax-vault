@@ -27,7 +27,8 @@ import {
 	importScannedAlbum,
 	invalidateScanCache,
 	updateAlbumInScanCache,
-	refreshAlbumInScanCache
+	refreshAlbumInScanCache,
+	findCompanionLyricsFile
 } from '$lib/server/scanner.js';
 import {
 	updateAlbumAndTracksFromMusicBrainz,
@@ -209,6 +210,179 @@ export function formatPermissionError(targetPath: string, err?: any): string {
 	const code = err?.code || 'EACCES';
 	const sysMsg = err?.message || 'Permission denied';
 	return `File Permission Denied (${code}): Trax Vault does not have write access to "${targetPath}". If running in Docker, ensure your music folder is mounted read-write (:rw) and that the files on your host have write permissions (e.g. chmod -R u+rw /path/to/music or chown -R 1000:1000 /path/to/music). Details: ${sysMsg}`;
+}
+
+/**
+ * Sanitizes a string (artist, title) for safe use in operating system filenames
+ * Replaces illegal filesystem characters: / \ : * ? " < > |
+ */
+export function sanitizeFilename(name: string): string {
+	if (!name) return '';
+	return name
+		.replace(/[/\\:]+/g, ' - ') // Replace path separators and colons with dash
+		.replace(/[*?"<>|]+/g, '')  // Remove wildcard and redirect characters
+		.replace(/[\x00-\x1f\x7f]/g, '') // Remove control characters
+		.replace(/\s+/g, ' ')       // Collapse multiple spaces
+		.replace(/\s*-\s*-+\s*/g, ' - ') // Clean up consecutive dashes
+		.trim();
+}
+
+/**
+ * Formats a standardized audio filename:
+ * - Single-disc: "01. Artist - Title.ext"
+ * - Multi-disc: "1-01. Artist - Title.ext"
+ */
+export function formatStandardTrackFilename(
+	track: {
+		discNumber?: number;
+		trackNumber: number;
+		title: string;
+		artist: string;
+		totalDiscs?: number;
+	},
+	ext: string
+): string {
+	const cleanArtist = sanitizeFilename(track.artist) || 'Unknown Artist';
+	const cleanTitle = sanitizeFilename(track.title) || 'Unknown Title';
+	const trackPad = String(track.trackNumber || 1).padStart(2, '0');
+	const discNum = track.discNumber || 1;
+	const isMultiDisc = Boolean((track.totalDiscs && track.totalDiscs > 1) || (track.discNumber && track.discNumber > 1));
+	const prefix = isMultiDisc ? `${discNum}-${trackPad}` : trackPad;
+	const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
+
+	const baseName = `${prefix}. ${cleanArtist} - ${cleanTitle}`.trim().replace(/[. ]+$/, '');
+	return `${baseName}${safeExt}`;
+}
+
+/**
+ * Safely renames an audio file and any companion lyrics (.lrc / .txt) in the same directory
+ */
+export function renameAudioAndCompanionFiles(
+	oldFilePath: string,
+	newFileName: string
+): {
+	success: boolean;
+	newFilePath: string;
+	oldFilePath: string;
+	renamedCompanionPath?: string;
+	error?: string;
+	isPermissionDenied?: boolean;
+} {
+	try {
+		if (!fs.existsSync(oldFilePath)) {
+			return { success: false, newFilePath: oldFilePath, oldFilePath, error: `Source file not found: ${oldFilePath}` };
+		}
+
+		const dir = path.dirname(oldFilePath);
+		const oldBase = path.basename(oldFilePath, path.extname(oldFilePath));
+		const ext = path.extname(oldFilePath);
+
+		// Sanitize desired target filename
+		let sanitizedTargetName = newFileName;
+		if (!sanitizedTargetName.endsWith(ext)) {
+			sanitizedTargetName = `${sanitizedTargetName}${ext}`;
+		}
+
+		let targetPath = path.join(dir, sanitizedTargetName);
+
+		// If paths are identical, no file move needed
+		const isSamePath = path.resolve(oldFilePath) === path.resolve(targetPath);
+
+		// Handle collisions: if target exists and is a different file
+		if (!isSamePath && fs.existsSync(targetPath)) {
+			const targetExt = path.extname(sanitizedTargetName);
+			const targetBase = path.basename(sanitizedTargetName, targetExt);
+			let counter = 1;
+			while (
+				fs.existsSync(targetPath) &&
+				path.resolve(targetPath).toLowerCase() !== path.resolve(oldFilePath).toLowerCase()
+			) {
+				targetPath = path.join(dir, `${targetBase} (${counter})${targetExt}`);
+				counter++;
+			}
+		}
+
+		let finalNewFilePath = oldFilePath;
+
+		// Perform audio file rename if name changed
+		if (path.resolve(oldFilePath) !== path.resolve(targetPath)) {
+			try {
+				fs.accessSync(dir, fs.constants.W_OK);
+			} catch (accessErr: any) {
+				const permErr = formatPermissionError(dir, accessErr);
+				return { success: false, newFilePath: oldFilePath, oldFilePath, error: permErr, isPermissionDenied: true };
+			}
+
+			try {
+				fs.renameSync(oldFilePath, targetPath);
+				finalNewFilePath = targetPath;
+			} catch (renameErr: any) {
+				const permErr = formatPermissionError(oldFilePath, renameErr);
+				return {
+					success: false,
+					newFilePath: oldFilePath,
+					oldFilePath,
+					error: permErr,
+					isPermissionDenied: isPermissionError(renameErr)
+				};
+			}
+		} else {
+			finalNewFilePath = targetPath;
+		}
+
+		// Discover and rename companion lyrics file (.lrc or .txt)
+		let renamedCompanionPath: string | undefined;
+		const newBase = path.basename(finalNewFilePath, path.extname(finalNewFilePath));
+
+		// Check companion files matching the old base name
+		for (const compExt of ['.lrc', '.txt', '.LRC', '.TXT']) {
+			const oldCompCandidate = path.join(dir, `${oldBase}${compExt}`);
+			if (fs.existsSync(oldCompCandidate)) {
+				const targetCompPath = path.join(dir, `${newBase}${compExt.toLowerCase()}`);
+				if (path.resolve(oldCompCandidate) !== path.resolve(targetCompPath)) {
+					try {
+						fs.renameSync(oldCompCandidate, targetCompPath);
+						renamedCompanionPath = targetCompPath;
+					} catch (compErr: any) {
+						console.warn(`[Tagger] Could not rename companion lyrics file ${oldCompCandidate}:`, compErr.message);
+					}
+				}
+			}
+		}
+
+		// Also check via findCompanionLyricsFile for loose/padded matches
+		if (!renamedCompanionPath) {
+			const looseCompanion = findCompanionLyricsFile(oldFilePath);
+			if (looseCompanion && fs.existsSync(looseCompanion.filePath)) {
+				const targetCompPath = path.join(dir, `${newBase}${looseCompanion.ext.toLowerCase()}`);
+				if (path.resolve(looseCompanion.filePath) !== path.resolve(targetCompPath)) {
+					try {
+						fs.renameSync(looseCompanion.filePath, targetCompPath);
+						renamedCompanionPath = targetCompPath;
+					} catch (compErr: any) {
+						console.warn(`[Tagger] Could not rename companion lyrics file ${looseCompanion.filePath}:`, compErr.message);
+					}
+				}
+			}
+		}
+
+		return {
+			success: true,
+			newFilePath: finalNewFilePath,
+			oldFilePath,
+			renamedCompanionPath
+		};
+	} catch (err: any) {
+		console.error(`[Tagger] Error during file renaming for ${oldFilePath}:`, err);
+		const isPerm = isPermissionError(err);
+		return {
+			success: false,
+			newFilePath: oldFilePath,
+			oldFilePath,
+			error: isPerm ? formatPermissionError(oldFilePath, err) : (err.message || 'File rename failed'),
+			isPermissionDenied: isPerm
+		};
+	}
 }
 
 /**
@@ -627,10 +801,12 @@ export async function applyAlbumTags(
 		updateAlbumTitle?: boolean;
 		updateArtist?: boolean;
 		updateYear?: boolean;
+		renameFiles?: boolean;
 	} = {}
 ): Promise<{
 	success: boolean;
 	updatedTracksCount: number;
+	renamedFilesCount: number;
 	totalAttempted: number;
 	album: Album;
 	tracks: Track[];
@@ -671,6 +847,7 @@ export async function applyAlbumTags(
 
 	// 1. Write embedded audio tags to each confirmed track file on disk FIRST
 	let updatedTracksCount = 0;
+	let renamedFilesCount = 0;
 	const fileErrors: Array<{ file: string; path: string; error: string; isPermissionDenied?: boolean }> = [];
 	const trackUpdates: Array<{
 		id: number;
@@ -678,6 +855,7 @@ export async function applyAlbumTags(
 		artist?: string | null;
 		track_number: number;
 		disc_number?: number;
+		file_path?: string | null;
 	}> = [];
 
 	const targetAlbumArtist = options.updateArtist ? release.artist : album.artist;
@@ -693,6 +871,8 @@ export async function applyAlbumTags(
 
 		// Write to file on disk if path can be resolved
 		const diskPath = resolveTrackFilePath(localTr);
+		let finalDiskPath = diskPath;
+
 		if (diskPath && fs.existsSync(diskPath)) {
 			const tagResult = await writeTagsToAudioFile(diskPath, {
 				title: targetTitle,
@@ -706,6 +886,37 @@ export async function applyAlbumTags(
 
 			if (tagResult.success) {
 				updatedTracksCount++;
+
+				// Rename physical file on disk (and companion lyrics) if requested (default: true)
+				if (options.renameFiles !== false) {
+					const ext = path.extname(diskPath);
+					const totalDiscs = release.tracks.reduce((max, t) => Math.max(max, t.disc_number || 1), 1);
+					const standardFilename = formatStandardTrackFilename(
+						{
+							discNumber: targetDiscNum,
+							trackNumber: targetTrackNum,
+							title: targetTitle,
+							artist: targetArtist,
+							totalDiscs
+						},
+						ext
+					);
+
+					const renameResult = renameAudioAndCompanionFiles(diskPath, standardFilename);
+					if (renameResult.success) {
+						finalDiskPath = renameResult.newFilePath;
+						if (path.resolve(diskPath) !== path.resolve(renameResult.newFilePath)) {
+							renamedFilesCount++;
+						}
+					} else if (renameResult.error) {
+						fileErrors.push({
+							file: path.basename(diskPath),
+							path: diskPath,
+							error: renameResult.error,
+							isPermissionDenied: renameResult.isPermissionDenied
+						});
+					}
+				}
 			} else {
 				console.warn(`Failed writing tags to ${diskPath}:`, tagResult.error);
 				fileErrors.push({
@@ -728,7 +939,8 @@ export async function applyAlbumTags(
 			title: targetTitle,
 			artist: targetArtist,
 			track_number: targetTrackNum,
-			disc_number: targetDiscNum
+			disc_number: targetDiscNum,
+			file_path: finalDiskPath
 		});
 	}
 
@@ -825,6 +1037,7 @@ export async function applyAlbumTags(
 	return {
 		success: updatedTracksCount > 0 && fileErrors.length === 0,
 		updatedTracksCount,
+		renamedFilesCount,
 		totalAttempted: confirmedMatches.length,
 		album: updated.album,
 		tracks: updated.tracks,
@@ -1085,10 +1298,12 @@ export async function applyFolderTags(
 		updateArtist?: boolean;
 		updateYear?: boolean;
 		importToVault?: boolean;
+		renameFiles?: boolean;
 	} = {}
 ): Promise<{
 	success: boolean;
 	updatedTracksCount: number;
+	renamedFilesCount: number;
 	totalAttempted: number;
 	importedAlbumId?: number | null;
 	folderTitle?: string;
@@ -1129,6 +1344,8 @@ export async function applyFolderTags(
 
 	// 1. Write audio tags to disk FIRST so verified tags are safely persisted even if cover fails
 	let updatedTracksCount = 0;
+	let renamedFilesCount = 0;
+	const renamedPathsMap = new Map<string, string>();
 	const fileErrors: Array<{ file: string; path: string; error: string; isPermissionDenied?: boolean }> = [];
 	const targetAlbumTitle = options.updateAlbumTitle ? release.title : folderData.folder_title;
 	const targetArtist = options.updateArtist ? release.artist : folderData.folder_artist;
@@ -1158,6 +1375,46 @@ export async function applyFolderTags(
 
 			if (tagResult.success) {
 				updatedTracksCount++;
+
+				// Rename physical file on disk (and companion lyrics) if requested (default: true)
+				if (options.renameFiles !== false) {
+					const ext = path.extname(diskPath);
+					const totalDiscs = release.tracks.reduce((max, t) => Math.max(max, t.disc_number || 1), 1);
+					const standardFilename = formatStandardTrackFilename(
+						{
+							discNumber: targetDiscNum,
+							trackNumber: targetTrackNum,
+							title: targetTitle,
+							artist: trackArtist,
+							totalDiscs
+						},
+						ext
+					);
+
+					const renameResult = renameAudioAndCompanionFiles(diskPath, standardFilename);
+					if (renameResult.success) {
+						const finalDiskPath = renameResult.newFilePath;
+						if (path.resolve(diskPath) !== path.resolve(finalDiskPath)) {
+							renamedFilesCount++;
+						}
+						renamedPathsMap.set(diskPath, finalDiskPath);
+						if (localTr) {
+							localTr.file_path = finalDiskPath;
+						}
+						const rawTr = folderData.raw_tracks.find((rt) => rt.file_path === diskPath);
+						if (rawTr) {
+							rawTr.file_path = finalDiskPath;
+							rawTr.file_name = path.basename(finalDiskPath);
+						}
+					} else if (renameResult.error) {
+						fileErrors.push({
+							file: path.basename(diskPath),
+							path: diskPath,
+							error: renameResult.error,
+							isPermissionDenied: renameResult.isPermissionDenied
+						});
+					}
+				}
 			} else {
 				console.warn(`Failed writing tags to ${diskPath}:`, tagResult.error);
 				fileErrors.push({
@@ -1239,15 +1496,17 @@ export async function applyFolderTags(
 					artist?: string | null;
 					track_number: number;
 					disc_number?: number;
+					file_path?: string | null;
 				}> = [];
 
 				for (const match of confirmedMatches) {
 					const localSynthetic = folderData.tracks.find((t) => t.id === match.localTrackId);
 					if (!localSynthetic?.file_path) continue;
 
+					const effectivePath = renamedPathsMap.get(match.filePath || '') || localSynthetic.file_path;
 					// Match DB track by file_path or track_number (only real non-missing tracks)
 					const dbTr = dbTracksRes.tracks.find(
-						(dt) => (dt.file_path && dt.file_path === localSynthetic.file_path) ||
+						(dt) => (dt.file_path && (dt.file_path === localSynthetic.file_path || dt.file_path === match.filePath || dt.file_path === effectivePath)) ||
 						        (!dt.is_missing && dt.track_number === localSynthetic.track_number)
 					);
 
@@ -1257,7 +1516,8 @@ export async function applyFolderTags(
 							title: match.title.trim(),
 							artist: match.artist?.trim() || release.artist,
 							track_number: match.trackNumber,
-							disc_number: match.discNumber || dbTr.disc_number || 1
+							disc_number: match.discNumber || dbTr.disc_number || 1,
+							file_path: effectivePath
 						});
 					}
 				}
@@ -1362,6 +1622,7 @@ export async function applyFolderTags(
 	return {
 		success: updatedTracksCount > 0 && fileErrors.length === 0,
 		updatedTracksCount,
+		renamedFilesCount,
 		totalAttempted: confirmedMatches.length,
 		importedAlbumId,
 		folderTitle: targetAlbumTitle,

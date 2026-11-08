@@ -14,7 +14,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			updateAlbumTitle = true,
 			updateArtist = true,
 			updateYear = true,
-			importToVault = false
+			importToVault = false,
+			renameFiles = true
 		} = body;
 
 		if (!folderPath) {
@@ -39,7 +40,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				updateAlbumTitle,
 				updateArtist,
 				updateYear,
-				importToVault
+				importToVault,
+				renameFiles
 			}
 		);
 
@@ -48,6 +50,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				success: false,
 				error: result.error || 'Permission denied: Trax Vault cannot write to audio files or folder.',
 				updatedTracksCount: result.updatedTracksCount,
+				renamedFilesCount: result.renamedFilesCount || 0,
 				totalAttempted: result.totalAttempted,
 				importedAlbumId: result.importedAlbumId || null,
 				folderTitle: result.folderTitle,
@@ -67,6 +70,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				success: false,
 				error: result.error || 'Failed to write tags to any audio files on disk.',
 				updatedTracksCount: 0,
+				renamedFilesCount: 0,
 				totalAttempted: result.totalAttempted,
 				fileErrors: result.fileErrors || [],
 				coverError: result.coverError || null,
@@ -77,6 +81,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({
 			success: true,
 			updatedTracksCount: result.updatedTracksCount,
+			renamedFilesCount: result.renamedFilesCount || 0,
 			totalAttempted: result.totalAttempted,
 			importedAlbumId: result.importedAlbumId || null,
 			folderTitle: result.folderTitle,

@@ -17,7 +17,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			updateCover = true,
 			updateAlbumTitle = true,
 			updateArtist = true,
-			updateYear = true
+			updateYear = true,
+			renameFiles = true
 		} = body;
 
 		if (!mbid) {
@@ -37,7 +38,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 				coverUrl,
 				updateAlbumTitle,
 				updateArtist,
-				updateYear
+				updateYear,
+				renameFiles
 			}
 		);
 
@@ -46,6 +48,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 				success: false,
 				error: result.error || 'Permission denied: Trax Vault cannot write to audio files or album directory.',
 				updatedTracksCount: result.updatedTracksCount,
+				renamedFilesCount: result.renamedFilesCount || 0,
 				totalAttempted: result.totalAttempted,
 				album: result.album,
 				tracks: result.tracks,
@@ -62,6 +65,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 				success: false,
 				error: result.error || 'Failed to write tags to any audio files on disk.',
 				updatedTracksCount: 0,
+				renamedFilesCount: 0,
 				totalAttempted: result.totalAttempted,
 				fileErrors: result.fileErrors || [],
 				coverError: result.coverError || null,
@@ -72,6 +76,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		return json({
 			success: true,
 			updatedTracksCount: result.updatedTracksCount,
+			renamedFilesCount: result.renamedFilesCount || 0,
 			totalAttempted: result.totalAttempted,
 			album: result.album,
 			tracks: result.tracks,

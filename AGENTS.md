@@ -713,6 +713,21 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Deep UI Integration**:
       - Added **"Merge Album"** action button to Album Detail page (`src/routes/album/[id]/+page.svelte`).
       - Upgraded Library Batch Merge on `src/routes/+page.svelte`: selecting two albums and clicking "Merge Selected" opens the Interactive Merge Studio pre-populated with both albums.
+50. **Automatic Audio & Companion Lyrics File Renaming on Tagging (v1.7.10)**:
+    - **Safe Standardized Naming Scheme (`formatStandardTrackFilename`)**:
+      - Single-Disc: `01. Artist - Title.ext` (e.g. `01. Eminem - The Ringer.flac`).
+      - Multi-Disc: `1-01. Artist - Title.ext` (e.g. `1-01. The Notorious B.I.G. - Hypnotize.mp3`).
+      - Implemented `sanitizeFilename()` in `src/lib/server/tagger.ts` cleaning forbidden filesystem characters (`/ \ : * ? " < > |`) into safe dashes while preserving valid acronyms (`The Notorious B.I.G.`) and stripping trailing dots/spaces from the base filename before extension.
+    - **Companion Lyrics (.lrc / .txt) Synchronous Renaming (`renameAudioAndCompanionFiles`)**:
+      - Automatically finds any companion `.lrc` or `.txt` lyrics file matching the old audio file name in the song's directory (including loose track-number padding matches) and renames it synchronously (e.g. `01. Eminem - The Ringer.lrc`), ensuring synchronized lyrics are never lost or orphaned.
+      - Safe collision detection: If a target filename already exists on disk (and is not the same file), appends a unique numeric suffix (`(1)`) to avoid overwriting distinct audio files.
+    - **Database & Player Continuity**:
+      - Extended `updateAlbumAndTracksFromMusicBrainz()` in `src/lib/server/db.ts` to accept and persist `file_path` on track updates.
+      - When physical files are renamed on disk, `tracks.file_path` in SQLite is updated synchronously and scan cache is refreshed, preserving uninterrupted playback, lyric streaming, and Subsonic API compatibility.
+    - **Interactive Tagger Studio UI (`src/routes/tagger/+page.svelte`)**:
+      - Added **"Rename Files on Disk"** checkbox toggle to the tagger options toolbar (default: enabled).
+      - Added real-time filename diff preview pills under each track in the alignment table displaying the exact planned rename: `📁 Rename: raw_track.mp3 ➔ 01. Artist - Title.mp3 (with .lrc)`.
+      - Updated action buttons and success notifications to display the exact number of files and companion lyrics renamed on disk.
 
 ---
 

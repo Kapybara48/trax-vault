@@ -1199,6 +1199,7 @@ export function updateAlbumAndTracksFromMusicBrainz(
 		artist?: string | null;
 		track_number: number;
 		disc_number?: number;
+		file_path?: string | null;
 	}>,
 	missingTracksToAdd?: Array<{
 		disc_number?: number;
@@ -1252,7 +1253,8 @@ export function updateAlbumAndTracksFromMusicBrainz(
 				artist = ?,
 				track_number = ?,
 				disc_number = ?,
-				is_missing = CASE WHEN file_path IS NOT NULL THEN 0 ELSE is_missing END,
+				file_path = COALESCE(?, file_path),
+				is_missing = CASE WHEN COALESCE(?, file_path) IS NOT NULL THEN 0 ELSE is_missing END,
 				needs_attention = ?,
 				updated_at = datetime('now')
 			WHERE id = ? AND album_id = ?
@@ -1266,10 +1268,11 @@ export function updateAlbumAndTracksFromMusicBrainz(
 			const trackNumber = t.track_number ?? existing.track_number;
 			const title = t.title.trim();
 			const artist = t.artist?.trim() ?? existing.artist;
+			const newFilePath = t.file_path !== undefined ? t.file_path : existing.file_path;
 			const manuallyChecked = existing.manually_checked ?? 0;
 			const needsAtt = computeNeedsAttention(existing.quality_rating, existing.censorship, existing.lyrics, existing.format, rules, manuallyChecked);
 
-			updateTrackStmt.run(title, artist, trackNumber, discNumber, needsAtt, t.id, albumId);
+			updateTrackStmt.run(title, artist, trackNumber, discNumber, newFilePath, newFilePath, needsAtt, t.id, albumId);
 		}
 
 		// 3. Add or update missing tracks from release that have no local audio files

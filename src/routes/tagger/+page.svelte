@@ -36,7 +36,8 @@
 		Hash,
 		Copy,
 		ZoomIn,
-		Eye
+		Eye,
+		FileText
 	} from '@lucide/svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -205,6 +206,49 @@
 	let optUpdateArtist = $state(true);
 	let optUpdateYear = $state(true);
 	let optImportToVault = $state(false);
+	let optRenameFiles = $state(true);
+
+	const totalReleaseDiscs = $derived(
+		releaseDetail ? releaseDetail.tracks.reduce((max, t) => Math.max(max, t.disc_number || 1), 1) : 1
+	);
+
+	function getTargetFilenamePreview(
+		localTrack: Track,
+		mbTrack: MusicBrainzReleaseTrack | null | undefined,
+		totalDiscs: number
+	): { currentName: string; targetName: string; willRename: boolean } {
+		const currentName = localTrack.file_path ? localTrack.file_path.split(/[/\\]/).pop() || '' : '';
+		if (!mbTrack || !currentName) {
+			return { currentName, targetName: '', willRename: false };
+		}
+		const extMatch = currentName.match(/\.[^.]+$/);
+		const ext = extMatch ? extMatch[0] : '.mp3';
+
+		const trackNum = mbTrack.track_number || localTrack.track_number || 1;
+		const discNum = mbTrack.disc_number || localTrack.disc_number || 1;
+		const isMultiDisc = totalDiscs > 1 || discNum > 1;
+		const prefix = isMultiDisc ? `${discNum}-${String(trackNum).padStart(2, '0')}` : String(trackNum).padStart(2, '0');
+
+		const rawArtist = (mbTrack.artist || releaseDetail?.artist || localTrack.artist || '').trim();
+		const rawTitle = (mbTrack.title || localTrack.title || '').trim();
+
+		const cleanArtist = rawArtist
+			.replace(/[/\\:]+/g, ' - ')
+			.replace(/[*?"<>|]+/g, '')
+			.replace(/\s+/g, ' ')
+			.trim() || 'Unknown Artist';
+
+		const cleanTitle = rawTitle
+			.replace(/[/\\:]+/g, ' - ')
+			.replace(/[*?"<>|]+/g, '')
+			.replace(/\s+/g, ' ')
+			.trim() || 'Unknown Title';
+
+		const baseName = `${prefix}. ${cleanArtist} - ${cleanTitle}`.trim().replace(/[. ]+$/, '');
+		const targetName = `${baseName}${ext}`;
+		const willRename = currentName !== targetName;
+		return { currentName, targetName, willRename };
+	}
 
 	// Filtered Library Albums
 	const filteredAlbums = $derived(
@@ -581,7 +625,8 @@
 						updateCover: optUpdateCover,
 						updateAlbumTitle: optUpdateAlbumTitle,
 						updateArtist: optUpdateArtist,
-						updateYear: optUpdateYear
+						updateYear: optUpdateYear,
+						renameFiles: optRenameFiles
 					})
 				});
 
@@ -613,6 +658,9 @@
 				}
 
 				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount} audio files`;
+				if (json.renamedFilesCount > 0) {
+					successMsg += ` and renamed ${json.renamedFilesCount} files (& companion lyrics) on disk`;
+				}
 				if (json.coverDownloaded) {
 					successMsg += ` and downloaded cover.jpg to album folder`;
 				} else if (json.coverError) {
@@ -669,7 +717,8 @@
 						updateAlbumTitle: optUpdateAlbumTitle,
 						updateArtist: optUpdateArtist,
 						updateYear: optUpdateYear,
-						importToVault: optImportToVault
+						importToVault: optImportToVault,
+						renameFiles: optRenameFiles
 					})
 				});
 
@@ -716,6 +765,9 @@
 				}
 
 				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount} audio files`;
+				if (json.renamedFilesCount > 0) {
+					successMsg += ` and renamed ${json.renamedFilesCount} files (& companion lyrics) on disk`;
+				}
 				if (json.coverDownloaded) {
 					successMsg += ` and saved cover.jpg`;
 				} else if (json.coverError) {
@@ -1492,6 +1544,18 @@
 									<span>Update Year</span>
 								</label>
 
+								<label class="flex items-center gap-2 cursor-pointer select-none">
+									<input
+										type="checkbox"
+										bind:checked={optRenameFiles}
+										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950"
+									/>
+									<span class="flex items-center gap-1 font-semibold {optRenameFiles ? 'text-emerald-300' : 'text-neutral-400'}">
+										<FileText class="h-3.5 w-3.5 text-emerald-400" />
+										Rename Files on Disk
+									</span>
+								</label>
+
 								{#if taggerMode === 'folders'}
 									<label class="flex items-center gap-2 cursor-pointer select-none {currentFolderData?.already_in_vault ? 'opacity-70 cursor-not-allowed' : ''}">
 										<input
@@ -1521,9 +1585,9 @@
 								{:else}
 									<Sparkles class="h-4 w-4 text-emerald-200" />
 									{#if taggerMode === 'folders'}
-										<span>Write Tags to Files {optImportToVault && !currentFolderData?.already_in_vault ? '& Import' : ''} ({selectedCount} songs)</span>
+										<span>Write Tags {optRenameFiles ? '& Rename Files' : ''} {optImportToVault && !currentFolderData?.already_in_vault ? '& Import' : ''} ({selectedCount} songs)</span>
 									{:else}
-										<span>Write Tags to Files & Library ({selectedCount} songs)</span>
+										<span>Write Tags {optRenameFiles ? '& Rename Files' : ''} & Library ({selectedCount} songs)</span>
 									{/if}
 								{/if}
 							</button>
@@ -1653,6 +1717,23 @@
 														<div class="text-[10px] text-neutral-400 truncate">
 															{m.localTrack.artist || (taggerMode === 'albums' ? selectedAlbum?.artist : currentFolderData?.folder_artist)} • {formatDuration(m.localTrack.duration_ms)} • {m.localTrack.format}
 														</div>
+														{#if optRenameFiles && m.mbTrack}
+															{@const preview = getTargetFilenamePreview(m.localTrack, m.mbTrack, totalReleaseDiscs)}
+															{#if preview.willRename}
+																<div class="mt-1 flex items-center gap-1.5 text-[10px] font-mono bg-amber-950/40 border border-amber-800/40 px-2 py-0.5 rounded-md truncate max-w-sm" title={`Will rename on disk to: ${preview.targetName} (and any companion .lrc)`}>
+																	<FileText class="h-3 w-3 shrink-0 text-amber-400" />
+																	<span class="text-neutral-400 truncate">{preview.currentName}</span>
+																	<span class="text-amber-400 shrink-0">➔</span>
+																	<span class="text-emerald-300 font-semibold truncate">{preview.targetName}</span>
+																</div>
+															{:else if preview.currentName}
+																<div class="mt-1 flex items-center gap-1.5 text-[10px] font-mono text-neutral-500 px-1 py-0.5 truncate">
+																	<Check class="h-3 w-3 shrink-0 text-emerald-500" />
+																	<span class="truncate">{preview.targetName}</span>
+																	<span class="text-neutral-600 text-[9px]">(Standard)</span>
+																</div>
+															{/if}
+														{/if}
 													</div>
 												</div>
 											</td>
