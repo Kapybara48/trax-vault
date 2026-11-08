@@ -73,6 +73,20 @@ export const GET: RequestHandler = async ({ url }) => {
 			});
 		}
 
+		// Ensure the matched release is present in candidates list
+		if (!candidates.some((c) => c.id === release.id)) {
+			candidates.unshift({
+				id: release.id,
+				title: release.title,
+				artist: release.artist,
+				year: release.release_year,
+				track_count: release.tracks.length,
+				media_format: release.media_type || 'Digital',
+				cover_url: release.cover_url || null,
+				barcode: release.barcode || null
+			});
+		}
+
 		const matches = alignTracks(folderData.tracks, release.tracks);
 		const missingTracks = getMissingTracks(release.tracks, matches);
 		const overallScore =

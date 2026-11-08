@@ -6,8 +6,9 @@ export const GET: RequestHandler = async ({ url }) => {
 	const query = url.searchParams.get('query') || '';
 	const artist = url.searchParams.get('artist') || '';
 	const album = url.searchParams.get('album') || '';
+	const mbid = url.searchParams.get('mbid') || '';
 
-	const searchQuery = query || (album && artist ? `${album} by ${artist}` : album || artist);
+	const searchQuery = mbid || query || (album && artist ? `${album} by ${artist}` : album || artist);
 	if (!searchQuery && !artist) {
 		return json({ releases: [] });
 	}

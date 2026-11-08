@@ -223,3 +223,54 @@ export function stripLrcMetadataHeaders(content: string): string {
 	return cleanLines.join('\n');
 }
 
+/**
+ * Extract MusicBrainz ID from plain UUID string, prefixed format (e.g. mbid:... or reid:...),
+ * or full musicbrainz.org URL.
+ */
+export function extractMusicBrainzId(
+	input: string | null | undefined
+): { type: 'release' | 'release-group' | 'artist'; mbid: string } | null {
+	if (!input) return null;
+	const trimmed = String(input).trim();
+
+	// Check for MusicBrainz URL patterns: https://musicbrainz.org/release/UUID or /release-group/UUID or /artist/UUID
+	const urlMatch = trimmed.match(
+		/musicbrainz\.org\/(release|release-group|artist)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+	);
+	if (urlMatch) {
+		return { type: urlMatch[1].toLowerCase() as any, mbid: urlMatch[2].toLowerCase() };
+	}
+
+	// Check for explicit prefix e.g. reid:, rgid:, arid:, mbid:, release:
+	const prefixMatch = trimmed.match(
+		/^(?:reid|mbid|release):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+	);
+	if (prefixMatch) {
+		return { type: 'release', mbid: prefixMatch[1].toLowerCase() };
+	}
+
+	const rgPrefixMatch = trimmed.match(
+		/^rgid:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+	);
+	if (rgPrefixMatch) {
+		return { type: 'release-group', mbid: rgPrefixMatch[1].toLowerCase() };
+	}
+
+	const artistPrefixMatch = trimmed.match(
+		/^arid:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+	);
+	if (artistPrefixMatch) {
+		return { type: 'artist', mbid: artistPrefixMatch[1].toLowerCase() };
+	}
+
+	// Standalone UUID format: 31d3ab1e-49dc-434b-bf0b-b43dc0f1d626
+	const rawUuidMatch = trimmed.match(
+		/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+	);
+	if (rawUuidMatch) {
+		return { type: 'release', mbid: rawUuidMatch[1].toLowerCase() };
+	}
+
+	return null;
+}
+

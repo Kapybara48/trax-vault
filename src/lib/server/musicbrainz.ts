@@ -5,6 +5,7 @@ import type {
 	MusicBrainzReleaseDetail,
 	MusicBrainzReleaseTrack
 } from '$lib/types/index.js';
+import { extractMusicBrainzId } from '$lib/utils.js';
 import { APP_VERSION } from '$lib/version.js';
 
 try {
@@ -107,7 +108,36 @@ export async function searchMusicBrainz(query: string, artist?: string): Promise
 	const rawArtist = artist?.trim() || '';
 	const cleanArtist = !/^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(rawArtist) ? rawArtist : '';
 
-	if (cleanQuery && cleanArtist) {
+	// 1. Direct MBID or MusicBrainz URL lookup
+	const extractedId = extractMusicBrainzId(cleanQuery);
+	if (extractedId) {
+		if (extractedId.type === 'release') {
+			try {
+				const directRelease = await getMusicBrainzRelease(extractedId.mbid);
+				if (directRelease) {
+					return [
+						{
+							id: directRelease.id,
+							title: directRelease.title,
+							artist: directRelease.artist,
+							year: directRelease.release_year,
+							track_count: directRelease.tracks.length,
+							media_format: directRelease.media_type || 'Digital',
+							cover_url: directRelease.cover_url || null,
+							barcode: directRelease.barcode || null
+						}
+					];
+				}
+			} catch (err) {
+				console.warn(`Direct MBID lookup failed for ${extractedId.mbid}:`, err);
+			}
+			luceneQuery = `reid:${extractedId.mbid}`;
+		} else if (extractedId.type === 'release-group') {
+			luceneQuery = `rgid:${extractedId.mbid}`;
+		} else if (extractedId.type === 'artist') {
+			luceneQuery = `arid:${extractedId.mbid}`;
+		}
+	} else if (cleanQuery && cleanArtist) {
 		// Both album title and artist specified
 		luceneQuery = `release:"${escapeLucene(cleanQuery)}" AND (artist:"${escapeLucene(cleanArtist)}" OR artistname:"${escapeLucene(cleanArtist)}")`;
 	} else if (cleanArtist && !cleanQuery) {

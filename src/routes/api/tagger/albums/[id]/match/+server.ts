@@ -63,6 +63,20 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			});
 		}
 
+		// Ensure the matched release is present in candidates list
+		if (!candidates.some((c) => c.id === release.id)) {
+			candidates.unshift({
+				id: release.id,
+				title: release.title,
+				artist: release.artist,
+				year: release.release_year,
+				track_count: release.tracks.length,
+				media_format: release.media_type || 'Digital',
+				cover_url: release.cover_url || null,
+				barcode: release.barcode || null
+			});
+		}
+
 		// Only real local tracks with physical audio files should be matched against MusicBrainz release tracks
 		const realTracks = tracks.filter((t) => t.is_missing !== 1 && !!t.file_path);
 		const matches = alignTracks(realTracks, release.tracks);

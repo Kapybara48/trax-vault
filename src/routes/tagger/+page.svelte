@@ -12,7 +12,7 @@
 		TrackMatch,
 		ScannedFolderItem
 	} from '$lib/types/index.js';
-	import { formatDuration } from '$lib/utils.js';
+	import { formatDuration, extractMusicBrainzId } from '$lib/utils.js';
 	import {
 		Tag,
 		Sparkles,
@@ -32,7 +32,9 @@
 		X,
 		Music,
 		Image as ImageIcon,
-		CheckCheck
+		CheckCheck,
+		Hash,
+		Copy
 	} from '@lucide/svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -124,6 +126,12 @@
 	let candidateReleases = $state<MusicBrainzReleaseItem[]>([]);
 	let selectedReleaseMbid = $state<string | null>(null);
 	let releaseDetail = $state<MusicBrainzReleaseDetail | null>(null);
+
+	// MBID Direct Lookup State
+	let isMbidModalOpen = $state(false);
+	let mbidInput = $state('');
+	let isLookingUpMbid = $state(false);
+	let mbidError = $state<string | null>(null);
 
 	// Alignment Matches State
 	interface EditableMatch {
@@ -374,13 +382,83 @@
 		}
 	}
 
+	async function lookupReleaseByMbid(input: string) {
+		const extracted = extractMusicBrainzId(input);
+		const targetMbid = extracted ? extracted.mbid : input.trim();
+		if (!targetMbid) {
+			mbidError = 'Please enter a valid MusicBrainz Release ID or URL.';
+			return;
+		}
+
+		if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetMbid)) {
+			mbidError = 'Invalid MBID format. MBID must be a 36-character UUID (e.g. 31d3ab1e-49dc-434b-bf0b-b43dc0f1d626).';
+			return;
+		}
+
+		isLookingUpMbid = true;
+		mbidError = null;
+		statusMessage = null;
+
+		try {
+			const res = await fetch(`/api/tagger/release/${encodeURIComponent(targetMbid)}`);
+			const data = await res.json();
+
+			if (!res.ok || data.error || !data.release) {
+				const errMsg = data.error || `No release found on MusicBrainz for MBID: ${targetMbid}`;
+				mbidError = errMsg;
+				statusMessage = { type: 'error', text: errMsg };
+				return;
+			}
+
+			const rel = data.release;
+			if (!candidateReleases.some((c) => c.id === rel.id)) {
+				candidateReleases = [
+					{
+						id: rel.id,
+						title: rel.title,
+						artist: rel.artist,
+						year: rel.release_year,
+						track_count: rel.tracks.length,
+						media_format: rel.media_type || 'Digital',
+						cover_url: rel.cover_url || null,
+						barcode: rel.barcode || null
+					},
+					...candidateReleases
+				];
+			}
+
+			selectCandidateRelease(rel.id);
+			isMbidModalOpen = false;
+			mbidInput = '';
+			statusMessage = {
+				type: 'success',
+				text: `Matched release "${rel.title}" by ${rel.artist} from MusicBrainz ID!`
+			};
+		} catch (err: any) {
+			const errMsg = formatErrorMessage(err, 'Failed to lookup MBID');
+			mbidError = errMsg;
+			statusMessage = { type: 'error', text: errMsg };
+		} finally {
+			isLookingUpMbid = false;
+		}
+	}
+
 	async function searchMusicBrainzReleases() {
-		if (!mbSearchQuery.trim()) return;
+		const query = mbSearchQuery.trim();
+		if (!query) return;
+
+		// If user typed or pasted an MBID / MusicBrainz URL, route directly to MBID lookup!
+		const extracted = extractMusicBrainzId(query);
+		if (extracted && extracted.type === 'release') {
+			await lookupReleaseByMbid(extracted.mbid);
+			return;
+		}
+
 		isSearchingMB = true;
 		statusMessage = null;
 
 		try {
-			const res = await fetch(`/api/tagger/search?query=${encodeURIComponent(mbSearchQuery.trim())}`);
+			const res = await fetch(`/api/tagger/search?query=${encodeURIComponent(query)}`);
 			const data = await res.json();
 			if (data.releases) {
 				candidateReleases = data.releases;
@@ -1069,18 +1147,28 @@
 
 						<!-- Match Confidence Score -->
 						{#if releaseDetail}
-							<div class="flex flex-col items-end">
+							<div class="flex flex-col items-end gap-1">
 								<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Match Confidence</span>
-								<div class="flex items-center gap-1.5 mt-0.5">
+								<div class="flex items-center gap-1.5">
 									<span class="rounded-full px-3 py-0.5 text-xs font-black border {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
 										{overallScore}% Match
 									</span>
+									<a
+										href="https://musicbrainz.org/release/{releaseDetail.id}"
+										target="_blank"
+										rel="noopener noreferrer"
+										class="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-mono font-semibold bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-purple-300 hover:border-purple-600 transition"
+										title="Open release on MusicBrainz.org"
+									>
+										<span>MBID: {releaseDetail.id.slice(0, 8)}...</span>
+										<ExternalLink class="h-2.5 w-2.5 opacity-70" />
+									</a>
 								</div>
 							</div>
 						{/if}
 					</div>
 
-					<!-- MusicBrainz Query Search Input -->
+					<!-- MusicBrainz Query Search Input & MBID Direct Lookup -->
 					<div class="pt-4 border-t border-neutral-800/80 flex flex-col sm:flex-row gap-2">
 						<div class="relative flex-1">
 							<Search class="absolute left-3 top-2.5 h-4 w-4 text-neutral-500" />
@@ -1090,24 +1178,40 @@
 								onkeydown={(e) => {
 									if (e.key === 'Enter') searchMusicBrainzReleases();
 								}}
-								placeholder="Search MusicBrainz by release and artist..."
+								placeholder="Search release, artist, or paste MBID / URL..."
 								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-9 pr-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
 							/>
 						</div>
-						<button
-							type="button"
-							onclick={searchMusicBrainzReleases}
-							disabled={isSearchingMB}
-							class="flex items-center justify-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-4 py-2 text-xs font-bold text-neutral-200 border border-neutral-700 transition disabled:opacity-50 cursor-pointer"
-						>
-							{#if isSearchingMB}
-								<RefreshCw class="h-3.5 w-3.5 animate-spin text-emerald-400" />
-								<span>Searching...</span>
-							{:else}
-								<Search class="h-3.5 w-3.5 text-emerald-400" />
-								<span>Search Releases</span>
-							{/if}
-						</button>
+						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								onclick={searchMusicBrainzReleases}
+								disabled={isSearchingMB}
+								class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-4 py-2 text-xs font-bold text-neutral-200 border border-neutral-700 transition disabled:opacity-50 cursor-pointer"
+							>
+								{#if isSearchingMB}
+									<RefreshCw class="h-3.5 w-3.5 animate-spin text-emerald-400" />
+									<span>Searching...</span>
+								{:else}
+									<Search class="h-3.5 w-3.5 text-emerald-400" />
+									<span>Search</span>
+								{/if}
+							</button>
+
+							<button
+								type="button"
+								onclick={() => {
+									mbidError = null;
+									mbidInput = '';
+									isMbidModalOpen = true;
+								}}
+								class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900/60 px-3.5 py-2 text-xs font-bold text-purple-300 border border-purple-700/60 transition cursor-pointer"
+								title="Find exact album details based on MusicBrainz Release ID (MBID) or URL"
+							>
+								<Hash class="h-3.5 w-3.5 text-purple-400" />
+								<span>Lookup MBID</span>
+							</button>
+						</div>
 					</div>
 
 					<!-- Candidate Releases Selector -->
@@ -1142,11 +1246,14 @@
 											<div class="text-[10px] text-neutral-400 truncate">
 												{rel.artist}
 											</div>
-											<div class="text-[9px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
-												<span>{rel.media_format || 'CD'}</span>
-												{#if rel.year}<span>• {rel.year}</span>{/if}
-												{#if rel.track_count}<span>• {rel.track_count} tr</span>{/if}
-												{#if rel.country}<span>• {rel.country}</span>{/if}
+											<div class="text-[9px] text-neutral-500 flex items-center justify-between gap-1.5 mt-0.5">
+												<div class="flex items-center gap-1.5 truncate">
+													<span>{rel.media_format || 'CD'}</span>
+													{#if rel.year}<span>• {rel.year}</span>{/if}
+													{#if rel.track_count}<span>• {rel.track_count} tr</span>{/if}
+													{#if rel.country}<span>• {rel.country}</span>{/if}
+												</div>
+												<span class="font-mono text-[8px] text-neutral-500 opacity-75 shrink-0">{rel.id.slice(0, 8)}</span>
 											</div>
 										</div>
 									</button>
@@ -1442,4 +1549,125 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- MBID Lookup Modal -->
+	{#if isMbidModalOpen}
+		<div
+			class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+			role="dialog"
+			aria-modal="true"
+		>
+			<div
+				class="relative w-full max-w-lg rounded-3xl border border-neutral-800 bg-neutral-900/95 p-6 shadow-2xl backdrop-blur-xl animate-in zoom-in-95 duration-200"
+			>
+				<!-- Close button -->
+				<button
+					type="button"
+					onclick={() => (isMbidModalOpen = false)}
+					class="absolute right-5 top-5 rounded-full p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white transition cursor-pointer"
+					aria-label="Close dialog"
+				>
+					<X class="h-4 w-4" />
+				</button>
+
+				<div class="flex items-center gap-3 mb-4">
+					<div
+						class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-purple-950/80 border border-purple-500/40 text-purple-300"
+					>
+						<Hash class="h-5 w-5" />
+					</div>
+					<div>
+						<h3 class="text-base font-bold text-white">Find Album by MusicBrainz ID</h3>
+						<p class="text-xs text-neutral-400">Match release details using an exact MBID or MusicBrainz URL</p>
+					</div>
+				</div>
+
+				<div class="space-y-4">
+					<div>
+						<label for="mbid-modal-input" class="block text-xs font-semibold text-neutral-300 mb-1.5">
+							MusicBrainz Release MBID or URL
+						</label>
+						<div class="relative">
+							<Hash class="absolute left-3.5 top-3 h-4 w-4 text-purple-400" />
+							<input
+								id="mbid-modal-input"
+								type="text"
+								bind:value={mbidInput}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') lookupReleaseByMbid(mbidInput);
+								}}
+								placeholder="e.g. 31d3ab1e-49dc-434b-bf0b-b43dc0f1d626 or https://musicbrainz.org/release/..."
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-10 pr-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono"
+							/>
+						</div>
+					</div>
+
+					<!-- Quick fill suggestions -->
+					{#if (taggerMode === 'albums' && selectedAlbum?.musicbrainz_id) || (selectedReleaseMbid && selectedReleaseMbid !== mbidInput)}
+						<div class="flex flex-wrap items-center gap-2 pt-1">
+							<span class="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider">Quick Fill:</span>
+							{#if taggerMode === 'albums' && selectedAlbum?.musicbrainz_id}
+								<button
+									type="button"
+									onclick={() => (mbidInput = selectedAlbum.musicbrainz_id!)}
+									class="rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-2.5 py-0.5 text-[10px] font-mono text-purple-300 transition cursor-pointer"
+								>
+									Vault MBID: {selectedAlbum.musicbrainz_id.slice(0, 8)}...
+								</button>
+							{/if}
+							{#if selectedReleaseMbid}
+								<button
+									type="button"
+									onclick={() => (mbidInput = selectedReleaseMbid!)}
+									class="rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-2.5 py-0.5 text-[10px] font-mono text-emerald-300 transition cursor-pointer"
+								>
+									Current: {selectedReleaseMbid.slice(0, 8)}...
+								</button>
+							{/if}
+						</div>
+					{/if}
+
+					{#if mbidError}
+						<div class="flex items-start gap-2.5 rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 text-xs text-rose-300">
+							<AlertTriangle class="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+							<div class="flex-1 leading-relaxed">{mbidError}</div>
+						</div>
+					{/if}
+
+					<div class="rounded-2xl border border-neutral-800/80 bg-neutral-950/60 p-3.5 text-[11px] text-neutral-400 leading-relaxed">
+						<div class="font-bold text-neutral-300 mb-1 flex items-center gap-1.5">
+							<ExternalLink class="h-3 w-3 text-purple-400" />
+							<span>Finding an MBID on MusicBrainz</span>
+						</div>
+						Visit <a href="https://musicbrainz.org" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline">musicbrainz.org</a>, find your album, and copy either the page URL (e.g. <code>https://musicbrainz.org/release/...</code>) or copy the <strong>Release MBID</strong> UUID.
+					</div>
+
+					<div class="flex items-center justify-end gap-2.5 pt-2">
+						<button
+							type="button"
+							onclick={() => (isMbidModalOpen = false)}
+							class="rounded-xl border border-neutral-800 bg-neutral-800/60 hover:bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 transition cursor-pointer"
+						>
+							Cancel
+						</button>
+
+						<button
+							type="button"
+							onclick={() => lookupReleaseByMbid(mbidInput)}
+							disabled={isLookingUpMbid || !mbidInput.trim()}
+							class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-purple-900/30 transition disabled:opacity-50 cursor-pointer"
+						>
+							{#if isLookingUpMbid}
+								<RefreshCw class="h-3.5 w-3.5 animate-spin" />
+								<span>Looking up...</span>
+							{:else}
+								<Check class="h-3.5 w-3.5" />
+								<span>Fetch & Match Release</span>
+							{/if}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
 </div>

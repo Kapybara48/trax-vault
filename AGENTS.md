@@ -661,6 +661,16 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added relative folder path mapping in `reconcileScanAlbumsWithVault()` resolving Vault albums by matching audio file paths, ensuring albums renamed to longer MusicBrainz release titles immediately remain recognized as `already_in_vault = true`.
     - **Full Disk Snapshot Invalidation**:
       - Updated `invalidateScanCache()` to remove all `scan_snapshot_*.json` files on disk when cleared globally or for parent/child paths, preventing stale snapshots from resurrecting on server restart or page loads.
+47. **Tagger MusicBrainz ID (MBID) Lookup & Exact Release Resolution (v1.7.7)**:
+    - **MBID & URL Extraction (`extractMusicBrainzId`)**:
+      - Added `extractMusicBrainzId()` in `src/lib/utils.ts` parsing plain 36-char UUIDs, prefixed identifiers (`mbid:...`, `reid:...`, `release:...`), and full `musicbrainz.org/release/<uuid>` URLs.
+    - **Direct MBID API Resolution**:
+      - Enhanced `searchMusicBrainz()` in `src/lib/server/musicbrainz.ts` to detect MBIDs/URLs and directly resolve releases via `getMusicBrainzRelease(mbid)` and Lucene `reid:<mbid>` without relying on fuzzy text queries.
+      - Updated `/api/tagger/search`, `/api/tagger/albums/[id]/match`, and `/api/tagger/folder/match` to ensure exact MBID releases are automatically prepended to the candidate releases selector.
+    - **Interactive MBID Lookup Modal & Quick Fill**:
+      - Added dedicated **"Lookup MBID"** button and modal dialog in `src/routes/tagger/+page.svelte` allowing users to paste any MusicBrainz release ID or URL with instant validation, track alignment, and error feedback.
+      - Enabled auto-detection in the main search input: pasting an MBID or URL immediately triggers exact release lookup.
+      - Added clickable MBID pills with external links to `musicbrainz.org/release/<id>` across active release details and candidate cards.
 
 ---
 
