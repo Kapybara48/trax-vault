@@ -108,7 +108,15 @@
 		cover_url: string | null;
 		already_in_vault: boolean;
 		existing_album_id: number | null;
+		is_writable?: boolean;
+		permission_error?: string | null;
+		unwritable_files?: string[];
 	} | null>(null);
+
+	let albumIsWritable = $state<boolean>(true);
+	let albumPermissionError = $state<string | null>(null);
+	let albumPermissionPath = $state<string | null>(null);
+	let albumUnwritableFiles = $state<string[]>([]);
 
 	// MusicBrainz Query & Candidate State
 	let mbSearchQuery = $state('');
@@ -135,7 +143,15 @@
 	let overallScore = $state(0);
 	let isLoadingMatches = $state(false);
 	let isApplyingTags = $state(false);
-	let statusMessage = $state<{ type: 'success' | 'error' | 'info'; text: string; link?: { url: string; label: string } } | null>(null);
+	let statusMessage = $state<{
+		type: 'success' | 'error' | 'info';
+		text: string;
+		link?: { url: string; label: string };
+		details?: Array<{ file: string; path?: string; error: string; isPermissionDenied?: boolean }>;
+		coverError?: string | null;
+		isPermission?: boolean;
+		fixCommand?: string;
+	} | null>(null);
 
 	// Apply Options
 	let optUpdateCover = $state(true);
@@ -255,6 +271,10 @@
 			selectedReleaseMbid = data.release?.id || null;
 			overallScore = data.overall_score || 0;
 			missingTracks = data.missing_tracks || [];
+			albumIsWritable = data.is_writable ?? true;
+			albumPermissionError = data.permission_error ?? null;
+			albumPermissionPath = data.permission_path ?? null;
+			albumUnwritableFiles = data.unwritable_files ?? [];
 
 			if (Array.isArray(data.matches)) {
 				matches = data.matches.map((m: TrackMatch) => ({
@@ -307,7 +327,10 @@
 				folder_year: resData.folder_year,
 				cover_url: resData.cover_url,
 				already_in_vault: resData.already_in_vault,
-				existing_album_id: resData.existing_album_id
+				existing_album_id: resData.existing_album_id,
+				is_writable: resData.is_writable ?? true,
+				permission_error: resData.permission_error ?? null,
+				unwritable_files: resData.unwritable_files ?? []
 			};
 
 			const isUnknown = !resData.folder_artist || /^(unknown(\s+artist)?|various(\s+artists)?)$/i.test(resData.folder_artist.trim());
@@ -447,8 +470,19 @@
 				});
 
 				const json = await res.json();
-				if (!res.ok || json.error) {
-					statusMessage = { type: 'error', text: json.error || 'Failed to apply tags.' };
+				if (!res.ok || json.error || json.hasPermissionErrors || (json.updatedTracksCount === 0 && confirmed.length > 0)) {
+					const errorText = json.error || (json.hasPermissionErrors
+						? 'Permission Denied: Trax Vault cannot write to audio files or album folder.'
+						: 'Failed to apply tags.');
+					const targetDir = albumPermissionPath || './music';
+					statusMessage = {
+						type: 'error',
+						text: errorText,
+						details: json.fileErrors || [],
+						coverError: json.coverError,
+						isPermission: json.hasPermissionErrors,
+						fixCommand: json.hasPermissionErrors ? `chmod -R u+rw "${targetDir}"` : undefined
+					};
 					return;
 				}
 
@@ -465,10 +499,13 @@
 				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount} audio files`;
 				if (json.coverDownloaded) {
 					successMsg += ` and downloaded cover.jpg to album folder`;
+				} else if (json.coverError) {
+					successMsg += ` (⚠️ Note: cover.jpg could not be saved: ${json.coverError})`;
 				}
 				statusMessage = {
 					type: 'success',
-					text: `${successMsg}!`
+					text: `${successMsg}!`,
+					coverError: json.coverError
 				};
 
 				// Refresh alignment diff
@@ -521,8 +558,19 @@
 				});
 
 				const json = await res.json();
-				if (!res.ok || json.error) {
-					statusMessage = { type: 'error', text: json.error || 'Failed to apply tags.' };
+				if (!res.ok || json.error || json.hasPermissionErrors || (json.updatedTracksCount === 0 && confirmed.length > 0)) {
+					const errorText = json.error || (json.hasPermissionErrors
+						? 'Permission Denied: Trax Vault cannot write to audio files or folder.'
+						: 'Failed to apply tags.');
+					const targetDir = selectedFolderPath || currentFolderData?.folder_path || './music';
+					statusMessage = {
+						type: 'error',
+						text: errorText,
+						details: json.fileErrors || [],
+						coverError: json.coverError,
+						isPermission: json.hasPermissionErrors,
+						fixCommand: json.hasPermissionErrors ? `chmod -R u+rw "${targetDir}"` : undefined
+					};
 					return;
 				}
 
@@ -554,6 +602,8 @@
 				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount} audio files`;
 				if (json.coverDownloaded) {
 					successMsg += ` and saved cover.jpg`;
+				} else if (json.coverError) {
+					successMsg += ` (⚠️ Note: cover.jpg could not be saved: ${json.coverError})`;
 				}
 				let linkObj = undefined;
 
@@ -570,7 +620,8 @@
 				statusMessage = {
 					type: 'success',
 					text: successMsg,
-					link: linkObj
+					link: linkObj,
+					coverError: json.coverError
 				};
 
 				// Refresh folder alignment
@@ -647,33 +698,69 @@
 	<!-- Status Banner Toast -->
 	{#if statusMessage}
 		<div
-			class="mb-6 rounded-2xl p-4 flex items-center justify-between gap-3 text-xs font-medium border shadow-lg transition-all {statusMessage.type === 'success' ? 'bg-emerald-950/70 border-emerald-600/60 text-emerald-200' : statusMessage.type === 'error' ? 'bg-rose-950/70 border-rose-600/60 text-rose-200' : 'bg-neutral-900 border-neutral-700 text-neutral-300'}"
+			class="mb-6 rounded-2xl p-4 flex flex-col gap-2.5 text-xs font-medium border shadow-lg transition-all {statusMessage.type === 'success' ? 'bg-emerald-950/70 border-emerald-600/60 text-emerald-200' : statusMessage.type === 'error' ? 'bg-rose-950/70 border-rose-600/60 text-rose-200' : 'bg-neutral-900 border-neutral-700 text-neutral-300'}"
 		>
-			<div class="flex items-center gap-2.5">
-				{#if statusMessage.type === 'success'}
-					<CheckCircle2 class="h-4 w-4 text-emerald-400 shrink-0" />
-				{:else if statusMessage.type === 'error'}
-					<AlertTriangle class="h-4 w-4 text-rose-400 shrink-0" />
-				{:else}
-					<Sparkles class="h-4 w-4 text-indigo-400 shrink-0" />
-				{/if}
-				<span>{statusMessage.text}</span>
-				{#if statusMessage.link}
-					<a
-						href={statusMessage.link.url}
-						class="ml-2 font-bold text-emerald-400 hover:underline inline-flex items-center gap-1"
-					>
-						<span>{statusMessage.link.label}</span>
-					</a>
-				{/if}
+			<div class="flex items-center justify-between gap-3">
+				<div class="flex items-center gap-2.5">
+					{#if statusMessage.type === 'success'}
+						<CheckCircle2 class="h-4 w-4 text-emerald-400 shrink-0" />
+					{:else if statusMessage.type === 'error'}
+						<AlertTriangle class="h-4 w-4 text-rose-400 shrink-0" />
+					{:else}
+						<Sparkles class="h-4 w-4 text-indigo-400 shrink-0" />
+					{/if}
+					<span class="font-semibold">{statusMessage.text}</span>
+					{#if statusMessage.link}
+						<a
+							href={statusMessage.link.url}
+							class="ml-2 font-bold text-emerald-400 hover:underline inline-flex items-center gap-1"
+						>
+							<span>{statusMessage.link.label}</span>
+						</a>
+					{/if}
+				</div>
+				<button
+					type="button"
+					onclick={() => (statusMessage = null)}
+					class="p-1 rounded text-neutral-400 hover:text-white transition cursor-pointer"
+				>
+					<X class="h-3.5 w-3.5" />
+				</button>
 			</div>
-			<button
-				type="button"
-				onclick={() => (statusMessage = null)}
-				class="p-1 rounded text-neutral-400 hover:text-white transition cursor-pointer"
-			>
-				<X class="h-3.5 w-3.5" />
-			</button>
+
+			{#if statusMessage.fixCommand}
+				<div class="mt-1 rounded-xl bg-neutral-950/80 border border-rose-800/40 p-3 space-y-1.5 font-sans">
+					<p class="text-[11px] font-bold text-rose-300">
+						💡 How to fix write permissions on your host machine:
+					</p>
+					<div class="flex items-center justify-between gap-2 bg-neutral-900 px-2.5 py-1.5 rounded-lg border border-neutral-800 font-mono text-[11px] text-amber-300 select-all">
+						<span>{statusMessage.fixCommand}</span>
+					</div>
+					<p class="text-[10px] text-neutral-400">
+						If running via Docker, make sure your music volume mount in <code class="text-neutral-300">docker-compose.yml</code> is read-write (<code class="text-neutral-300">:rw</code>).
+					</p>
+				</div>
+			{/if}
+
+			{#if statusMessage.coverError}
+				<div class="mt-0.5 rounded-lg bg-rose-900/30 border border-rose-800/30 px-3 py-1.5 text-[11px] text-rose-300 flex items-center gap-2">
+					<ImageIcon class="h-3.5 w-3.5 shrink-0 text-rose-400" />
+					<span>Cover Art Error: {statusMessage.coverError}</span>
+				</div>
+			{/if}
+
+			{#if statusMessage.details && statusMessage.details.length > 0}
+				<div class="mt-1 space-y-1">
+					<p class="text-[11px] font-bold text-rose-300">Affected files ({statusMessage.details.length}):</p>
+					<ul class="max-h-32 overflow-y-auto space-y-1 text-[10px] font-mono bg-neutral-950/60 p-2 rounded-lg border border-rose-900/40">
+						{#each statusMessage.details as errItem}
+							<li class="text-rose-300/90 truncate" title={errItem.error}>
+								• <span class="font-bold text-rose-200">{errItem.file}:</span> {errItem.error}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -1068,6 +1155,30 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- Proactive Write Permission Alert Banner -->
+				{#if (taggerMode === 'folders' && currentFolderData?.is_writable === false) || (taggerMode === 'albums' && !albumIsWritable)}
+					<div class="rounded-3xl border border-rose-500/50 bg-rose-950/40 p-4 sm:p-5 text-xs text-rose-200 shadow-xl backdrop-blur-xl space-y-2.5">
+						<div class="flex items-center gap-2.5">
+							<AlertTriangle class="h-5 w-5 text-rose-400 shrink-0" />
+							<div>
+								<h4 class="font-black text-rose-200 text-sm">File Write Permission Denied (Read-Only)</h4>
+								<p class="text-[11px] text-rose-300/90 mt-0.5">
+									Trax Vault does not have write access to this {taggerMode === 'folders' ? 'music folder' : 'album files'}. Writing audio tags and saving <code class="font-mono bg-rose-900/60 px-1 py-0.5 rounded text-rose-100">cover.jpg</code> will fail until permissions are granted.
+								</p>
+							</div>
+						</div>
+						<div class="rounded-xl bg-neutral-950/80 border border-rose-900/40 p-3 space-y-1">
+							<p class="text-[11px] font-bold text-neutral-300">Run this command on your host machine to grant write permissions:</p>
+							<div class="font-mono text-[11px] text-amber-300 bg-neutral-900 px-2.5 py-1.5 rounded-lg border border-neutral-800 select-all">
+								chmod -R u+rw "{taggerMode === 'folders' ? selectedFolderPath : (albumPermissionPath || './music')}"
+							</div>
+							<p class="text-[10px] text-neutral-400 mt-1">
+								If running inside Docker, also verify that the volume mount in <code class="text-neutral-300">docker-compose.yml</code> is mounted read-write (<code class="text-neutral-300">:rw</code>).
+							</p>
+						</div>
+					</div>
+				{/if}
 
 				<!-- Tag Options & Action Toolbar -->
 				{#if releaseDetail}

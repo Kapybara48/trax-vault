@@ -641,6 +641,16 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added Strategy 2 querying `https://archive.org/metadata/mbid-${extractedMbid}` to discover exact backend storage server cluster (e.g. `ia600503.us.archive.org`) and download files directly without intermediate redirect hops.
     - **Frontend Cover URL Propagation**:
       - Passed `coverUrl` directly from the frontend `releaseDetail.cover_url` in `/api/tagger/folder/apply` and `/api/tagger/albums/[id]/apply`, giving the tagger an immediate verified candidate URL.
+45. **Proactive File Permission Checks & Explicit Access Denied Error Reporting (v1.7.5)**:
+    - **Proactive Filesystem Permission Checks**:
+      - Updated `scanFolderForTagger()` and `scanAlbumDirectory()` in `src/lib/server/tagger.ts` using `fs.accessSync(..., fs.constants.W_OK)` to test write permissions on directories and individual audio files before applying tags.
+      - Propagated `is_writable`, `permission_error`, `permission_path`, and `unwritable_files` via match endpoints (`/api/tagger/folder/match` and `/api/tagger/albums/[id]/match`).
+    - **Actionable Permission Banner & UI Diagnostics**:
+      - Added a persistent amber alert banner in `src/routes/tagger/+page.svelte` when a folder or album is detected as read-only, displaying the path, reason, and a 1-click copyable shell command: `chmod -R u+rw "<folder>"`.
+    - **HTTP 403 Response & Elimination of Swallowed Errors**:
+      - Stopped silently swallowing `EACCES`, `EPERM`, and `EROFS` errors in `writeTagsToAudioFile()` and `downloadAndSaveCover()`.
+      - Tag apply endpoints (`/api/tagger/folder/apply` and `/api/tagger/albums/[id]/apply`) now return HTTP 403 Forbidden when permission errors prevent updating files or saving covers, returning granular details on affected files.
+      - Status toast in `/tagger` explicitly shows failure reasons and copyable fix commands instead of false positive successes.
 
 ---
 

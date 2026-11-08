@@ -246,6 +246,29 @@ export function alignTracks(
 }
 
 /**
+ * Detects whether an error represents a filesystem permission, access denied, or read-only failure
+ */
+export function isPermissionError(err: any): boolean {
+	const code = err?.code || '';
+	const msg = String(err?.message || err || '');
+	return (
+		code === 'EACCES' ||
+		code === 'EPERM' ||
+		code === 'EROFS' ||
+		/permission denied|read-only file system|operation not permitted|access denied/i.test(msg)
+	);
+}
+
+/**
+ * Formats a clear, descriptive permission error with exact path and host fix instructions
+ */
+export function formatPermissionError(targetPath: string, err?: any): string {
+	const code = err?.code || 'EACCES';
+	const sysMsg = err?.message || 'Permission denied';
+	return `File Permission Denied (${code}): Trax Vault does not have write access to "${targetPath}". If running in Docker, ensure your music folder is mounted read-write (:rw) and that the files on your host have write permissions (e.g. chmod -R u+rw /path/to/music or chown -R 1000:1000 /path/to/music). Details: ${sysMsg}`;
+}
+
+/**
  * Writes audio tags directly into the target audio file on disk
  */
 export async function writeTagsToAudioFile(
@@ -261,10 +284,19 @@ export async function writeTagsToAudioFile(
 		genre?: string;
 		comment?: string;
 	}
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; isPermissionDenied?: boolean }> {
 	try {
 		if (!fs.existsSync(filePath)) {
 			return { success: false, error: `File not found on disk: ${filePath}` };
+		}
+
+		// Proactively verify write access before modifying
+		try {
+			fs.accessSync(filePath, fs.constants.W_OK);
+		} catch (accessErr: any) {
+			const permErr = formatPermissionError(filePath, accessErr);
+			console.error(`Permission check failed for ${filePath}:`, permErr);
+			return { success: false, error: permErr, isPermissionDenied: true };
 		}
 
 		const fileBuffer = fs.readFileSync(filePath);
@@ -312,13 +344,22 @@ export async function writeTagsToAudioFile(
 						const stream = file.stream() as any;
 						const updatedBytes = typeof stream.data === 'function' ? stream.data().data : null;
 						if (updatedBytes && updatedBytes.length > 0) {
-							fs.writeFileSync(filePath, Buffer.from(updatedBytes));
-							return { success: true };
+							try {
+								fs.writeFileSync(filePath, Buffer.from(updatedBytes));
+								return { success: true };
+							} catch (wErr: any) {
+								const permErr = formatPermissionError(filePath, wErr);
+								console.error(`Write error saving tags to ${filePath}:`, permErr);
+								return { success: false, error: permErr, isPermissionDenied: isPermissionError(wErr) };
+							}
 						}
 					}
 				}
 			}
 		} catch (refErr: any) {
+			if (isPermissionError(refErr)) {
+				return { success: false, error: formatPermissionError(filePath, refErr), isPermissionDenied: true };
+			}
 			console.warn(`FileRef write attempt failed for ${filename}, falling back to writeTags:`, refErr.message);
 		}
 
@@ -340,11 +381,22 @@ export async function writeTagsToAudioFile(
 			return { success: false, error: 'TagLib failed to encode updated tags for file format.' };
 		}
 
-		fs.writeFileSync(filePath, Buffer.from(updatedBytes));
-		return { success: true };
+		try {
+			fs.writeFileSync(filePath, Buffer.from(updatedBytes));
+			return { success: true };
+		} catch (wErr: any) {
+			const permErr = formatPermissionError(filePath, wErr);
+			console.error(`Write error saving tags (fallback) to ${filePath}:`, permErr);
+			return { success: false, error: permErr, isPermissionDenied: isPermissionError(wErr) };
+		}
 	} catch (err: any) {
 		console.error(`Failed to write tags to ${filePath}:`, err);
-		return { success: false, error: err.message || 'Unknown error writing tags' };
+		const isPerm = isPermissionError(err);
+		return {
+			success: false,
+			error: isPerm ? formatPermissionError(filePath, err) : (err.message || 'Unknown error writing tags'),
+			isPermissionDenied: isPerm
+		};
 	}
 }
 
@@ -356,7 +408,7 @@ export async function downloadAndSaveCover(
 	albumFolderOrFolders: string | string[],
 	imageUrl: string,
 	fallbackUrls: string[] = []
-): Promise<{ success: boolean; coverPath?: string; error?: string }> {
+): Promise<{ success: boolean; coverPath?: string; error?: string; isPermissionDenied?: boolean }> {
 	try {
 		const targetFolders = (Array.isArray(albumFolderOrFolders) ? albumFolderOrFolders : [albumFolderOrFolders])
 			.filter(Boolean)
@@ -367,18 +419,36 @@ export async function downloadAndSaveCover(
 			return { success: false, error: `None of the target album directories exist: ${targetFolders.join(', ')}` };
 		}
 
+		// Proactively check write permissions on target folders
+		for (const folder of validFolders) {
+			try {
+				fs.accessSync(folder, fs.constants.W_OK);
+			} catch (permErr: any) {
+				const formatted = formatPermissionError(folder, permErr);
+				console.error(`[CoverArt] Folder is not writable:`, formatted);
+				return { success: false, error: formatted, isPermissionDenied: true };
+			}
+		}
+
 		// Helper to write downloaded buffer to all folders
 		const saveCoverBuffer = (buffer: Buffer, isPng = false): string => {
 			let firstSavedPath = '';
 			for (const folder of validFolders) {
 				const standardJpgPath = path.join(folder, 'cover.jpg');
-				fs.writeFileSync(standardJpgPath, buffer);
-				if (isPng) {
-					try {
-						fs.writeFileSync(path.join(folder, 'cover.png'), buffer);
-					} catch {}
+				try {
+					fs.writeFileSync(standardJpgPath, buffer);
+					if (isPng) {
+						try {
+							fs.writeFileSync(path.join(folder, 'cover.png'), buffer);
+						} catch (pngErr: any) {
+							console.warn('[CoverArt] Warning: Could not write cover.png:', pngErr.message);
+						}
+					}
+					if (!firstSavedPath) firstSavedPath = standardJpgPath;
+				} catch (writeErr: any) {
+					console.error(`[CoverArt] Failed to write cover file at ${standardJpgPath}:`, writeErr);
+					throw new Error(formatPermissionError(standardJpgPath, writeErr));
 				}
-				if (!firstSavedPath) firstSavedPath = standardJpgPath;
 			}
 			return firstSavedPath;
 		};
@@ -580,7 +650,14 @@ export async function downloadAndSaveCover(
 		return { success: false, error: 'Cover artwork could not be found or downloaded.' };
 	} catch (err: any) {
 		console.warn('Cover download error:', err.message);
-		return { success: false, error: err.message || 'Failed to download cover' };
+		const isPerm = isPermissionError(err);
+		return {
+			success: false,
+			error: isPerm
+				? formatPermissionError(Array.isArray(albumFolderOrFolders) ? albumFolderOrFolders[0] : albumFolderOrFolders, err)
+				: (err.message || 'Failed to download cover'),
+			isPermissionDenied: isPerm
+		};
 	}
 }
 
@@ -611,10 +688,14 @@ export async function applyAlbumTags(
 ): Promise<{
 	success: boolean;
 	updatedTracksCount: number;
+	totalAttempted: number;
 	album: Album;
 	tracks: Track[];
 	coverPath?: string;
 	coverDownloaded?: boolean;
+	coverError?: string | null;
+	fileErrors: Array<{ file: string; path: string; error: string; isPermissionDenied?: boolean }>;
+	hasPermissionErrors: boolean;
 	error?: string;
 }> {
 	const albumRes = getAlbumWithTracks(albumId);
@@ -647,6 +728,7 @@ export async function applyAlbumTags(
 
 	// 1. Write embedded audio tags to each confirmed track file on disk FIRST
 	let updatedTracksCount = 0;
+	const fileErrors: Array<{ file: string; path: string; error: string; isPermissionDenied?: boolean }> = [];
 	const trackUpdates: Array<{
 		id: number;
 		title: string;
@@ -669,7 +751,7 @@ export async function applyAlbumTags(
 		// Write to file on disk if path can be resolved
 		const diskPath = resolveTrackFilePath(localTr);
 		if (diskPath && fs.existsSync(diskPath)) {
-			await writeTagsToAudioFile(diskPath, {
+			const tagResult = await writeTagsToAudioFile(diskPath, {
 				title: targetTitle,
 				artist: targetArtist,
 				albumArtist: targetAlbumArtist,
@@ -677,6 +759,24 @@ export async function applyAlbumTags(
 				year: options.updateYear && release.release_year ? release.release_year : (album.release_year || undefined),
 				track: targetTrackNum,
 				disc: targetDiscNum
+			});
+
+			if (tagResult.success) {
+				updatedTracksCount++;
+			} else {
+				console.warn(`Failed writing tags to ${diskPath}:`, tagResult.error);
+				fileErrors.push({
+					file: path.basename(diskPath),
+					path: diskPath,
+					error: tagResult.error || 'Write error',
+					isPermissionDenied: tagResult.isPermissionDenied
+				});
+			}
+		} else {
+			fileErrors.push({
+				file: localTr.file_path || `Track ${targetTrackNum}`,
+				path: diskPath || '',
+				error: 'Audio file not found on disk'
 			});
 		}
 
@@ -687,12 +787,12 @@ export async function applyAlbumTags(
 			track_number: targetTrackNum,
 			disc_number: targetDiscNum
 		});
-		updatedTracksCount++;
 	}
 
 	// 2. Download cover art if requested and available (non-blocking)
 	let newCoverUrl = album.cover_url;
-	let coverRes: { success: boolean; coverPath?: string; error?: string } | undefined;
+	let coverRes: { success: boolean; coverPath?: string; error?: string; isPermissionDenied?: boolean } | undefined;
+	let coverError: string | null = null;
 	if (options.updateCover && targetFoldersList.length > 0) {
 		try {
 			const fallbacks = [
@@ -710,9 +810,12 @@ export async function applyAlbumTags(
 				const relPath = path.relative(musicDir, coverRes.coverPath);
 				const containerPath = `/music/${relPath.replace(/^\/+/, '')}`;
 				newCoverUrl = `/api/library/cover?path=${encodeURIComponent(containerPath)}&t=${Date.now()}`;
+			} else if (coverRes.error) {
+				coverError = coverRes.error;
 			}
 		} catch (covErr: any) {
 			console.warn('Cover art download failed non-fatally in applyAlbumTags:', covErr.message);
+			coverError = covErr.message;
 		}
 	}
 
@@ -766,13 +869,27 @@ export async function applyAlbumTags(
 		invalidateScanCache(folder);
 	}
 
+	const hasPermissionErrors =
+		fileErrors.some((e) => e.isPermissionDenied) ||
+		(coverError ? isPermissionError({ message: coverError }) : false);
+
+	const overallError =
+		fileErrors.find((e) => e.isPermissionDenied)?.error ||
+		fileErrors[0]?.error ||
+		(coverError && isPermissionError({ message: coverError }) ? coverError : undefined);
+
 	return {
-		success: true,
+		success: updatedTracksCount > 0 && fileErrors.length === 0,
 		updatedTracksCount,
+		totalAttempted: confirmedMatches.length,
 		album: updated.album,
 		tracks: updated.tracks,
 		coverPath: coverRes?.coverPath || undefined,
-		coverDownloaded: Boolean(coverRes?.success && coverRes?.coverPath)
+		coverDownloaded: Boolean(coverRes?.success && coverRes?.coverPath),
+		coverError,
+		fileErrors,
+		hasPermissionErrors,
+		error: overallError
 	};
 }
 
@@ -807,6 +924,9 @@ export async function scanFolderForTagger(folderPath: string): Promise<{
 	existing_album_id: number | null;
 	tracks: Track[];
 	raw_tracks: ScannedTrack[];
+	is_writable: boolean;
+	permission_error: string | null;
+	unwritable_files: string[];
 }> {
 	const musicDir = getMusicDirectory();
 	let canonicalMusicDir: string;
@@ -935,6 +1055,29 @@ export async function scanFolderForTagger(folderPath: string): Promise<{
 		updated_at: new Date().toISOString()
 	}));
 
+	// Verify write permissions for target folder and all audio files
+	let isWritable = true;
+	let permissionError: string | null = null;
+	try {
+		fs.accessSync(canonicalTarget, fs.constants.W_OK);
+	} catch (pErr: any) {
+		isWritable = false;
+		permissionError = formatPermissionError(canonicalTarget, pErr);
+	}
+
+	const unwritableFiles: string[] = [];
+	for (const file of audioFiles) {
+		try {
+			fs.accessSync(file, fs.constants.W_OK);
+		} catch {
+			unwritableFiles.push(path.basename(file));
+		}
+	}
+	if (unwritableFiles.length > 0 && isWritable) {
+		isWritable = false;
+		permissionError = `Permission denied: Trax Vault cannot write to ${unwritableFiles.length} audio file(s) in this folder (e.g. ${unwritableFiles.slice(0, 3).join(', ')}).`;
+	}
+
 	return {
 		folder_path: canonicalTarget,
 		folder_name: path.basename(canonicalTarget),
@@ -946,7 +1089,10 @@ export async function scanFolderForTagger(folderPath: string): Promise<{
 		already_in_vault: alreadyInVault,
 		existing_album_id: existingAlbumId,
 		tracks,
-		raw_tracks: rawTracks
+		raw_tracks: rawTracks,
+		is_writable: isWritable,
+		permission_error: permissionError,
+		unwritable_files: unwritableFiles
 	};
 }
 
@@ -976,6 +1122,7 @@ export async function applyFolderTags(
 ): Promise<{
 	success: boolean;
 	updatedTracksCount: number;
+	totalAttempted: number;
 	importedAlbumId?: number | null;
 	folderTitle?: string;
 	folderArtist?: string;
@@ -983,6 +1130,9 @@ export async function applyFolderTags(
 	coverUrl?: string | null;
 	coverPath?: string;
 	coverDownloaded?: boolean;
+	coverError?: string | null;
+	fileErrors: Array<{ file: string; path: string; error: string; isPermissionDenied?: boolean }>;
+	hasPermissionErrors: boolean;
 	error?: string;
 }> {
 	const folderData = await scanFolderForTagger(folderPath);
@@ -1012,6 +1162,7 @@ export async function applyFolderTags(
 
 	// 1. Write audio tags to disk FIRST so verified tags are safely persisted even if cover fails
 	let updatedTracksCount = 0;
+	const fileErrors: Array<{ file: string; path: string; error: string; isPermissionDenied?: boolean }> = [];
 	const targetAlbumTitle = options.updateAlbumTitle ? release.title : folderData.folder_title;
 	const targetArtist = options.updateArtist ? release.artist : folderData.folder_artist;
 	const targetYear =
@@ -1042,7 +1193,19 @@ export async function applyFolderTags(
 				updatedTracksCount++;
 			} else {
 				console.warn(`Failed writing tags to ${diskPath}:`, tagResult.error);
+				fileErrors.push({
+					file: path.basename(diskPath),
+					path: diskPath,
+					error: tagResult.error || 'Write error',
+					isPermissionDenied: tagResult.isPermissionDenied
+				});
 			}
+		} else {
+			fileErrors.push({
+				file: localTr?.file_path ? path.basename(localTr.file_path) : `Track ${match.trackNumber}`,
+				path: diskPath || '',
+				error: 'Audio file not found on disk'
+			});
 		}
 	}
 
@@ -1050,6 +1213,7 @@ export async function applyFolderTags(
 	let coverPath: string | undefined;
 	let coverUrl: string | null = folderData.cover_url;
 	let coverDownloaded = false;
+	let coverError: string | null = null;
 	if (options.updateCover) {
 		try {
 			const fallbacks = [
@@ -1068,9 +1232,12 @@ export async function applyFolderTags(
 				const relPath = path.relative(canonicalMusicDir, coverPath);
 				const containerPath = `/music/${relPath.replace(/^\/+/, '')}`;
 				coverUrl = `/api/library/cover?path=${encodeURIComponent(containerPath)}&t=${Date.now()}`;
+			} else if (coverRes.error) {
+				coverError = coverRes.error;
 			}
 		} catch (covErr: any) {
 			console.warn('Cover art download failed non-fatally in applyFolderTags:', covErr.message);
+			coverError = covErr.message;
 		}
 	}
 
@@ -1214,16 +1381,30 @@ export async function applyFolderTags(
 		});
 	}
 
+	const hasPermissionErrors =
+		fileErrors.some((e) => e.isPermissionDenied) ||
+		(coverError ? isPermissionError({ message: coverError }) : false);
+
+	const overallError =
+		fileErrors.find((e) => e.isPermissionDenied)?.error ||
+		fileErrors[0]?.error ||
+		(coverError && isPermissionError({ message: coverError }) ? coverError : undefined);
+
 	return {
-		success: true,
+		success: updatedTracksCount > 0 && fileErrors.length === 0,
 		updatedTracksCount,
+		totalAttempted: confirmedMatches.length,
 		importedAlbumId,
 		folderTitle: targetAlbumTitle,
 		folderArtist: targetArtist,
 		folderYear: targetYear || null,
 		coverUrl,
 		coverPath,
-		coverDownloaded: Boolean(coverPath && fs.existsSync(coverPath))
+		coverDownloaded: Boolean(coverPath && fs.existsSync(coverPath)),
+		coverError,
+		fileErrors,
+		hasPermissionErrors,
+		error: overallError
 	};
 }
 

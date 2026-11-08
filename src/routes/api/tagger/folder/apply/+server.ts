@@ -43,16 +43,51 @@ export const POST: RequestHandler = async ({ request }) => {
 			}
 		);
 
+		if (result.hasPermissionErrors) {
+			return json({
+				success: false,
+				error: result.error || 'Permission denied: Trax Vault cannot write to audio files or folder.',
+				updatedTracksCount: result.updatedTracksCount,
+				totalAttempted: result.totalAttempted,
+				importedAlbumId: result.importedAlbumId || null,
+				folderTitle: result.folderTitle,
+				folderArtist: result.folderArtist,
+				folderYear: result.folderYear,
+				coverUrl: result.coverUrl,
+				coverPath: result.coverPath || null,
+				coverDownloaded: result.coverDownloaded || false,
+				coverError: result.coverError || null,
+				fileErrors: result.fileErrors || [],
+				hasPermissionErrors: true
+			}, { status: 403 });
+		}
+
+		if (result.updatedTracksCount === 0 && result.totalAttempted > 0) {
+			return json({
+				success: false,
+				error: result.error || 'Failed to write tags to any audio files on disk.',
+				updatedTracksCount: 0,
+				totalAttempted: result.totalAttempted,
+				fileErrors: result.fileErrors || [],
+				coverError: result.coverError || null,
+				hasPermissionErrors: false
+			}, { status: 500 });
+		}
+
 		return json({
 			success: true,
 			updatedTracksCount: result.updatedTracksCount,
+			totalAttempted: result.totalAttempted,
 			importedAlbumId: result.importedAlbumId || null,
 			folderTitle: result.folderTitle,
 			folderArtist: result.folderArtist,
 			folderYear: result.folderYear,
 			coverUrl: result.coverUrl,
 			coverPath: result.coverPath || null,
-			coverDownloaded: result.coverDownloaded || false
+			coverDownloaded: result.coverDownloaded || false,
+			coverError: result.coverError || null,
+			fileErrors: result.fileErrors || [],
+			hasPermissionErrors: false
 		});
 	} catch (err: any) {
 		console.error('Failed to apply folder tags:', err);

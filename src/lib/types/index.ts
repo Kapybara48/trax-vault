@@ -236,6 +236,8 @@ export interface ScannedFolderItem {
 	track_count: number;
 	already_in_vault: boolean;
 	cover_url: string | null;
+	is_writable?: boolean;
+	permission_error?: string | null;
 }
 
 export interface ScannedTrack {
