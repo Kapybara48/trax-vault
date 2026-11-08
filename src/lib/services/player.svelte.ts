@@ -51,7 +51,7 @@ class GlobalPlayer {
 			} catch {}
 		}
 
-		el.volume = this.isMuted ? 0 : this.volume;
+		el.volume = this.getEffectiveGain();
 
 		el.ontimeupdate = () => {
 			this.currentTime = el.currentTime;
@@ -298,6 +298,16 @@ class GlobalPlayer {
 		this.currentTime = clamped;
 	}
 
+	/**
+	 * Computes human-perceived logarithmic audio gain from linear slider volume (0..1)
+	 * Standard audio power taper (gamma = 2.2) provides a natural loudness transition
+	 * across the entire slider range, eliminating abrupt drops.
+	 */
+	getEffectiveGain(): number {
+		if (this.isMuted || this.volume <= 0) return 0;
+		return Math.min(1, Math.max(0, Math.pow(this.volume, 2.2)));
+	}
+
 	setVolume(val: number) {
 		const clamped = Math.max(0, Math.min(1, val));
 		this.volume = clamped;
@@ -305,7 +315,7 @@ class GlobalPlayer {
 			this.isMuted = false;
 		}
 		if (this.audioEl) {
-			this.audioEl.volume = this.isMuted ? 0 : this.volume;
+			this.audioEl.volume = this.getEffectiveGain();
 		}
 		try {
 			localStorage.setItem('traxvault_player_volume', clamped.toString());
@@ -315,7 +325,7 @@ class GlobalPlayer {
 	toggleMute() {
 		this.isMuted = !this.isMuted;
 		if (this.audioEl) {
-			this.audioEl.volume = this.isMuted ? 0 : this.volume;
+			this.audioEl.volume = this.getEffectiveGain();
 		}
 	}
 

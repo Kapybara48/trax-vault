@@ -729,6 +729,22 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added real-time filename diff preview pills under each track in the alignment table displaying the exact planned rename: `📁 Rename: raw_track.mp3 ➔ 01. Artist - Title.mp3 (with .lrc)`.
       - Updated action buttons and success notifications to display the exact number of files and companion lyrics renamed on disk.
 
+51. **Player UX Refinements & Natural Acoustic Controls (v1.7.11)**:
+    - **Perceptual Logarithmic / Exponential Volume Curve**:
+      - Replaced raw linear HTML5 audio volume with a natural psychoacoustic volume curve (`Math.pow(volume, 2.2)`) via `getEffectiveGain()` in `src/lib/services/player.svelte.ts`.
+      - Provides human-ear proportional loudness scaling (`loud > less loud > even less loud > quiet`) across the entire slider range, eliminating artificial loudness cliffs where volume remained high until near zero.
+    - **Lyrics Manual Scroll-Lock & Interactive Sync Pill**:
+      - Distinguishes manual user scrolling (`onwheel`, `ontouchmove`, `onpointerdown`) from programmatic playback tracking in `src/routes/player/+page.svelte`.
+      - Freezes auto-scroll when user browses lyrics so viewport is no longer forcefully yanked back to the current singing line.
+      - Displays a floating glassmorphic **"Sync with song"** pill with smooth animations. Clicking it (or clicking any lyric line or changing tracks) immediately resumes auto-scroll and smoothly re-centers the current vocal line.
+    - **Global Spacebar Play / Pause Shortcut**:
+      - Registered global `window.onkeydown` handler in root `src/routes/+layout.svelte` ensuring Spacebar immediately pauses/plays audio across any page without causing default browser page-down scrolling.
+      - Robust focus safeguarding: exempts `input`, `textarea`, `select`, `contentEditable`, `role="textbox"`, and open dialog modals (`dialog, [role="dialog"]`).
+      - Coordinated with `/player` local keyboard dispatcher to prevent duplicate toggling.
+    - **Compact & Modern Slider Thumb Styling**:
+      - Added `.slider-compact` styling in `src/routes/layout.css` for both WebKit and Firefox (`::-webkit-slider-thumb` and `::-moz-range-thumb`).
+      - Replaced oversized browser default 20px slider thumbs with sleek 10px circular thumbs with 1.25x hover scaling, emerald green accent, white border, and subtle drop shadow across player scrubbers and volume faders.
+
 ---
 
 ## 4. Workflows & Verification

@@ -33,7 +33,8 @@
 		Globe,
 		Lock,
 		AlertTriangle,
-		Library
+		Library,
+		Compass
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -69,6 +70,7 @@
 	let isInstrumentalLyrics = $state(false);
 	let instrumentalMarker = $state('♪');
 	let lyricsContainerEl: HTMLDivElement | null = $state(null);
+	let userScrolledLyrics = $state(false);
 
 	// "Add to Playlist" Modal State
 	let showPlaylistModal = $state(false);
@@ -213,9 +215,9 @@
 		return idx;
 	});
 
-	// Auto-scroll lyrics smoothly to active line
+	// Auto-scroll lyrics smoothly to active line (unless user has manually scrolled)
 	$effect(() => {
-		if (showLyricsDrawer && activeLyricLineIndex >= 0 && lyricsContainerEl) {
+		if (showLyricsDrawer && activeLyricLineIndex >= 0 && lyricsContainerEl && !userScrolledLyrics) {
 			const el = document.getElementById(`lyrics-line-${activeLyricLineIndex}`);
 			if (el) {
 				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -225,6 +227,7 @@
 
 	// Fetch Lyrics for current track
 	async function loadLyricsForCurrentTrack() {
+		userScrolledLyrics = false;
 		const track = player.currentTrack;
 		if (!track) {
 			lyricsLines = [];
@@ -577,13 +580,22 @@
 
 	// Global Keyboard Shortcuts
 	function handleKeyDown(e: KeyboardEvent) {
-		const target = e.target as HTMLElement;
-		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+		const target = e.target as HTMLElement | null;
+		if (
+			target &&
+			(target.tagName === 'INPUT' ||
+				target.tagName === 'TEXTAREA' ||
+				target.tagName === 'SELECT' ||
+				target.isContentEditable ||
+				target.getAttribute('role') === 'textbox' ||
+				target.closest('dialog, [role="dialog"]'))
+		) {
 			return;
 		}
 
-		if (e.code === 'Space') {
+		if (e.code === 'Space' || e.key === ' ') {
 			e.preventDefault();
+			e.stopPropagation();
 			player.togglePlay();
 		} else if (e.code === 'ArrowLeft') {
 			e.preventDefault();
@@ -1040,56 +1052,94 @@
 					</div>
 				</div>
 
-				<!-- Lyrics Scrollable Body -->
-				<div class="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col min-h-0">
-					{#if lyricsLoading}
-						<div class="flex-1 flex flex-col items-center justify-center text-xs text-neutral-400 gap-2">
-							<div class="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
-							<span>Loading synced lyrics...</span>
-						</div>
-					{:else if isInstrumentalLyrics}
-						<div class="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
-							<div class="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center justify-center text-3xl font-serif shadow-lg">
-								♪
+				<!-- Lyrics Scrollable Body Container -->
+				<div class="relative flex-1 min-h-0 flex flex-col">
+					<div
+						class="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col min-h-0"
+						onwheel={() => {
+							userScrolledLyrics = true;
+						}}
+						ontouchmove={() => {
+							userScrolledLyrics = true;
+						}}
+						onpointerdown={(e) => {
+							if (e.target === e.currentTarget) {
+								userScrolledLyrics = true;
+							}
+						}}
+					>
+						{#if lyricsLoading}
+							<div class="flex-1 flex flex-col items-center justify-center text-xs text-neutral-400 gap-2">
+								<div class="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+								<span>Loading synced lyrics...</span>
 							</div>
-							<div>
-								<h4 class="text-base font-bold text-white">Instrumental Track</h4>
-								<p class="text-xs text-purple-300/80 mt-1">This song contains no vocal lyrics</p>
+						{:else if isInstrumentalLyrics}
+							<div class="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
+								<div class="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center justify-center text-3xl font-serif shadow-lg">
+									♪
+								</div>
+								<div>
+									<h4 class="text-base font-bold text-white">Instrumental Track</h4>
+									<p class="text-xs text-purple-300/80 mt-1">This song contains no vocal lyrics</p>
+								</div>
+								<div class="text-[11px] font-mono text-neutral-400 bg-neutral-950 px-3 py-1.5 rounded-xl border border-neutral-800">
+									[00:00.00]{instrumentalMarker}
+								</div>
 							</div>
-							<div class="text-[11px] font-mono text-neutral-400 bg-neutral-950 px-3 py-1.5 rounded-xl border border-neutral-800">
-								[00:00.00]{instrumentalMarker}
+						{:else if lyricsLines.length > 0}
+							<div bind:this={lyricsContainerEl} class="max-w-2xl mx-auto w-full space-y-2 py-8 px-2">
+								{#each lyricsLines as line, i}
+									{@const isActive = activeLyricLineIndex === i}
+									<button
+										type="button"
+										id={`lyrics-line-${i}`}
+										onclick={() => {
+											if (line.time !== null) {
+												player.seekTo(line.time);
+												userScrolledLyrics = false;
+											}
+										}}
+										class="w-full text-left cursor-pointer rounded-2xl px-4 py-2.5 text-[17px] font-semibold leading-relaxed border transition-all duration-200 {isActive
+											? 'text-emerald-300 bg-emerald-950/40 border-emerald-500/40 drop-shadow-[0_0_14px_rgba(16,185,129,0.4)] scale-[1.01]'
+											: i < activeLyricLineIndex
+											? 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-neutral-800/30'
+											: 'text-neutral-300 border-transparent hover:text-white hover:bg-neutral-800/30'}"
+									>
+										{line.text}
+									</button>
+								{/each}
 							</div>
-						</div>
-					{:else if lyricsLines.length > 0}
-						<div bind:this={lyricsContainerEl} class="max-w-2xl mx-auto w-full space-y-2 py-8 px-2">
-							{#each lyricsLines as line, i}
-								{@const isActive = activeLyricLineIndex === i}
-								<button
-									type="button"
-									id={`lyrics-line-${i}`}
-									onclick={() => line.time !== null && player.seekTo(line.time)}
-									class="w-full text-left cursor-pointer rounded-2xl px-4 py-2.5 text-[17px] font-semibold leading-relaxed border transition-all duration-200 {isActive
-										? 'text-emerald-300 bg-emerald-950/40 border-emerald-500/40 drop-shadow-[0_0_14px_rgba(16,185,129,0.4)] scale-[1.01]'
-										: i < activeLyricLineIndex
-										? 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-neutral-800/30'
-										: 'text-neutral-300 border-transparent hover:text-white hover:bg-neutral-800/30'}"
-								>
-									{line.text}
-								</button>
-							{/each}
-						</div>
-					{:else}
-						<div class="flex-1 flex flex-col items-center justify-center text-center p-6 text-neutral-500 space-y-3">
-							<Mic class="w-10 h-10 opacity-30" />
-							<p class="text-xs">No lyrics found for this song.</p>
-							{#if player.currentTrack}
-								<a
-									href="/lrc-maker?trackId={player.currentTrack.id}"
-									class="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-xs font-semibold transition"
-								>
-									Create Synced Lyrics &rarr;
-								</a>
-							{/if}
+						{:else}
+							<div class="flex-1 flex flex-col items-center justify-center text-center p-6 text-neutral-500 space-y-3">
+								<Mic class="w-10 h-10 opacity-30" />
+								<p class="text-xs">No lyrics found for this song.</p>
+								{#if player.currentTrack}
+									<a
+										href="/lrc-maker?trackId={player.currentTrack.id}"
+										class="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-xs font-semibold transition"
+									>
+										Create Synced Lyrics &rarr;
+									</a>
+								{/if}
+							</div>
+						{/if}
+					</div>
+
+					<!-- Floating "Sync with song" Button when user has scrolled away -->
+					{#if userScrolledLyrics && activeLyricLineIndex >= 0 && lyricsLines.length > 0}
+						<div class="absolute bottom-5 inset-x-0 flex justify-center pointer-events-none z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
+							<button
+								type="button"
+								onclick={() => {
+									userScrolledLyrics = false;
+									const el = document.getElementById(`lyrics-line-${activeLyricLineIndex}`);
+									el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+								}}
+								class="pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-600/95 hover:bg-emerald-500 text-white text-xs font-bold shadow-2xl backdrop-blur-md border border-emerald-400/40 cursor-pointer transition hover:scale-105 active:scale-95"
+							>
+								<Compass class="w-3.5 h-3.5" />
+								<span>Sync with song</span>
+							</button>
 						</div>
 					{/if}
 				</div>
@@ -1918,7 +1968,7 @@
 						max={player.duration || 100}
 						value={player.currentTime}
 						oninput={(e) => player.seekTo(parseFloat(e.currentTarget.value))}
-						class="w-full h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+						class="w-full h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 slider-compact"
 					/>
 				</div>
 				<span class="w-9 text-left tabular-nums">{formatTime(player.duration)}</span>
@@ -1975,7 +2025,7 @@
 					step="0.01"
 					value={player.isMuted ? 0 : player.volume}
 					oninput={(e) => player.setVolume(parseFloat(e.currentTarget.value))}
-					class="w-16 sm:w-20 h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+					class="w-16 sm:w-20 h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 slider-compact"
 				/>
 			</div>
 		</div>

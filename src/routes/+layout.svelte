@@ -22,7 +22,34 @@
 			player.init(audioElement);
 		}
 	});
+
+	function handleGlobalKeyDown(e: KeyboardEvent) {
+		if (isPlayerPage) return;
+
+		const target = e.target as HTMLElement | null;
+		if (
+			target &&
+			(target.tagName === 'INPUT' ||
+				target.tagName === 'TEXTAREA' ||
+				target.tagName === 'SELECT' ||
+				target.isContentEditable ||
+				target.getAttribute('role') === 'textbox' ||
+				target.closest('dialog, [role="dialog"]'))
+		) {
+			return;
+		}
+
+		if (e.code === 'Space' || e.key === ' ') {
+			if (player.currentTrack || player.activeQueue.length > 0) {
+				e.preventDefault();
+				e.stopPropagation();
+				player.togglePlay();
+			}
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleGlobalKeyDown} />
 
 <svelte:head>
 	<title>Trax Vault - Music Quality & Lyrics Tracker</title>

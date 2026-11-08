@@ -124,7 +124,7 @@
 						step="0.1"
 						value={player.currentTime}
 						oninput={(e) => player.seekTo(parseFloat(e.currentTarget.value))}
-						class="w-full h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+						class="w-full h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 slider-compact"
 					/>
 				</div>
 				<span class="w-7 sm:w-8 text-left shrink-0">{formatTime(player.duration)}</span>
@@ -157,7 +157,7 @@
 					step="0.01"
 					value={player.isMuted ? 0 : player.volume}
 					oninput={(e) => player.setVolume(parseFloat(e.currentTarget.value))}
-					class="w-14 sm:w-20 h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 hidden md:block"
+					class="w-14 sm:w-20 h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 hidden md:block slider-compact"
 					title="Volume"
 				/>
 			</div>
