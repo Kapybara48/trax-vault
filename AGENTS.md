@@ -795,6 +795,16 @@ This document preserves persistent context, architectural conventions, recent ch
       - Removed instructional hint boxes ("💡 Drag files from here to pair / Drop here to unpair") and missing tracks alert banners.
       - Retained all rich Picard drag-and-drop mechanics, quick-swap dropdowns, and file rename indications in compact inline form.
 
+55. **Multi-Step Tagger Studio Wizard (v1.7.15)**:
+    - **Step 1: Album & MusicBrainz Release Picker**:
+      - Comfortable library sidebar navigation (Vault Albums vs Scanned Folders) with search and filters.
+      - Full album hero with local artwork preview, query search bar, MBID direct lookup, and high-visibility release candidate cards grid.
+      - Prominent primary CTA: `Next: Connect Songs ({count} tracks) ➔`.
+    - **Step 2: Full-Screen Song Connector**:
+      - 100% full-screen workspace with library sidebar, search inputs, and release candidates hidden.
+      - Sleek ~42px top bar with `← Change Release` return button, mini artwork, match confidence score, options pills (`Rename`, `Cover`, `Import`), and `Write Tags ({count})` button.
+      - 2-column layout (Column 1: Storage files, Column 2: Dual-subcolumn alignment) with ultra-compact 28px (`h-7`) rows fitting all songs on screen.
+
 ---
 
 ## 4. Workflows & Verification

@@ -148,8 +148,11 @@
 	let previewArtworkSource = $state<string>('');
 	let previewArtworkTab = $state<'musicbrainz' | 'local'>('musicbrainz');
 
-	// Toggle full cover comparison & candidate grid details
-	let showReleaseDetails = $state(false);
+	// Wizard Step: 1 = Select Album & MusicBrainz Release, 2 = Full-Screen Song Connector
+	let taggerStep = $state<1 | 2>(1);
+
+	// Toggle full cover comparison & candidate grid details in Step 1
+	let showReleaseDetails = $state(true);
 
 	let currentCoverUrl = $derived(
 		taggerMode === 'albums' ? selectedAlbum?.cover_url : currentFolderData?.cover_url
@@ -974,32 +977,57 @@
 </svelte:head>
 
 <div class="w-full px-3 sm:px-5 lg:px-6 py-3 space-y-3">
-	<!-- Minimal Studio Header -->
+	<!-- Studio Header with Wizard Step Indicator -->
 	<div class="flex items-center justify-between gap-3">
-		<div class="flex items-center gap-2.5 min-w-0">
+		<div class="flex items-center gap-3 min-w-0">
 			<Tag class="h-4 w-4 text-emerald-400 shrink-0" />
 			<h1 class="text-base sm:text-lg font-black text-white flex items-center gap-2 truncate">
 				<span>MusicBrainz Auto-Tagger</span>
 			</h1>
+
+			<!-- Step Indicator Tabs -->
+			<div class="flex items-center p-0.5 rounded-xl bg-neutral-950 border border-neutral-800 text-xs">
+				<button
+					type="button"
+					onclick={() => (taggerStep = 1)}
+					class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition font-semibold cursor-pointer {taggerStep === 1 ? 'bg-emerald-600 text-white shadow' : 'text-neutral-400 hover:text-white'}"
+				>
+					<span class="rounded-full w-4 h-4 flex items-center justify-center text-[10px] {taggerStep === 1 ? 'bg-white text-emerald-900 font-bold' : 'bg-neutral-800 text-neutral-400'}">1</span>
+					<span>Select Release</span>
+				</button>
+				<button
+					type="button"
+					onclick={() => {
+						if (releaseDetail && matches.length > 0) taggerStep = 2;
+					}}
+					disabled={!releaseDetail || matches.length === 0}
+					class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition font-semibold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer {taggerStep === 2 ? 'bg-emerald-600 text-white shadow' : 'text-neutral-400 hover:text-white'}"
+				>
+					<span class="rounded-full w-4 h-4 flex items-center justify-center text-[10px] {taggerStep === 2 ? 'bg-white text-emerald-900 font-bold' : 'bg-neutral-800 text-neutral-400'}">2</span>
+					<span>Connect Songs</span>
+				</button>
+			</div>
 		</div>
 
 		<!-- Quick Actions -->
 		<div class="flex items-center gap-2 shrink-0">
-			<!-- Toggle Library Sidebar -->
-			<button
-				type="button"
-				onclick={() => (showLibrarySidebar = !showLibrarySidebar)}
-				class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-semibold text-neutral-300 border border-neutral-700 transition cursor-pointer"
-				title={showLibrarySidebar ? 'Collapse Library Sidebar to maximize workspace' : 'Expand Library Sidebar'}
-			>
-				{#if showLibrarySidebar}
-					<PanelLeftClose class="h-3.5 w-3.5 text-emerald-400" />
-					<span class="hidden sm:inline">Hide Library</span>
-				{:else}
-					<PanelLeftOpen class="h-3.5 w-3.5 text-emerald-400" />
-					<span class="hidden sm:inline">Show Library</span>
-				{/if}
-			</button>
+			{#if taggerStep === 1}
+				<!-- Toggle Library Sidebar -->
+				<button
+					type="button"
+					onclick={() => (showLibrarySidebar = !showLibrarySidebar)}
+					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-semibold text-neutral-300 border border-neutral-700 transition cursor-pointer"
+					title={showLibrarySidebar ? 'Collapse Library Sidebar to maximize workspace' : 'Expand Library Sidebar'}
+				>
+					{#if showLibrarySidebar}
+						<PanelLeftClose class="h-3.5 w-3.5 text-emerald-400" />
+						<span class="hidden sm:inline">Hide Library</span>
+					{:else}
+						<PanelLeftOpen class="h-3.5 w-3.5 text-emerald-400" />
+						<span class="hidden sm:inline">Show Library</span>
+					{/if}
+				</button>
+			{/if}
 
 			{#if taggerMode === 'albums' && selectedAlbum}
 				<a
@@ -1100,7 +1128,8 @@
 		</div>
 	{/if}
 
-	<!-- 2-Pane Layout: Drawer (Left) & Studio Diff Stage (Right) -->
+	<!-- STEP 1: Select Album & MusicBrainz Release -->
+	{#if taggerStep === 1}
 	<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 		<!-- Left Pane: Mode Switcher & Item List (col-span-3 when open) -->
 		{#if showLibrarySidebar}
@@ -1340,273 +1369,317 @@
 	<!-- Right Pane: Main Tagger Studio (col-span-9 when sidebar open, col-span-12 when collapsed) -->
 	<div class="{showLibrarySidebar ? 'lg:col-span-9' : 'lg:col-span-12'} min-w-0 space-y-2.5 transition-all duration-200">
 			{#if (taggerMode === 'albums' && !selectedAlbum) || (taggerMode === 'folders' && !selectedFolderPath)}
-				<div class="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-8 text-center backdrop-blur-xl">
-					<Tag class="h-8 w-8 text-neutral-600 mx-auto mb-2" />
-					<h3 class="text-sm font-bold text-white">
+				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/40 p-12 text-center backdrop-blur-xl">
+					<Tag class="h-10 w-10 text-neutral-600 mx-auto mb-3" />
+					<h3 class="text-base font-bold text-white">
 						{taggerMode === 'albums' ? 'Select an Album to Tag' : 'Select a Folder to Tag'}
 					</h3>
-					<p class="text-[11px] text-neutral-400 mt-1 max-w-sm mx-auto">
-						Choose any album from your library or a scanned music folder on the left to start MusicBrainz tag matching.
+					<p class="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+						Choose any album from your library or a scanned music folder on the left to start automatic MusicBrainz matching.
 					</p>
 				</div>
 			{:else}
-				<!-- Ultra-Compact Hero Bar (~48px) with Integrated Actions -->
-				<div class="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-2 sm:px-3 sm:py-2 backdrop-blur-xl shadow-lg space-y-2">
-					<div class="flex flex-wrap items-center justify-between gap-2.5">
-						<!-- Mini Album Art & Identification -->
-						<div class="flex items-center gap-2.5 min-w-0 flex-1">
+				<!-- Album / Folder Hero Section with Live Artwork Comparison -->
+				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-xl shadow-xl space-y-5">
+					<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+						<div class="flex items-center gap-4 min-w-0 flex-1">
+							<!-- Local Artwork Preview -->
 							<div
-								class="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-neutral-950 border border-neutral-700 shadow relative group/art cursor-pointer"
+								class="h-20 w-20 shrink-0 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-700 shadow-lg relative group/art cursor-pointer"
 								onclick={() => {
-									const targetUrl = releaseDetail?.cover_url || currentCoverUrl;
-									if (targetUrl) {
-										openArtworkModal(
-											targetUrl,
-											releaseDetail ? releaseDetail.title : currentSourceTitle,
-											releaseDetail ? releaseDetail.artist : currentSourceArtist,
-											releaseDetail?.cover_url ? 'MusicBrainz Art' : 'Local (cover.jpg)',
-											releaseDetail?.cover_url ? 'musicbrainz' : 'local'
-										);
+									if (currentCoverUrl) {
+										openArtworkModal(currentCoverUrl, currentSourceTitle, currentSourceArtist, 'Local Folder (cover.jpg)', 'local');
 									}
 								}}
-								title="Click to preview artwork"
+								title={currentCoverUrl ? 'Click to preview local artwork' : 'No local cover image'}
 								role="button"
 								tabindex="0"
 								onkeydown={(e) => {
-									if (e.key === 'Enter' || e.key === ' ') {
-										const targetUrl = releaseDetail?.cover_url || currentCoverUrl;
-										if (targetUrl) {
-											openArtworkModal(
-												targetUrl,
-												releaseDetail ? releaseDetail.title : currentSourceTitle,
-												releaseDetail ? releaseDetail.artist : currentSourceArtist,
-												releaseDetail?.cover_url ? 'MusicBrainz Art' : 'Local (cover.jpg)',
-												releaseDetail?.cover_url ? 'musicbrainz' : 'local'
-											);
-										}
+									if ((e.key === 'Enter' || e.key === ' ') && currentCoverUrl) {
+										openArtworkModal(currentCoverUrl, currentSourceTitle, currentSourceArtist, 'Local Folder (cover.jpg)', 'local');
 									}
 								}}
 							>
-								{#if releaseDetail?.cover_url || currentCoverUrl}
-									<img src={releaseDetail?.cover_url || currentCoverUrl || ''} alt={currentSourceTitle} class="h-full w-full object-cover" />
+								{#if currentCoverUrl}
+									<img src={currentCoverUrl} alt={currentSourceTitle} class="h-full w-full object-cover" />
 									<div class="absolute inset-0 bg-black/60 opacity-0 group-hover/art:opacity-100 flex items-center justify-center text-white transition">
-										<ZoomIn class="h-3 w-3" />
+										<ZoomIn class="h-5 w-5" />
 									</div>
 								{:else}
 									<div class="h-full w-full flex items-center justify-center text-neutral-600">
-										<Music class="h-4 w-4" />
+										<Music class="h-6 w-6" />
 									</div>
 								{/if}
 							</div>
 
 							<div class="min-w-0 flex-1">
-								<div class="flex items-center gap-1.5 truncate">
-									<h2 class="text-xs font-bold text-white truncate" title={releaseDetail ? releaseDetail.title : currentSourceTitle}>
-										{releaseDetail ? releaseDetail.title : currentSourceTitle}
-									</h2>
-									{#if overallScore !== null && releaseDetail}
-										<span class="rounded px-1.5 py-0.2 text-[9px] font-black border shrink-0 {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
-											{overallScore}%
-										</span>
-									{/if}
-									{#if releaseDetail && missingTracks.length > 0}
-										<span class="rounded bg-amber-950/80 border border-amber-600/50 px-1.5 py-0.2 text-[9px] font-bold text-amber-400 shrink-0" title="{missingTracks.length} tracks from release missing in storage">
-											{missingTracks.length} missing
+								<div class="flex items-center gap-2">
+									<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+										{taggerMode === 'albums' ? 'Library Album' : 'Scanned Folder'}
+									</span>
+									{#if releaseDetail}
+										<span class="rounded px-2 py-0.2 text-[10px] font-black border {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
+											{overallScore}% Match
 										</span>
 									{/if}
 								</div>
-								<div class="text-[10px] text-neutral-400 truncate flex items-center gap-1.5">
-									<span class="truncate">{releaseDetail ? releaseDetail.artist : currentSourceArtist}</span>
-									{#if releaseDetail?.release_year}<span>• {releaseDetail.release_year}</span>{/if}
-									{#if releaseDetail}<span>• {releaseDetail.tracks.length} tr</span>{/if}
-									{#if releaseDetail?.media_type}<span>• {releaseDetail.media_type}</span>{/if}
-								</div>
+								<h2 class="text-lg sm:text-xl font-black text-white truncate" title={currentSourceTitle}>
+									{currentSourceTitle}
+								</h2>
+								<p class="text-xs text-neutral-300 font-medium truncate">
+									{currentSourceArtist} • {matches.length} audio tracks in storage
+								</p>
 							</div>
 						</div>
 
-						<!-- Candidate Releases Dropdown Selector -->
-						{#if candidateReleases.length > 0}
-							<div class="flex items-center gap-1.5 shrink-0 max-w-xs sm:max-w-sm">
-								<select
-									value={selectedReleaseMbid || ''}
-									onchange={(e) => {
-										const val = e.currentTarget.value;
-										if (val) selectCandidateRelease(val);
-									}}
-									class="rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-1 text-[11px] text-neutral-200 focus:outline-none focus:border-emerald-500 truncate max-w-[200px] sm:max-w-[260px] cursor-pointer"
-									title="Select MusicBrainz release candidate"
-								>
-									{#each candidateReleases as rel (rel.id)}
-										<option value={rel.id}>
-											{rel.title} - {rel.artist} ({rel.year || '?'}, {rel.track_count || '?'} tr, {rel.country || 'XW'})
-										</option>
-									{/each}
-								</select>
-
-								<button
-									type="button"
-									onclick={() => (showReleaseDetails = !showReleaseDetails)}
-									class="p-1 rounded-lg border transition cursor-pointer {showReleaseDetails ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white'}"
-									title={showReleaseDetails ? 'Hide candidate details' : 'Show candidate cards & cover comparison'}
-								>
-									<Eye class="h-3.5 w-3.5" />
-								</button>
-							</div>
+						<!-- Big Next CTA Button to Proceed to Step 2 -->
+						{#if releaseDetail && matches.length > 0}
+							<button
+								type="button"
+								onclick={() => (taggerStep = 2)}
+								class="w-full sm:w-auto flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 px-6 py-3 text-sm font-black text-white shadow-xl shadow-emerald-600/30 hover:brightness-110 active:scale-95 transition cursor-pointer shrink-0"
+							>
+								<span>Next: Connect Songs ({selectedCount} tracks)</span>
+								<ArrowRight class="h-4 w-4" />
+							</button>
 						{/if}
+					</div>
 
-						<!-- Compact Options Checkboxes & Write Button -->
-						<div class="flex items-center gap-2.5 shrink-0">
-							{#if releaseDetail}
-								<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Rename files on disk to '01. Artist - Title.ext'">
-									<input
-										type="checkbox"
-										bind:checked={optRenameFiles}
-										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
-									/>
-									<span class="{optRenameFiles ? 'text-amber-300 font-semibold' : 'text-neutral-400'}">Rename</span>
-								</label>
-
-								<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Download front cover as cover.jpg">
-									<input
-										type="checkbox"
-										bind:checked={optUpdateCover}
-										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
-									/>
-									<span class="{optUpdateCover ? 'text-emerald-300 font-semibold' : 'text-neutral-400'}">Cover</span>
-								</label>
-
-								{#if taggerMode === 'folders' && !currentFolderData?.already_in_vault}
-									<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Import album into Trax Vault library">
-										<input
-											type="checkbox"
-											bind:checked={optImportToVault}
-											class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
-										/>
-										<span class="{optImportToVault ? 'text-emerald-300 font-semibold' : 'text-neutral-400'}">Import</span>
-									</label>
+					<!-- MusicBrainz Query Search Bar & MBID Direct Lookup -->
+					<div class="pt-4 border-t border-neutral-800/80 flex flex-col sm:flex-row gap-2">
+						<div class="relative flex-1">
+							<Search class="absolute left-3 top-2.5 h-4 w-4 text-neutral-500" />
+							<input
+								type="text"
+								bind:value={mbSearchQuery}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') searchMusicBrainzReleases();
+								}}
+								placeholder="Search release title, artist, or paste MBID / URL..."
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-9 pr-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								onclick={searchMusicBrainzReleases}
+								disabled={isSearchingMB}
+								class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-4 py-2 text-xs font-bold text-neutral-200 border border-neutral-700 transition disabled:opacity-50 cursor-pointer"
+							>
+								{#if isSearchingMB}
+									<RefreshCw class="h-3.5 w-3.5 animate-spin text-emerald-400" />
+									<span>Searching...</span>
+								{:else}
+									<Search class="h-3.5 w-3.5 text-emerald-400" />
+									<span>Search</span>
 								{/if}
+							</button>
 
-								<!-- Write Tags Action Button -->
-								<button
-									type="button"
-									onclick={applyConfirmedTags}
-									disabled={isApplyingTags || selectedCount === 0}
-									class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-600/30 hover:brightness-110 active:scale-95 transition disabled:opacity-50 cursor-pointer"
-								>
-									{#if isApplyingTags}
-										<RefreshCw class="h-3.5 w-3.5 animate-spin text-white" />
-										<span>Writing...</span>
-									{:else}
-										<Sparkles class="h-3.5 w-3.5 text-emerald-200" />
-										<span>Write Tags ({selectedCount})</span>
-									{/if}
-								</button>
-							{/if}
+							<button
+								type="button"
+								onclick={() => {
+									mbidError = null;
+									mbidInput = '';
+									isMbidModalOpen = true;
+								}}
+								class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900/60 px-3.5 py-2 text-xs font-bold text-purple-300 border border-purple-700/60 transition cursor-pointer"
+							>
+								<Hash class="h-3.5 w-3.5 text-purple-400" />
+								<span>Lookup MBID</span>
+							</button>
 						</div>
 					</div>
 
-					<!-- Expanded Candidate Grid & Cover Art Details (Only when user clicks eye icon) -->
-					{#if showReleaseDetails}
-						<div class="pt-2 border-t border-neutral-800/80 space-y-3 animate-in fade-in duration-150">
-							<!-- Search Input & MBID Lookup -->
-							<div class="flex flex-col sm:flex-row gap-2">
-								<div class="relative flex-1">
-									<Search class="absolute left-2.5 top-2 h-3.5 w-3.5 text-neutral-500" />
-									<input
-										type="text"
-										bind:value={mbSearchQuery}
-										onkeydown={(e) => {
-											if (e.key === 'Enter') searchMusicBrainzReleases();
-										}}
-										placeholder="Search release, artist, or paste MBID / URL..."
-										class="w-full rounded-lg border border-neutral-700 bg-neutral-950 pl-8 pr-2.5 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
-									/>
-								</div>
-								<div class="flex items-center gap-1.5">
-									<button
-										type="button"
-										onclick={searchMusicBrainzReleases}
-										disabled={isSearchingMB}
-										class="flex items-center gap-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 px-3 py-1 text-xs font-bold text-neutral-200 border border-neutral-700 transition disabled:opacity-50 cursor-pointer"
-									>
-										{#if isSearchingMB}
-											<RefreshCw class="h-3 w-3 animate-spin text-emerald-400" />
-										{:else}
-											<Search class="h-3 w-3 text-emerald-400" />
-										{/if}
-										<span>Search</span>
-									</button>
-									<button
-										type="button"
-										onclick={() => {
-											mbidError = null;
-											mbidInput = '';
-											isMbidModalOpen = true;
-										}}
-										class="flex items-center gap-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 px-3 py-1 text-xs font-bold text-purple-300 border border-purple-700/60 transition cursor-pointer"
-									>
-										<Hash class="h-3 w-3 text-purple-400" />
-										<span>Lookup MBID</span>
-									</button>
-								</div>
+					<!-- Candidate Releases Selection Grid -->
+					{#if candidateReleases.length > 0}
+						<div class="space-y-2">
+							<div class="flex items-center justify-between text-xs text-neutral-400 font-semibold uppercase tracking-wider">
+								<span>Select Official MusicBrainz Release ({candidateReleases.length} candidates):</span>
 							</div>
 
-							<!-- Release Candidates Grid -->
-							{#if candidateReleases.length > 0}
-								<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-44 overflow-y-auto pr-1">
-									{#each candidateReleases as rel (rel.id)}
-										<div
-											role="button"
-											tabindex="0"
-											onclick={() => selectCandidateRelease(rel.id)}
-											onkeydown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') selectCandidateRelease(rel.id);
-											}}
-											class="p-2 rounded-xl border text-left flex items-start gap-2 transition cursor-pointer select-none {selectedReleaseMbid === rel.id ? 'bg-emerald-950/70 border-emerald-500 shadow ring-1 ring-emerald-500' : 'bg-neutral-950/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'}"
-										>
-											<div class="h-8 w-8 shrink-0 rounded overflow-hidden bg-neutral-900 border border-neutral-800 relative">
-												{#if rel.cover_url}
-													<img src={rel.cover_url} alt={rel.title} class="h-full w-full object-cover" />
-												{:else}
-													<div class="h-full w-full flex items-center justify-center text-neutral-600">
-														<Disc3 class="h-3 w-3" />
-													</div>
-												{/if}
+							<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
+								{#each candidateReleases as rel (rel.id)}
+									<div
+										role="button"
+										tabindex="0"
+										onclick={() => selectCandidateRelease(rel.id)}
+										onkeydown={(e) => {
+											if (e.key === 'Enter' || e.key === ' ') selectCandidateRelease(rel.id);
+										}}
+										class="p-2.5 rounded-2xl border text-left flex items-start gap-2.5 transition cursor-pointer select-none {selectedReleaseMbid === rel.id ? 'bg-emerald-950/70 border-emerald-500 shadow-md shadow-emerald-950/60 ring-2 ring-emerald-500' : 'bg-neutral-950/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'}"
+									>
+										<div class="h-12 w-12 shrink-0 rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 relative group/thumb">
+											{#if rel.cover_url}
+												<img src={rel.cover_url} alt={rel.title} class="h-full w-full object-cover" />
+												<button
+													type="button"
+													title="Preview high-res cover"
+													onclick={(e) => {
+														e.stopPropagation();
+														openArtworkModal(rel.cover_url!, rel.title, rel.artist, 'MusicBrainz Candidate Release', 'musicbrainz');
+													}}
+													class="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition cursor-pointer"
+												>
+													<ZoomIn class="h-4 w-4 text-white" />
+												</button>
+											{:else}
+												<div class="h-full w-full flex items-center justify-center text-neutral-600">
+													<Disc3 class="h-5 w-5" />
+												</div>
+											{/if}
+										</div>
+
+										<div class="min-w-0 flex-1">
+											<div class="text-xs font-bold text-white truncate {selectedReleaseMbid === rel.id ? 'text-emerald-300' : ''}">
+												{rel.title}
 											</div>
-											<div class="min-w-0 flex-1">
-												<div class="text-[11px] font-bold text-white truncate {selectedReleaseMbid === rel.id ? 'text-emerald-300' : ''}">
-													{rel.title}
-												</div>
-												<div class="text-[10px] text-neutral-400 truncate">
-													{rel.artist}
-												</div>
-												<div class="text-[9px] text-neutral-500 flex items-center gap-1 mt-0.5 truncate">
-													<span>{rel.media_format || 'CD'}</span>
-													{#if rel.year}<span>• {rel.year}</span>{/if}
-													{#if rel.track_count}<span>• {rel.track_count} tr</span>{/if}
-													{#if rel.country}<span>• {rel.country}</span>{/if}
-												</div>
+											<div class="text-[11px] text-neutral-400 truncate">
+												{rel.artist}
+											</div>
+											<div class="text-[10px] text-neutral-500 flex items-center gap-1.5 mt-1 truncate">
+												<span>{rel.media_format || 'CD'}</span>
+												{#if rel.year}<span>• {rel.year}</span>{/if}
+												{#if rel.track_count}<span>• {rel.track_count} tr</span>{/if}
+												{#if rel.country}<span>• {rel.country}</span>{/if}
 											</div>
 										</div>
-									{/each}
-								</div>
-							{/if}
+									</div>
+								{/each}
+							</div>
 						</div>
 					{/if}
 				</div>
 
-				<!-- Proactive Write Permission Alert Banner -->
-				{#if (taggerMode === 'folders' && currentFolderData?.is_writable === false) || (taggerMode === 'albums' && !albumIsWritable)}
-					<div class="rounded-2xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-200 shadow backdrop-blur-xl space-y-1.5">
-						<div class="flex items-center gap-2">
-							<AlertTriangle class="h-4 w-4 text-rose-400 shrink-0" />
-							<h4 class="font-bold text-rose-200 text-xs">File Write Permission Denied (Read-Only)</h4>
+				<!-- Bottom Confirm CTA Bar when ready -->
+				{#if releaseDetail && matches.length > 0}
+					<div class="rounded-2xl border border-emerald-600/40 bg-emerald-950/30 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+						<div class="flex items-center gap-2.5">
+							<CheckCircle2 class="h-5 w-5 text-emerald-400 shrink-0" />
+							<div>
+								<h4 class="text-xs font-bold text-emerald-200">Release Selected: {releaseDetail.title}</h4>
+								<p class="text-[11px] text-emerald-300/80">
+									{matches.length} files in storage matched against {releaseDetail.tracks.length} official tracks ({overallScore}% confidence score).
+								</p>
+							</div>
 						</div>
-						<div class="font-mono text-[10px] text-amber-300 bg-neutral-900 px-2 py-1 rounded border border-neutral-800 select-all">
-							chmod -R u+rw "{taggerMode === 'folders' ? selectedFolderPath : (albumPermissionPath || './music')}"
-						</div>
+
+						<button
+							type="button"
+							onclick={() => (taggerStep = 2)}
+							class="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 px-5 py-2.5 text-xs font-black text-white shadow-md shadow-emerald-600/30 hover:brightness-110 active:scale-95 transition cursor-pointer"
+						>
+							<span>Proceed to Full-Screen Song Connector ➔</span>
+						</button>
 					</div>
 				{/if}
+			{/if}
+		</div>
+	</div>
+{:else}
+	<!-- STEP 2: Full-Screen Song Connector (100% Screen Dedicated to Connecting Songs) -->
+	<div class="w-full space-y-2 animate-in fade-in duration-150">
+		<!-- Ultra-Compact Top Header Bar (~42px) -->
+		<div class="rounded-2xl border border-neutral-800 bg-neutral-900/90 px-3 py-2 backdrop-blur-xl shadow-lg flex flex-wrap items-center justify-between gap-3">
+			<!-- Return to Step 1 + Album Details -->
+			<div class="flex items-center gap-3 min-w-0 flex-1">
+				<button
+					type="button"
+					onclick={() => (taggerStep = 1)}
+					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-bold text-neutral-200 border border-neutral-700 transition cursor-pointer shrink-0"
+					title="Go back to Step 1 to pick a different release edition or album"
+				>
+					<ArrowLeftRight class="h-3.5 w-3.5 text-emerald-400" />
+					<span>← Change Release</span>
+				</button>
+
+				<!-- Mini Artwork & Album Title -->
+				<div class="flex items-center gap-2 min-w-0 truncate">
+					<div class="h-7 w-7 rounded overflow-hidden bg-neutral-950 border border-neutral-700 shrink-0">
+						{#if releaseDetail?.cover_url || currentCoverUrl}
+							<img src={releaseDetail?.cover_url || currentCoverUrl || ''} alt="" class="h-full w-full object-cover" />
+						{:else}
+							<Music class="h-3.5 w-3.5 m-auto text-neutral-600" />
+						{/if}
+					</div>
+					<div class="min-w-0 truncate">
+						<div class="flex items-center gap-1.5 truncate">
+							<span class="text-xs font-bold text-white truncate">{releaseDetail ? releaseDetail.title : currentSourceTitle}</span>
+							{#if overallScore !== null}
+								<span class="rounded px-1.5 py-0.2 text-[9px] font-black border shrink-0 {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
+									{overallScore}%
+								</span>
+							{/if}
+							{#if releaseDetail && missingTracks.length > 0}
+								<span class="rounded bg-amber-950/80 border border-amber-600/50 px-1.5 py-0.2 text-[9px] font-bold text-amber-400 shrink-0">
+									{missingTracks.length} missing
+								</span>
+							{/if}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Options Checkboxes & Write Button -->
+			<div class="flex items-center gap-3 shrink-0">
+				<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Rename files on disk to '01. Artist - Title.ext'">
+					<input
+						type="checkbox"
+						bind:checked={optRenameFiles}
+						class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
+					/>
+					<span class="{optRenameFiles ? 'text-amber-300 font-semibold' : 'text-neutral-400'}">Rename</span>
+				</label>
+
+				<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Download front cover as cover.jpg">
+					<input
+						type="checkbox"
+						bind:checked={optUpdateCover}
+						class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
+					/>
+					<span class="{optUpdateCover ? 'text-emerald-300 font-semibold' : 'text-neutral-400'}">Cover</span>
+				</label>
+
+				{#if taggerMode === 'folders' && !currentFolderData?.already_in_vault}
+					<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Import album into Trax Vault library">
+						<input
+							type="checkbox"
+							bind:checked={optImportToVault}
+							class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
+						/>
+						<span class="{optImportToVault ? 'text-emerald-300 font-semibold' : 'text-neutral-400'}">Import</span>
+					</label>
+				{/if}
+
+				<!-- Write Tags Action Button -->
+				<button
+					type="button"
+					onclick={applyConfirmedTags}
+					disabled={isApplyingTags || selectedCount === 0}
+					class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-600/30 hover:brightness-110 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+				>
+					{#if isApplyingTags}
+						<RefreshCw class="h-3.5 w-3.5 animate-spin text-white" />
+						<span>Writing...</span>
+					{:else}
+						<Sparkles class="h-3.5 w-3.5 text-emerald-200" />
+						<span>Write Tags ({selectedCount})</span>
+					{/if}
+				</button>
+			</div>
+		</div>
+
+		<!-- Proactive Write Permission Alert Banner -->
+		{#if (taggerMode === 'folders' && currentFolderData?.is_writable === false) || (taggerMode === 'albums' && !albumIsWritable)}
+			<div class="rounded-2xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-200 shadow backdrop-blur-xl space-y-1.5">
+				<div class="flex items-center gap-2">
+					<AlertTriangle class="h-4 w-4 text-rose-400 shrink-0" />
+					<h4 class="font-bold text-rose-200 text-xs">File Write Permission Denied (Read-Only)</h4>
+				</div>
+				<div class="font-mono text-[10px] text-amber-300 bg-neutral-900 px-2 py-1 rounded border border-neutral-800 select-all">
+					chmod -R u+rw "{taggerMode === 'folders' ? selectedFolderPath : (albumPermissionPath || './music')}"
+				</div>
+			</div>
+		{/if}
 
 				<!-- 2-Column Tagger Architecture: Storage Files (Col 1) & Dual-Subcolumn Alignment (Col 2) -->
 				{#if isLoadingMatches}
@@ -1929,9 +2002,8 @@
 						</div>
 					</div>
 				{/if}
-			{/if}
 		</div>
-	</div>
+	{/if}
 
 	<!-- MBID Lookup Modal -->
 	{#if isMbidModalOpen}
