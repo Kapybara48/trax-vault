@@ -805,6 +805,17 @@ This document preserves persistent context, architectural conventions, recent ch
       - Sleek ~42px top bar with `← Change Release` return button, mini artwork, match confidence score, options pills (`Rename`, `Cover`, `Import`), and `Write Tags ({count})` button.
       - 2-column layout (Column 1: Storage files, Column 2: Dual-subcolumn alignment) with ultra-compact 28px (`h-7`) rows fitting all songs on screen.
 
+56. **Single-Viewport Step 2 Layout & Unassigned Storage Pool Filter (v1.7.16)**:
+    - **Single-Viewport / Double Scrollbar Elimination**:
+      - Injected dynamic `<style>html, body { overflow: hidden !important; }</style>` during Step 2 to completely disable browser root window scrollbars and layout shifts.
+      - Anchored Step 2 workspace using fixed viewport bounds (`fixed inset-x-0 top-[57px] bottom-0 z-30 bg-neutral-950 flex flex-col overflow-hidden px-3 py-2 space-y-2`) cleanly covering footer and main padding.
+      - Built single-scroll hierarchy: fixed ~42px top bar, responsive full-height grid (`flex-1 min-h-0`), and inner list overflow containers (`flex-1 min-h-0 overflow-y-auto pr-1`), guaranteeing zero competing double scrollbars.
+    - **Unassigned Storage Pool in Column 1**:
+      - Filtered Column 1 strictly to unassigned storage audio files (`unmatchedLocalMatches`).
+      - Files assigned to MusicBrainz slots in Column 2 automatically disappear from Column 1.
+      - Unpairing a track (via `X` button, dropdown swap, or dragging onto Column 1) instantly restores it to Column 1.
+      - When all files are paired, Column 1 renders an emerald completion badge (`✓ All {matches.length} storage files are paired!`).
+
 ---
 
 ## 4. Workflows & Verification

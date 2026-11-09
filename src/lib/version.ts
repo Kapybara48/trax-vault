@@ -12,7 +12,7 @@
 declare const __APP_VERSION__: string | undefined;
 
 export const APP_NAME = 'Trax Vault';
-export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.7.15';
+export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.7.16';
 
 // Current database schema version (integer: 170 = v1.7.x, 200 = v2.0.0)
 export const CURRENT_SCHEMA_VERSION = 170;

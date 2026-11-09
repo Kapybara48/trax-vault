@@ -974,6 +974,14 @@
 
 <svelte:head>
 	<title>MusicBrainz Tagger Studio - Trax Vault</title>
+	{#if taggerStep === 2}
+		<style>
+			html,
+			body {
+				overflow: hidden !important;
+			}
+		</style>
+	{/if}
 </svelte:head>
 
 <div class="w-full px-3 sm:px-5 lg:px-6 py-3 space-y-3">
@@ -1577,9 +1585,9 @@
 	</div>
 {:else}
 	<!-- STEP 2: Full-Screen Song Connector (100% Screen Dedicated to Connecting Songs) -->
-	<div class="w-full space-y-2 animate-in fade-in duration-150">
+	<div class="fixed inset-x-0 top-[57px] bottom-0 z-30 bg-neutral-950 flex flex-col overflow-hidden px-3 py-2 space-y-2 animate-in fade-in duration-150">
 		<!-- Ultra-Compact Top Header Bar (~42px) -->
-		<div class="rounded-2xl border border-neutral-800 bg-neutral-900/90 px-3 py-2 backdrop-blur-xl shadow-lg flex flex-wrap items-center justify-between gap-3">
+		<div class="rounded-2xl border border-neutral-800 bg-neutral-900/90 px-3 py-2 backdrop-blur-xl shadow-lg flex flex-wrap items-center justify-between gap-3 shrink-0">
 			<!-- Return to Step 1 + Album Details -->
 			<div class="flex items-center gap-3 min-w-0 flex-1">
 				<button
@@ -1670,7 +1678,7 @@
 
 		<!-- Proactive Write Permission Alert Banner -->
 		{#if (taggerMode === 'folders' && currentFolderData?.is_writable === false) || (taggerMode === 'albums' && !albumIsWritable)}
-			<div class="rounded-2xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-200 shadow backdrop-blur-xl space-y-1.5">
+			<div class="rounded-2xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-200 shadow backdrop-blur-xl space-y-1.5 shrink-0">
 				<div class="flex items-center gap-2">
 					<AlertTriangle class="h-4 w-4 text-rose-400 shrink-0" />
 					<h4 class="font-bold text-rose-200 text-xs">File Write Permission Denied (Read-Only)</h4>
@@ -1698,10 +1706,10 @@
 						<span>Please select a candidate release above to align tracks.</span>
 					</div>
 				{:else}
-					<div class="grid grid-cols-1 xl:grid-cols-12 gap-3 items-start min-w-0">
-						<!-- COLUMN 1: Songs You Have in Storage (Left Column, col-span-4) -->
+					<div class="grid grid-cols-1 xl:grid-cols-12 gap-3 items-stretch min-w-0 flex-1 min-h-0 overflow-y-auto xl:overflow-hidden">
+						<!-- COLUMN 1: Songs You Have in Storage (Unassigned Pool, Left Column, col-span-4) -->
 						<div
-							class="xl:col-span-4 min-w-0 rounded-2xl border transition-all duration-200 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-2.5 space-y-1.5 {isDragOverStorageCol
+							class="xl:col-span-4 min-w-0 rounded-2xl border transition-all duration-200 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-2.5 space-y-1.5 flex flex-col h-64 xl:h-full min-h-0 {isDragOverStorageCol
 								? 'ring-2 ring-amber-500 bg-amber-950/40 border-amber-400'
 								: 'border-neutral-800'}"
 							ondragover={handleDragOver}
@@ -1715,82 +1723,78 @@
 							aria-label="Storage files column"
 						>
 							<!-- Column 1 Header -->
-							<div class="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+							<div class="flex items-center justify-between pb-1.5 border-b border-neutral-800/80 shrink-0">
 								<div class="flex items-center gap-1.5 min-w-0">
 									<FolderSync class="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-									<h3 class="text-xs font-bold text-white truncate">Storage</h3>
+									<h3 class="text-xs font-bold text-white truncate">Storage (Unassigned)</h3>
 									<span class="rounded-full bg-neutral-800 px-1.5 py-0.2 text-[9px] font-semibold text-neutral-400 shrink-0">
-										{matches.length}
+										{unmatchedLocalMatches.length}
 									</span>
 								</div>
 
 								<span class="text-[9px] text-neutral-400 shrink-0 font-medium">
-									{unmatchedLocalMatches.length} free
+									{matches.length - unmatchedLocalMatches.length} / {matches.length} paired
 								</span>
 							</div>
 
 							<!-- Column 1 Subheader Legend -->
-							<div class="flex items-center gap-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500">
+							<div class="flex items-center gap-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500 shrink-0">
 								<span class="w-3 shrink-0"></span>
 								<span class="w-4 shrink-0 text-center">#</span>
 								<span class="flex-1 min-w-0 truncate">Title</span>
 								<span class="w-8 text-center shrink-0">Fmt</span>
 								<span class="w-8 text-right shrink-0">Time</span>
-								<span class="w-10 text-right shrink-0">Slot</span>
+								<span class="w-10 text-right shrink-0">Status</span>
 							</div>
 
-							<!-- List of Files in Storage (Ultra-compact ~28px row height) -->
-							<div class="space-y-0.5 max-h-[78vh] overflow-y-auto pr-1 min-w-0">
-								{#each matches as m (m.localTrack.id)}
-									{@const isAssigned = Boolean(m.mbTrack)}
-									<div
-										class="h-7 px-1.5 py-0.5 rounded-lg border transition-all duration-150 flex items-center gap-1 text-[11px] select-none cursor-grab active:cursor-grabbing {isAssigned
-											? 'bg-neutral-950/70 border-neutral-800/80 hover:border-neutral-700'
-											: 'bg-amber-950/20 border-amber-800/60 hover:border-amber-700 text-amber-200'}"
-										draggable="true"
-										ondragstart={(e) => handleDragStart(e, m.localTrack.id)}
-										ondragend={handleDragEnd}
-										title={`Drag onto target slot: ${m.localTrack.title}`}
-										role="listitem"
-									>
-										<GripVertical class="h-3 w-3 text-neutral-500 shrink-0" />
-										<span class="font-mono text-[9px] text-neutral-400 w-4 shrink-0 text-center">
-											{m.localTrack.track_number.toString().padStart(2, '0')}
+							<!-- List of Files in Storage (Unassigned only) -->
+							<div class="space-y-0.5 overflow-y-auto pr-1 min-w-0 flex-1 min-h-0">
+								{#if unmatchedLocalMatches.length === 0}
+									<div class="h-full flex flex-col items-center justify-center p-6 text-center text-xs text-emerald-400 bg-emerald-950/20 border border-dashed border-emerald-800/40 rounded-xl gap-2 select-none">
+										<CheckCircle2 class="h-7 w-7 text-emerald-400" />
+										<span class="font-bold text-xs">All {matches.length} storage files are paired!</span>
+										<span class="text-[10px] text-neutral-400 max-w-[200px] leading-relaxed">
+											Drag any song from Column 2 back here or click <X class="h-3 w-3 inline text-rose-400" /> to unpair.
 										</span>
-										<span class="font-medium text-[11px] text-neutral-200 truncate flex-1 min-w-0" title={m.localTrack.file_path || m.localTrack.title}>
-											{m.localTrack.title}
-										</span>
-										<span class="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 shrink-0">
-											{m.localTrack.format || 'AUD'}
-										</span>
-										<span class="text-[9px] font-mono text-neutral-400 w-8 text-right shrink-0">
-											{formatDuration(m.localTrack.duration_ms)}
-										</span>
-
-										<!-- Slot indicator -->
-										<div class="w-10 flex justify-end shrink-0">
-											{#if m.mbTrack}
-												<span
-													class="text-[8px] font-bold px-1 py-0.2 rounded bg-emerald-950/80 border border-emerald-600/50 text-emerald-300 truncate"
-													title={`Paired with MB track: ${m.mbTrack.disc_number > 1 ? `${m.mbTrack.disc_number}-` : ''}${m.mbTrack.track_number}. ${m.mbTrack.title}`}
-												>
-													➔ {m.mbTrack.disc_number > 1 ? `${m.mbTrack.disc_number}-` : ''}{m.mbTrack.track_number.toString().padStart(2, '0')}
-												</span>
-											{:else}
+									</div>
+								{:else}
+									{#each unmatchedLocalMatches as m (m.localTrack.id)}
+										<div
+											class="h-7 px-1.5 py-0.5 rounded-lg border transition-all duration-150 flex items-center gap-1 text-[11px] select-none cursor-grab active:cursor-grabbing bg-amber-950/20 border-amber-800/60 hover:border-amber-700 text-amber-200"
+											draggable="true"
+											ondragstart={(e) => handleDragStart(e, m.localTrack.id)}
+											ondragend={handleDragEnd}
+											title={`Drag onto target slot: ${m.localTrack.title}`}
+											role="listitem"
+										>
+											<GripVertical class="h-3 w-3 text-neutral-500 shrink-0" />
+											<span class="font-mono text-[9px] text-neutral-400 w-4 shrink-0 text-center">
+												{m.localTrack.track_number.toString().padStart(2, '0')}
+											</span>
+											<span class="font-medium text-[11px] text-neutral-200 truncate flex-1 min-w-0" title={m.localTrack.file_path || m.localTrack.title}>
+												{m.localTrack.title}
+											</span>
+											<span class="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 shrink-0">
+												{m.localTrack.format || 'AUD'}
+											</span>
+											<span class="text-[9px] font-mono text-neutral-400 w-8 text-right shrink-0">
+												{formatDuration(m.localTrack.duration_ms)}
+											</span>
+											<div class="w-10 flex justify-end shrink-0">
 												<span class="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-950/80 border border-amber-600/50 text-amber-300">
 													Free
 												</span>
-											{/if}
+											</div>
 										</div>
-									</div>
-								{/each}
+									{/each}
+								{/if}
 							</div>
 						</div>
 
 						<!-- COLUMN 2: Album Tag Alignment with 2 Synchronized Subcolumns (Right Column, col-span-8) -->
-						<div class="xl:col-span-8 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-2.5 space-y-1.5 flex flex-col">
+						<div class="xl:col-span-8 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-2.5 space-y-1.5 flex flex-col min-h-[350px] xl:h-full xl:min-h-0 flex-1">
 							<!-- Column 2 Header -->
-							<div class="flex items-center justify-between pb-1.5 border-b border-neutral-800/80 gap-2">
+							<div class="flex items-center justify-between pb-1.5 border-b border-neutral-800/80 gap-2 shrink-0">
 								<div class="flex items-center gap-1.5 min-w-0">
 									<SlidersHorizontal class="h-3.5 w-3.5 text-emerald-400 shrink-0" />
 									<h3 class="text-xs font-bold text-white truncate">Alignment</h3>
@@ -1812,7 +1816,7 @@
 							</div>
 
 							<!-- Dual Subcolumns Legend Header (Strictly Single Line) -->
-							<div class="flex items-center gap-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500 min-w-0">
+							<div class="flex items-center gap-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500 min-w-0 shrink-0">
 								<!-- Subcolumn 1 Header -->
 								<div class="flex-1 min-w-0 flex items-center gap-1.5 truncate">
 									<span class="w-3.5 shrink-0 text-center">✓</span>
@@ -1828,7 +1832,7 @@
 							</div>
 
 							<!-- Paired Rows List (Strict ultra-compact ~28px row height) -->
-							<div class="space-y-3 max-h-[78vh] overflow-y-auto pr-1 min-w-0">
+							<div class="space-y-3 overflow-y-auto pr-1 min-w-0 flex-1 min-h-0">
 								{#each releaseDiscs as disc (disc.discNumber)}
 									<div class="space-y-0.5 min-w-0">
 										<!-- Disc Header if multi-disc release -->
