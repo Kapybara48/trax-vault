@@ -13,6 +13,22 @@ input[type='range'].slider-compact {
 	appearance: none;
 }
 
+input[type='range'].slider-compact::-webkit-slider-runnable-track {
+	height: 4px;
+	border-radius: 9999px;
+}
+
+input[type='range'].slider-compact::-moz-range-track {
+	height: 4px;
+	border-radius: 9999px;
+}
+
+input[type='range'].slider-compact::-moz-range-progress {
+	background-color: #10b981;
+	height: 100%;
+	border-radius: 9999px;
+}
+
 input[type='range'].slider-compact::-webkit-slider-thumb {
 	-webkit-appearance: none;
 	appearance: none;

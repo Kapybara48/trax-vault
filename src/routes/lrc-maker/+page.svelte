@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, onDestroy } from 'svelte';
 	import type { PageData } from './$types.js';
 	import {
 		Play,
@@ -34,23 +34,28 @@
 		CheckSquare,
 		Square,
 		Sliders,
-		AlertTriangle
+		AlertTriangle,
+		Tag
 	} from '@lucide/svelte';
 	import { player } from '$lib/services/player.svelte.js';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
 	import BatchLyricsModal from '$lib/components/BatchLyricsModal.svelte';
 	import type { LrcLibCandidate, LyricsStatus } from '$lib/types/index.js';
-	import { isCensoredLyrics, stripLrcMetadataHeaders } from '$lib/utils.js';
+	import {
+		isCensoredLyrics,
+		stripLrcMetadataHeaders,
+		formatLrcTime,
+		parseLrcTimestamp,
+		parseLrcEnhanced,
+		generateLrcEnhanced,
+		type EnhancedLyricLine,
+		type LrcMetadataHeaders,
+		type LyricWord
+	} from '$lib/utils.js';
 
 	let { data }: { data: PageData } = $props();
 
 	let showBatchLyricsModal = $state(false);
-
-	interface LyricLine {
-		id: string;
-		time: number | null; // Seconds, e.g. 14.25
-		text: string;
-	}
 
 	// Audio Player State
 	let audioEl: HTMLAudioElement | null = $state(null);
@@ -65,11 +70,15 @@
 	let audioFileName = $state<string>('');
 	let isUsingServerAudio = $state(false);
 
+	// Reactive Slider Fill Percentages
+	const scrubberPercent = $derived(duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0);
+	const volumePercent = $derived(isMuted ? 0 : Math.min(100, Math.max(0, volume * 100)));
+
 	// Editor & Sync State
 	type EditorMode = 'text' | 'sync' | 'preview';
 	let currentMode = $state<EditorMode>('sync');
 	let rawLyricsText = $state('');
-	let lyricLines = $state<LyricLine[]>([]);
+	let lyricLines = $state<EnhancedLyricLine[]>([]);
 	let activeLineIndex = $state(0);
 	let autoFollowEnabled = $state(true);
 	let companionFilePath = $state<string | null>(data.companionPath || null);
@@ -88,10 +97,14 @@
 	let lastClickedIndex = $state<number | null>(null);
 	let customShiftAmount = $state<string>('1.0');
 
-	// Track Info State (can be edited if standalone)
+	// Track Info & Standard ID Header Metadata Tags
 	let trackTitle = $state(data.track?.title || '');
 	let trackArtist = $state(data.track?.artist || data.track?.album_artist || '');
 	let albumTitle = $state(data.track?.album_title || '');
+	let trackAuthor = $state('');
+	let lrcCreator = $state('Trax Vault');
+	let lrcOffset = $state(0);
+	let showMetadataDrawer = $state(false);
 
 	// LRCLIB & Status State
 	let showLrcLibModal = $state(false);
@@ -106,16 +119,7 @@
 	// Reference to lines scroll container
 	let linesContainerEl: HTMLDivElement | null = $state(null);
 
-	// Helpers: Format Seconds to mm:ss.xx
-	function formatTime(seconds: number): string {
-		if (isNaN(seconds) || seconds < 0) return '00:00.00';
-		const m = Math.floor(seconds / 60);
-		const s = Math.floor(seconds % 60);
-		const ms = Math.floor((seconds % 1) * 100);
-		return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
-	}
-
-	// Helpers: Format mm:ss without hundredths
+	// Helper: Format mm:ss without hundredths
 	function formatDurationShort(seconds: number): string {
 		if (isNaN(seconds) || seconds < 0) return '0:00';
 		const m = Math.floor(seconds / 60);
@@ -123,95 +127,75 @@
 		return `${m}:${s.toString().padStart(2, '0')}`;
 	}
 
-	// Helpers: Parse [mm:ss.xx] or [mm:ss] timestamp to seconds
-	function parseTimestamp(timestamp: string): number | null {
-		const match = timestamp.match(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/);
-		if (!match) return null;
-		const m = parseInt(match[1], 10);
-		const s = parseInt(match[2], 10);
-		const msStr = match[3] || '0';
-		const ms = parseFloat(`0.${msStr}`);
-		return m * 60 + s + ms;
+	// Helper: Format Seconds to mm:ss.xx using shared utility
+	function formatTime(seconds: number): string {
+		return formatLrcTime(seconds);
 	}
 
-	// Parse LRC or Plain string into LyricLine array
-	function parseLyrics(content: string): LyricLine[] {
-		const lines = content.split('\n');
-		const result: LyricLine[] = [];
+	/**
+	 * Computes human-perceived logarithmic audio gain from linear slider volume (0..1)
+	 * Standard audio power taper (gamma = 2.2) provides a natural loudness transition.
+	 */
+	function getEffectiveGain(linearVol: number, muted: boolean): number {
+		if (muted || linearVol <= 0) return 0;
+		return Math.min(1, Math.max(0, Math.pow(linearVol, 2.2)));
+	}
 
-		for (const rawLine of lines) {
-			const line = rawLine.trim();
-			if (!line) continue;
+	// Parse LRC or Plain string into EnhancedLyricLine array and extract header metadata
+	function parseLyrics(content: string): EnhancedLyricLine[] {
+		const parsed = parseLrcEnhanced(content);
+		if (parsed.metadata.title && !trackTitle) trackTitle = parsed.metadata.title;
+		if (parsed.metadata.artist && !trackArtist) trackArtist = parsed.metadata.artist;
+		if (parsed.metadata.album && !albumTitle) albumTitle = parsed.metadata.album;
+		if (parsed.metadata.author) trackAuthor = parsed.metadata.author;
+		if (parsed.metadata.by) lrcCreator = parsed.metadata.by;
+		if (typeof parsed.metadata.offset === 'number') lrcOffset = parsed.metadata.offset;
 
-			// Skip metadata tags like [ti:], [ar:], [al:]
-			if (/^\[(ti|ar|al|length|by|offset|re|ve):/i.test(line)) {
-				continue;
-			}
-
-			// Extract all timestamps [mm:ss.xx]
-			const timestampRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
-			let match: RegExpExecArray | null;
-			const times: number[] = [];
-			let lastIndex = 0;
-
-			while ((match = timestampRegex.exec(line)) !== null) {
-				const time = parseTimestamp(match[0]);
-				if (time !== null) {
-					times.push(time);
-				}
-				lastIndex = timestampRegex.lastIndex;
-			}
-
-			if (times.length > 0) {
-				const lyricText = line.slice(lastIndex).trim();
-				for (const t of times) {
-					result.push({
-						id: Math.random().toString(36).slice(2, 9),
-						time: t,
-						text: lyricText
-					});
-				}
-			} else {
-				result.push({
-					id: Math.random().toString(36).slice(2, 9),
-					time: null,
-					text: line
-				});
-			}
-		}
-
-		// Sort timed lyrics chronologically
-		result.sort((a, b) => {
-			if (a.time === null && b.time === null) return 0;
-			if (a.time === null) return 1;
-			if (b.time === null) return -1;
-			return a.time - b.time;
-		});
-
-		return result.length > 0
-			? result
+		return parsed.lines.length > 0
+			? parsed.lines
 			: [
-					{ id: '1', time: null, text: 'First line of lyrics' },
-					{ id: '2', time: null, text: 'Second line of lyrics' }
+					{ id: '1', time: null, endTime: null, text: 'First line of lyrics' },
+					{ id: '2', time: null, endTime: null, text: 'Second line of lyrics' }
 			  ];
 	}
 
-	// Generate clean standard .lrc file text (without legacy metadata headers)
+	// Generate clean standard & enhanced .lrc file text with ID metadata headers
 	function generateLrcContent(): string {
 		if (isInstrumental) {
 			const marker = instrumentalFormat === 'note' ? '♪' : '[instrumental]';
-			return `[00:00.00]${marker}`;
+			const headers: LrcMetadataHeaders = {
+				title: trackTitle || undefined,
+				artist: trackArtist || undefined,
+				album: albumTitle || undefined,
+				author: trackAuthor || 'Instrumental',
+				length: duration > 0 ? formatDurationShort(duration) : undefined,
+				by: lrcCreator || undefined
+			};
+			return generateLrcEnhanced(headers, [{ id: 'inst', time: 0, endTime: null, text: marker }]);
 		}
 
-		const body = lyricLines.map((l) => {
-			if (l.time !== null) {
-				return `[${formatTime(l.time)}] ${l.text}`;
-			}
-			return l.text;
-		});
+		const headers: LrcMetadataHeaders = {
+			title: trackTitle || undefined,
+			artist: trackArtist || undefined,
+			album: albumTitle || undefined,
+			author: trackAuthor || undefined,
+			length: duration > 0 ? formatDurationShort(duration) : undefined,
+			by: lrcCreator || undefined,
+			offset: lrcOffset !== 0 ? lrcOffset : undefined
+		};
 
-		return body.join('\n');
+		return generateLrcEnhanced(headers, lyricLines);
 	}
+
+	// Lifecycle Cleanup: pause audio and revoke object URLs on navigation
+	onDestroy(() => {
+		if (audioEl) {
+			audioEl.pause();
+		}
+		if (audioSrc && !isUsingServerAudio) {
+			URL.revokeObjectURL(audioSrc);
+		}
+	});
 
 	// Initial Setup on Mount
 	onMount(() => {
@@ -408,9 +392,10 @@
 			isMuted = false;
 		}
 		if (audioEl) {
-			audioEl.volume = isMuted ? 0 : volume;
+			audioEl.volume = getEffectiveGain(volume, isMuted);
 			audioEl.muted = isMuted;
 		}
+		player.volume = volume;
 		try {
 			localStorage.setItem('traxvault_lrc_volume', volume.toString());
 			localStorage.setItem('traxvault_player_volume', volume.toString());
@@ -429,7 +414,7 @@
 			isMuted = true;
 		}
 		if (audioEl) {
-			audioEl.volume = isMuted ? 0 : volume;
+			audioEl.volume = getEffectiveGain(volume, isMuted);
 			audioEl.muted = isMuted;
 		}
 		try {
@@ -455,7 +440,7 @@
 		}
 	}
 
-	// Sync Engine: Stamp current line
+	// Sync Engine: Stamp current line start time
 	function stampCurrentLine() {
 		if (!audioEl) return;
 
@@ -473,6 +458,24 @@
 				activeLineIndex++;
 				scrollToActiveLine();
 			}
+		}
+	}
+
+	// Sync Engine: Stamp end time on active line
+	function stampEndActiveLine() {
+		if (!audioEl) return;
+		if (activeLineIndex < lyricLines.length) {
+			const line = lyricLines[activeLineIndex];
+			const end = Math.round(audioEl.currentTime * 100) / 100;
+			if (line.time !== null && end > line.time) {
+				line.endTime = end;
+			}
+		}
+	}
+
+	function removeEndTime(index: number) {
+		if (lyricLines[index]) {
+			lyricLines[index].endTime = null;
 		}
 	}
 
@@ -501,6 +504,7 @@
 
 	function removeTimestamp(index: number) {
 		lyricLines[index].time = null;
+		lyricLines[index].endTime = null;
 	}
 
 	function selectLine(index: number) {
@@ -520,12 +524,16 @@
 		});
 	}
 
-	// Current Active Singing/Playback Line derived from audio currentTime
+	// Current Active Singing/Playback Line derived from audio currentTime (respects line end times)
 	let currentPlaybackLineIndex = $derived.by(() => {
 		let idx = -1;
 		for (let i = 0; i < lyricLines.length; i++) {
 			const line = lyricLines[i];
 			if (line.time !== null && line.time <= currentTime) {
+				if (line.endTime !== null && line.endTime !== undefined && currentTime > line.endTime) {
+					idx = -1;
+					continue;
+				}
 				idx = i;
 			}
 		}
@@ -542,10 +550,10 @@
 		}
 	});
 
-	// Keep audio element volume in sync
+	// Keep audio element volume in sync using human perceptual gain
 	$effect(() => {
 		if (audioEl) {
-			audioEl.volume = isMuted ? 0 : volume;
+			audioEl.volume = getEffectiveGain(volume, isMuted);
 			audioEl.muted = isMuted;
 		}
 	});
@@ -595,14 +603,22 @@
 		if (e.code === 'Space') {
 			e.preventDefault();
 			if (currentMode === 'sync') {
-				stampCurrentLine();
+				if (e.shiftKey) {
+					stampEndActiveLine();
+				} else {
+					stampCurrentLine();
+				}
 			} else {
 				togglePlay();
 			}
 		} else if (e.code === 'Enter') {
 			e.preventDefault();
 			if (currentMode === 'sync') {
-				stampCurrentLine();
+				if (e.shiftKey) {
+					stampEndActiveLine();
+				} else {
+					stampCurrentLine();
+				}
 			}
 		} else if (e.code === 'ArrowUp') {
 			e.preventDefault();
@@ -650,7 +666,6 @@
 
 	// Switch from Text Mode to Sync Mode
 	function applyRawText() {
-		rawLyricsText = stripLrcMetadataHeaders(rawLyricsText);
 		lyricLines = parseLyrics(rawLyricsText);
 		activeLineIndex = 0;
 		currentMode = 'sync';
@@ -772,7 +787,7 @@
 			bind:duration
 			onloadedmetadata={() => {
 				if (audioEl) {
-					audioEl.volume = isMuted ? 0 : volume;
+					audioEl.volume = getEffectiveGain(volume, isMuted);
 					audioEl.muted = isMuted;
 				}
 			}}
@@ -1016,9 +1031,9 @@
 						</div>
 					{/if}
 
-					<div class="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+					<div class="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
 						<div>
-							<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Title</span>
+							<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Title (ti)</span>
 							<input
 								type="text"
 								bind:value={trackTitle}
@@ -1027,11 +1042,31 @@
 							/>
 						</div>
 						<div>
-							<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Artist</span>
+							<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Artist (ar)</span>
 							<input
 								type="text"
 								bind:value={trackArtist}
 								placeholder="Artist"
+								class="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+							/>
+						</div>
+						<div>
+							<div class="flex items-center justify-between">
+								<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Album (al)</span>
+								<button
+									type="button"
+									onclick={() => (showMetadataDrawer = !showMetadataDrawer)}
+									class="text-[10px] text-emerald-400 hover:text-emerald-300 transition cursor-pointer flex items-center gap-0.5"
+									title="Toggle more LRC ID tags (au, by, length, offset)"
+								>
+									<Sliders class="w-2.5 h-2.5" />
+									<span>{showMetadataDrawer ? 'Less' : 'More Tags'}</span>
+								</button>
+							</div>
+							<input
+								type="text"
+								bind:value={albumTitle}
+								placeholder="Album Title"
 								class="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
 							/>
 						</div>
@@ -1073,6 +1108,50 @@
 					</div>
 				</div>
 			</div>
+
+			<!-- Expandable ID Tags & Metadata Drawer -->
+			{#if showMetadataDrawer}
+				<div class="mt-3 pt-3 border-t border-neutral-800/80 grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs animate-in fade-in duration-150">
+					<div>
+						<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Author / Composer (au)</span>
+						<input
+							type="text"
+							bind:value={trackAuthor}
+							placeholder="e.g. John Lennon"
+							class="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+						/>
+					</div>
+					<div>
+						<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">LRC Creator (by)</span>
+						<input
+							type="text"
+							bind:value={lrcCreator}
+							placeholder="Trax Vault"
+							class="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+						/>
+					</div>
+					<div>
+						<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Track Length (length)</span>
+						<input
+							type="text"
+							value={duration > 0 ? formatDurationShort(duration) : '--:--'}
+							disabled
+							class="w-full bg-neutral-950/60 border border-neutral-800 rounded px-2 py-1 text-xs text-neutral-400 font-mono cursor-not-allowed"
+							title="Auto-calculated from audio file duration"
+						/>
+					</div>
+					<div>
+						<span class="text-[10px] text-neutral-400 block font-semibold uppercase tracking-wider">Timing Offset (offset ms)</span>
+						<input
+							type="number"
+							bind:value={lrcOffset}
+							placeholder="0"
+							class="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+							title="Global time adjustment in milliseconds"
+						/>
+					</div>
+				</div>
+			{/if}
 
 			<!-- Folder Companion Lyrics File Info -->
 			{#if data.track}
@@ -1120,7 +1199,8 @@
 						step="0.01"
 						value={currentTime}
 						oninput={(e) => seekTo(parseFloat(e.currentTarget.value))}
-						class="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+						class="w-full h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 slider-compact"
+						style={`background: linear-gradient(to right, #10b981 ${scrubberPercent}%, #262626 ${scrubberPercent}%);`}
 					/>
 				</div>
 				<span class="font-mono text-xs text-neutral-500 w-16 tabular-nums">
@@ -1210,7 +1290,8 @@
 						step="0.01"
 						value={isMuted ? 0 : volume}
 						oninput={(e) => setVolume(parseFloat(e.currentTarget.value))}
-						class="w-16 sm:w-20 md:w-24 h-1.5 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+						class="w-16 sm:w-20 md:w-24 h-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 slider-compact"
+						style={`background: linear-gradient(to right, #10b981 ${volumePercent}%, #262626 ${volumePercent}%);`}
 						title={`Volume: ${isMuted ? 0 : Math.round(volume * 100)}%`}
 					/>
 
@@ -1223,7 +1304,10 @@
 				<div class="flex items-center gap-1 bg-neutral-950 border border-neutral-800 rounded-lg p-1 text-xs">
 					<button
 						type="button"
-						onclick={() => (currentMode = 'text')}
+						onclick={() => {
+							rawLyricsText = generateLrcContent();
+							currentMode = 'text';
+						}}
 						class="flex items-center gap-1 px-3 py-1 rounded transition cursor-pointer {currentMode === 'text'
 							? 'bg-neutral-800 text-white font-medium'
 							: 'text-neutral-400 hover:text-white'}"
@@ -1296,9 +1380,19 @@
 								type="button"
 								onclick={stampCurrentLine}
 								class="px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition cursor-pointer shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+								title="Record start time for active line and advance (Space / Enter)"
 							>
 								<Clock class="w-4 h-4 fill-current" />
-								<span>Stamp Line (Space / Enter)</span>
+								<span>Stamp Start (Space)</span>
+							</button>
+
+							<button
+								type="button"
+								onclick={stampEndActiveLine}
+								class="px-3.5 py-2.5 rounded-lg bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/40 text-purple-300 font-semibold text-xs transition cursor-pointer shadow-md flex items-center gap-1.5"
+								title="Record end time for active line (Shift+Space)"
+							>
+								<span>➔ Stamp End (Shift+Space)</span>
 							</button>
 
 							<button
@@ -1540,8 +1634,8 @@
 									{/if}
 								</div>
 
-								<!-- Timestamp Chip -->
-								<div class="shrink-0">
+								<!-- Timestamp Chips (Start & Optional End) -->
+								<div class="shrink-0 flex items-center gap-1.5">
 									{#if line.time !== null}
 										<button
 											type="button"
@@ -1549,11 +1643,49 @@
 											class="px-2.5 py-1 rounded border font-mono text-xs transition cursor-pointer flex items-center gap-1.5 {isCurrentPlaying
 												? 'bg-emerald-500 text-black font-bold border-emerald-400 shadow-md'
 												: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'}"
-											title="Click to seek audio to this timestamp"
+											title="Line start time (click to seek)"
 										>
 											<Play class="w-2.5 h-2.5 fill-current" />
 											{formatTime(line.time)}
 										</button>
+
+										<!-- End Time Indicator / Quick Stamp -->
+										{#if line.endTime !== null && line.endTime !== undefined}
+											<div class="flex items-center gap-0.5 bg-purple-950/40 border border-purple-500/30 rounded px-1.5 py-0.5">
+												<button
+													type="button"
+													onclick={() => seekTo(line.endTime!)}
+													class="text-purple-300 font-mono text-[10px] hover:text-white transition cursor-pointer flex items-center gap-1"
+													title="Line end time (click to seek)"
+												>
+													<span class="text-purple-400 text-[9px]">➔</span>
+													<span>{formatTime(line.endTime)}</span>
+												</button>
+												<button
+													type="button"
+													onclick={() => removeEndTime(i)}
+													class="text-neutral-500 hover:text-rose-400 ml-0.5 p-0.5 transition cursor-pointer text-[10px]"
+													title="Remove end time"
+												>
+													✕
+												</button>
+											</div>
+										{:else}
+											<button
+												type="button"
+												onclick={() => {
+													if (audioEl && audioEl.currentTime > line.time!) {
+														line.endTime = Math.round(audioEl.currentTime * 100) / 100;
+													} else {
+														line.endTime = Math.round((line.time! + 3.0) * 100) / 100;
+													}
+												}}
+												class="px-1.5 py-0.5 rounded text-[10px] font-mono text-neutral-500 hover:text-purple-300 hover:bg-neutral-800 transition cursor-pointer border border-dashed border-neutral-800 hover:border-purple-500/40"
+												title="Stamp current audio position as line end time (or Shift+Space)"
+											>
+												+End
+											</button>
+										{/if}
 									{:else}
 										<button
 											type="button"
@@ -1568,7 +1700,7 @@
 									{/if}
 								</div>
 
-								<!-- Line Text (Editable or clickable) -->
+								<!-- Line Text & Word-by-Word Karaoke Chips -->
 								<div class="flex-1 min-w-0">
 									<input
 										type="text"
@@ -1582,6 +1714,21 @@
 											? 'text-neutral-200'
 											: 'text-neutral-400'}"
 									/>
+									{#if line.words && line.words.length > 0}
+										<div class="flex flex-wrap items-center gap-1 mt-1 px-1">
+											{#each line.words as w}
+												{@const isWordActive = isCurrentPlaying && currentTime >= w.time}
+												<span
+													class="px-1.5 py-0.2 rounded text-[10px] font-mono transition-all duration-100 {isWordActive
+														? 'bg-emerald-500/25 text-emerald-300 font-bold border border-emerald-500/40 shadow-[0_0_6px_rgba(16,185,129,0.3)] scale-105'
+														: 'bg-neutral-900 border border-neutral-800/80 text-neutral-400'}"
+													title={`Word: "${w.text}" at ${formatTime(w.time)}`}
+												>
+													{w.text} <span class="text-[8px] opacity-60">({formatTime(w.time)})</span>
+												</span>
+											{/each}
+										</div>
+									{/if}
 								</div>
 
 								<!-- Micro Fine-tuning Actions -->
@@ -1657,7 +1804,16 @@
 											? 'text-sm md:text-base text-neutral-500'
 											: 'text-sm md:text-base text-neutral-400'}"
 									>
-										{line.text}
+										{#if i === currentPlaybackLineIndex && line.words && line.words.length > 0}
+											{#each line.words as w}
+												{@const isWordSung = currentTime >= w.time}
+												<span class="transition-colors duration-100 {isWordSung ? 'text-emerald-300 drop-shadow-[0_0_12px_rgba(16,185,129,0.6)]' : 'text-neutral-500'}">
+													{w.text}
+												</span>
+											{/each}
+										{:else}
+											{line.text}
+										{/if}
 									</div>
 								{/if}
 							{/each}

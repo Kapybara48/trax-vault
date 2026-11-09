@@ -38,6 +38,7 @@
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
+	import { parseLrcEnhanced, type EnhancedLyricLine } from '$lib/utils.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -66,7 +67,7 @@
 
 	// Synced Lyrics State
 	let lyricsLoading = $state(false);
-	let lyricsLines = $state<{ time: number | null; text: string }[]>([]);
+	let lyricsLines = $state<EnhancedLyricLine[]>([]);
 	let isInstrumentalLyrics = $state(false);
 	let instrumentalMarker = $state('♪');
 	let lyricsContainerEl: HTMLDivElement | null = $state(null);
@@ -152,63 +153,22 @@
 		return `${m}m ${s}s`;
 	}
 
-	// Parse LRC format into structured lines (supports multiple timestamps per line)
-	function parseLrc(content: string): { time: number | null; text: string }[] {
-		const lines = content.split('\n');
-		const result: { time: number | null; text: string }[] = [];
-
-		for (const rawLine of lines) {
-			const line = rawLine.trim();
-			if (!line) continue;
-			if (/^\[(ti|ar|al|length|by|offset|re|ve):/i.test(line)) continue;
-
-			const timestampRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
-			let match: RegExpExecArray | null;
-			const times: number[] = [];
-			let lastIndex = 0;
-
-			while ((match = timestampRegex.exec(line)) !== null) {
-				const m = parseInt(match[1], 10);
-				const s = parseInt(match[2], 10);
-				const ms = parseFloat(`0.${match[3] || '0'}`);
-				times.push(m * 60 + s + ms);
-				lastIndex = timestampRegex.lastIndex;
-			}
-
-			if (times.length > 0) {
-				const lyricText = line.slice(lastIndex).trim();
-				for (const t of times) {
-					result.push({
-						time: t,
-						text: lyricText
-					});
-				}
-			} else {
-				result.push({
-					time: null,
-					text: line
-				});
-			}
-		}
-
-		// Sort timed lyrics chronologically
-		result.sort((a, b) => {
-			if (a.time === null && b.time === null) return 0;
-			if (a.time === null) return 1;
-			if (b.time === null) return -1;
-			return a.time - b.time;
-		});
-
-		return result;
+	// Parse LRC format into structured lines (supports multiple timestamps, start/end, and word-by-word)
+	function parseLrc(content: string): EnhancedLyricLine[] {
+		return parseLrcEnhanced(content).lines;
 	}
 
-	// Active singing line derived from audio currentTime
+	// Active singing line derived from audio currentTime (with rest interval support between verses)
 	let activeLyricLineIndex = $derived.by(() => {
 		if (!lyricsLines.length) return -1;
 		let idx = -1;
 		for (let i = 0; i < lyricsLines.length; i++) {
 			const l = lyricsLines[i];
 			if (l.time !== null && l.time <= player.currentTime) {
+				if (l.endTime !== null && l.endTime !== undefined && player.currentTime > l.endTime) {
+					idx = -1;
+					continue;
+				}
 				idx = i;
 			}
 		}
@@ -239,7 +199,7 @@
 		if (track.lyrics === 'instrumental') {
 			isInstrumentalLyrics = true;
 			instrumentalMarker = '♪';
-			lyricsLines = [{ time: 0, text: instrumentalMarker }];
+			lyricsLines = [{ id: 'inst-1', time: 0, endTime: null, text: instrumentalMarker }];
 			lyricsLoading = false;
 			return;
 		}
@@ -256,7 +216,7 @@
 			if (data.status === 'instrumental' || data.is_instrumental) {
 				isInstrumentalLyrics = true;
 				instrumentalMarker = data.instrumental_marker || '♪';
-				lyricsLines = [{ time: 0, text: instrumentalMarker }];
+				lyricsLines = [{ id: 'inst-1', time: 0, endTime: null, text: instrumentalMarker }];
 			} else if (data.lyrics_text) {
 				isInstrumentalLyrics = false;
 				lyricsLines = parseLrc(data.lyrics_text);
@@ -1105,7 +1065,16 @@
 											? 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-neutral-800/30'
 											: 'text-neutral-300 border-transparent hover:text-white hover:bg-neutral-800/30'}"
 									>
-										{line.text}
+										{#if isActive && line.words && line.words.length > 0}
+											{#each line.words as w}
+												{@const isWordSung = player.currentTime >= w.time}
+												<span class="transition-colors duration-100 {isWordSung ? 'text-emerald-300 font-bold drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'text-neutral-400 opacity-60'}">
+													{w.text}
+												</span>
+											{/each}
+										{:else}
+											{line.text}
+										{/if}
 									</button>
 								{/each}
 							</div>

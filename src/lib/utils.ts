@@ -223,6 +223,198 @@ export function stripLrcMetadataHeaders(content: string): string {
 	return cleanLines.join('\n');
 }
 
+export interface LrcMetadataHeaders {
+	title?: string;
+	artist?: string;
+	album?: string;
+	author?: string;
+	length?: string;
+	by?: string;
+	offset?: number;
+}
+
+export interface LyricWord {
+	time: number; // Seconds (e.g. 12.34)
+	text: string;
+}
+
+export interface EnhancedLyricLine {
+	id: string;
+	time: number | null; // Line start seconds
+	endTime?: number | null; // Line end seconds
+	text: string; // Clean text without tags
+	words?: LyricWord[]; // Word-by-word timestamps
+	raw?: string;
+}
+
+export function formatLrcTime(seconds: number): string {
+	if (isNaN(seconds) || seconds < 0) return '00:00.00';
+	const m = Math.floor(seconds / 60);
+	const s = Math.floor(seconds % 60);
+	const ms = Math.floor((seconds % 1) * 100);
+	return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+}
+
+export function parseLrcTimestamp(ts: string): number | null {
+	const match = ts.match(/\[?<?(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>?\]?/);
+	if (!match) return null;
+	const m = parseInt(match[1], 10);
+	const s = parseInt(match[2], 10);
+	const msStr = match[3] || '0';
+	const ms = parseFloat(`0.${msStr}`);
+	return m * 60 + s + ms;
+}
+
+/**
+ * Robust parser for standard and Enhanced LRC files.
+ * Handles:
+ * - Standard ID metadata headers: [ti:], [ar:], [al:], [au:], [length:], [by:], [offset:]
+ * - Line start & end timestamps: [00:10.00][00:14.00]Text or [00:10.00]Text[00:14.00]
+ * - Multi-timestamp line repetitions: [00:10.00][01:25.00]Chorus
+ * - Enhanced LRC word-by-word karaoke timestamps: <00:10.00>word
+ */
+export function parseLrcEnhanced(content: string): {
+	metadata: LrcMetadataHeaders;
+	lines: EnhancedLyricLine[];
+} {
+	const metadata: LrcMetadataHeaders = {};
+	const rawLines = (content || '').split(/\r?\n/);
+	const lines: EnhancedLyricLine[] = [];
+
+	for (const rawLine of rawLines) {
+		const line = rawLine.trim();
+		if (!line) continue;
+
+		// 1. Metadata header tags [ti:], [ar:], [al:], [au:], [length:], [by:], [offset:]
+		const metaMatch = line.match(/^\[(ti|ar|al|au|length|by|offset):([^\]]*)\]/i);
+		if (metaMatch) {
+			const tag = metaMatch[1].toLowerCase();
+			const val = metaMatch[2].trim();
+			if (tag === 'ti') metadata.title = val;
+			else if (tag === 'ar') metadata.artist = val;
+			else if (tag === 'al') metadata.album = val;
+			else if (tag === 'au') metadata.author = val;
+			else if (tag === 'length') metadata.length = val;
+			else if (tag === 'by') metadata.by = val;
+			else if (tag === 'offset') {
+				const num = parseInt(val, 10);
+				if (!isNaN(num)) metadata.offset = num;
+			}
+			continue;
+		}
+
+		// 2. Extract line bracket timestamps [mm:ss.xx]
+		const bracketRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
+		const bracketMatches = [...line.matchAll(bracketRegex)];
+		const bracketTimes = bracketMatches
+			.map((m) => parseLrcTimestamp(m[0]))
+			.filter((t): t is number => t !== null);
+
+		// Extract text stripped of bracket timestamps
+		const textWithoutBrackets = line.replace(bracketRegex, '').trim();
+
+		// 3. Extract word timestamps <mm:ss.xx> if present
+		const wordRegex = /<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>([^<]*)/g;
+		const wordMatches = [...textWithoutBrackets.matchAll(wordRegex)];
+		let words: LyricWord[] | undefined = undefined;
+		let cleanText = textWithoutBrackets;
+
+		if (wordMatches.length > 0) {
+			words = wordMatches
+				.map((wm) => {
+					const t = parseLrcTimestamp(wm[0]);
+					return t !== null ? { time: t, text: wm[4] } : null;
+				})
+				.filter((w): w is LyricWord => w !== null);
+			cleanText = words.map((w) => w.text).join('').trim();
+		}
+
+		if (bracketTimes.length === 0) {
+			// Untimed text line
+			lines.push({
+				id: Math.random().toString(36).slice(2, 9),
+				time: null,
+				endTime: null,
+				text: cleanText,
+				raw: line
+			});
+		} else if (bracketTimes.length === 2 && bracketTimes[1] > bracketTimes[0] && bracketTimes[1] - bracketTimes[0] <= 25) {
+			// Start and End timestamps on a single line
+			lines.push({
+				id: Math.random().toString(36).slice(2, 9),
+				time: bracketTimes[0],
+				endTime: bracketTimes[1],
+				text: cleanText,
+				words: words && words.length > 0 ? words : undefined,
+				raw: line
+			});
+		} else {
+			// Either single timestamp or repeated chorus timestamps (e.g. [00:10.00][01:30.00]Chorus)
+			for (const t of bracketTimes) {
+				lines.push({
+					id: Math.random().toString(36).slice(2, 9),
+					time: t,
+					endTime: null,
+					text: cleanText,
+					words: words && words.length > 0 ? words : undefined,
+					raw: line
+				});
+			}
+		}
+	}
+
+	// Sort chronologically by start time
+	lines.sort((a, b) => {
+		if (a.time === null && b.time === null) return 0;
+		if (a.time === null) return 1;
+		if (b.time === null) return -1;
+		return a.time - b.time;
+	});
+
+	return { metadata, lines };
+}
+
+/**
+ * Generates valid standard or Enhanced LRC file content including header metadata.
+ */
+export function generateLrcEnhanced(
+	metadata: LrcMetadataHeaders,
+	lines: EnhancedLyricLine[],
+	options: { includeHeaders?: boolean } = { includeHeaders: true }
+): string {
+	const out: string[] = [];
+
+	if (options.includeHeaders !== false) {
+		if (metadata.title) out.push(`[ti:${metadata.title}]`);
+		if (metadata.artist) out.push(`[ar:${metadata.artist}]`);
+		if (metadata.album) out.push(`[al:${metadata.album}]`);
+		if (metadata.author) out.push(`[au:${metadata.author}]`);
+		if (metadata.length) out.push(`[length:${metadata.length}]`);
+		if (metadata.by) out.push(`[by:${metadata.by}]`);
+		if (typeof metadata.offset === 'number' && metadata.offset !== 0) out.push(`[offset:${metadata.offset}]`);
+	}
+
+	for (const line of lines) {
+		if (line.time !== null) {
+			let lineStr = `[${formatLrcTime(line.time)}]`;
+			if (line.endTime !== null && line.endTime !== undefined && line.endTime > line.time) {
+				lineStr += `[${formatLrcTime(line.endTime)}]`;
+			}
+			if (line.words && line.words.length > 0) {
+				const wordStr = line.words.map((w) => `<${formatLrcTime(w.time)}>${w.text}`).join('');
+				lineStr += ` ${wordStr}`;
+			} else {
+				lineStr += ` ${line.text}`;
+			}
+			out.push(lineStr);
+		} else {
+			out.push(line.text);
+		}
+	}
+
+	return out.join('\n');
+}
+
 /**
  * Extract MusicBrainz ID from plain UUID string, prefixed format (e.g. mbid:... or reid:...),
  * or full musicbrainz.org URL.

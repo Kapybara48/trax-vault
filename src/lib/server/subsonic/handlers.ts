@@ -40,6 +40,7 @@ import {
 	isInstrumentalLyrics,
 	stripLrcMetadataHeaders
 } from '$lib/server/scanner.js';
+import { parseLrcEnhanced } from '$lib/utils.js';
 import type { Album, Track } from '$lib/types/index.js';
 import type { User } from '$lib/server/auth.js';
 import { SubsonicErrorCode } from './types.js';
@@ -1293,7 +1294,7 @@ export const subsonicHandlers: Record<
 			}
 		}
 
-		lyricsText = stripLrcMetadataHeaders(lyricsText);
+		lyricsText = stripLrcMetadataHeaders(lyricsText).replace(/<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>/g, '');
 
 		if (!lyricsText.trim()) {
 			return {
@@ -1316,44 +1317,24 @@ export const subsonicHandlers: Record<
 			};
 		}
 
-		// Parse lines (support multi-timestamp and synced vs unsynced)
-		const lines = lyricsText.split(/\r?\n/);
+		// Parse lines using parseLrcEnhanced (supports standard, line start/end, and Enhanced LRC word-by-word)
+		const parsed = parseLrcEnhanced(lyricsText);
 		const timedLines: Array<{ start: number; value: string }> = [];
 		const plainLines: string[] = [];
-		let isSynced = false;
 
-		const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
-
-		for (const rawLine of lines) {
-			const line = rawLine.trim();
-			if (!line) continue;
-
-			// Skip any leftover metadata tags like [ti:...] or empty brackets []
-			if (/^\[[a-zA-Z_]{1,15}:[^\]]*\]/i.test(line) || /^\[\s*\]$/.test(line)) {
-				continue;
-			}
-
-			const matches = [...line.matchAll(timeRegex)];
-			if (matches.length > 0) {
-				isSynced = true;
-				const text = line.replace(timeRegex, '').trim();
-				for (const match of matches) {
-					const min = parseInt(match[1], 10);
-					const sec = parseInt(match[2], 10);
-					const msStr = match[3] || '0';
-					const ms = parseInt(msStr.padEnd(3, '0').slice(0, 3), 10);
-					const totalMs = min * 60000 + sec * 1000 + ms;
-					timedLines.push({ start: totalMs, value: text });
-				}
+		for (const line of parsed.lines) {
+			if (!line.text.trim()) continue;
+			if (line.time !== null) {
+				timedLines.push({
+					start: Math.round(line.time * 1000),
+					value: line.text.trim()
+				});
 			} else {
-				plainLines.push(line);
+				plainLines.push(line.text.trim());
 			}
 		}
 
-		if (isSynced) {
-			timedLines.sort((a, b) => a.start - b.start);
-		}
-
+		const isSynced = timedLines.length > 0;
 		const resultLines = isSynced
 			? timedLines
 			: plainLines.map((l) => ({ start: 0, value: l }));
@@ -1395,7 +1376,7 @@ export const subsonicHandlers: Record<
 			}
 		}
 
-		lyricsText = stripLrcMetadataHeaders(lyricsText);
+		lyricsText = stripLrcMetadataHeaders(lyricsText).replace(/<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>/g, '');
 
 		return {
 			data: {

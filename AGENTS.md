@@ -816,6 +816,27 @@ This document preserves persistent context, architectural conventions, recent ch
       - Unpairing a track (via `X` button, dropdown swap, or dragging onto Column 1) instantly restores it to Column 1.
       - When all files are paired, Column 1 renders an emerald completion badge (`✓ All {matches.length} storage files are paired!`).
 
+57. **LRC Maker Modern Sliders, Psychoacoustic Volume, & Enhanced LRC Specification (v1.7.17)**:
+    - **Modern Sliders (`.slider-compact`)**:
+      - Replaced thick native HTML sliders in LRC Maker (`src/routes/lrc-maker/+page.svelte`) with sleek 4px (`h-1`) `.slider-compact` controls with dynamic emerald fill gradients.
+      - Added cross-browser slider pseudo-element track styles (`::-webkit-slider-runnable-track`, `::-moz-range-track`, `::-moz-range-progress`) in `src/routes/layout.css`.
+    - **Psychoacoustic Perceptual Volume Curve**:
+      - Replaced linear audio gain with power curve `Math.pow(volume, 2.2)` matching human ear perception across quiet, medium, and loud steps.
+      - Synchronized global `player.volume` and added lifecycle audio cleanup in `onDestroy`.
+    - **Full LRC Specification & ID Metadata Header Tags**:
+      - Added isomorphic `parseLrcEnhanced(content)` and `generateLrcEnhanced(metadata, lines)` in `src/lib/utils.ts`.
+      - Supported standard LRC ID tags: `[ti:]` (title), `[ar:]` (artist), `[al:]` (album), `[au:]` (author/composer), `[length:]`, `[by:]` (creator), and `[offset:]` (millisecond shift).
+      - Added expandable "LRC ID Tags & Metadata" drawer in LRC Maker header for live inspection and editing.
+    - **Line Start & End Timestamps (`[start][end]`)**:
+      - Parsed lines with both start and end timestamps (e.g. `[00:10.00][00:14.00]Line` or trailing `[end]`), disambiguating from repeated chorus timestamps (delta <= 25s).
+      - Added `+End` stamping action button and `Shift+Space` / `Shift+Enter` hotkey in LRC Maker.
+      - Playback engine in `/player` rests during gaps between verses when line end times are reached (`currentTime > l.endTime`).
+    - **Word-by-Word Karaoke Timestamps (`<mm:ss.xx>`) / Enhanced LRC (A2 Karaoke)**:
+      - Parsed word tokens into structured `LyricWord[]` and stripped tags from displayed text.
+      - Implemented progressive word-by-word karaoke glow in LRC Maker Preview mode and the `/player` studio lyrics drawer.
+    - **Subsonic API Sanitization**:
+      - Updated `getLyricsBySongId.view` and `getLyrics.view` in `src/lib/server/subsonic/handlers.ts` using `parseLrcEnhanced` to strip word tokens `<...>` and metadata headers so mobile clients (Symfonium/Feishin) display clean lines.
+
 ---
 
 ## 4. Workflows & Verification
