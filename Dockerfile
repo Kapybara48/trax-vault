@@ -1,7 +1,7 @@
 # --- Build stage ---
 FROM node:22-bookworm-slim AS builder
 
-ARG APP_VERSION=1.7.12
+ARG APP_VERSION=1.7.13
 ENV APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
@@ -23,7 +23,7 @@ RUN npm prune --production
 # --- Production runner stage ---
 FROM node:22-bookworm-slim AS runner
 
-ARG APP_VERSION=1.7.12
+ARG APP_VERSION=1.7.13
 
 WORKDIR /app
 

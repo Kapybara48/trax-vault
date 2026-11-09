@@ -764,6 +764,24 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Unassigned Local Files Shelf**:
       - Draggable badge pool at top displaying all local files not yet matched to release tracks with instant drop re-pairing.
 
+53. **Full-Screen 1-Line Picard Tagger with 2-Column Architecture (v1.7.13)**:
+    - **Full-Screen Canvas & Collapsible Library Sidebar**:
+      - Removed `max-w-7xl` constraint from `src/routes/tagger/+page.svelte`, expanding the tagger workspace across 100% of the screen width (`w-full px-4 sm:px-6 lg:px-8`).
+      - Added collapsible library sidebar toggle (`[ < Hide Library ]` / `[ > Show Library ]` with `PanelLeftClose`/`PanelLeftOpen` icons). When collapsed, the main tagger studio expands to full 12-column width.
+    - **Strict 1-Line-Per-Song Density**:
+      - Condensed all track rows to a single horizontal line (`h-9` or `h-10`, ~36-40px high). An entire album of 12-16 songs fits completely within the screen height without vertical scrolling.
+      - Inline rename preview: Replaced multi-line rename text with an inline `FileText` badge with full tooltip (`title="Renames on disk: ... ➔ ..."`).
+    - **2-Column Tagger Architecture**:
+      - **Column 1 (Storage Files)**: Left panel displaying all local files in storage with track #, title, format, duration, slot status pill (`➔ 01` or `Free`), and drag handle. Acts as a drop zone to unpair any track.
+      - **Column 2 (Album Tag Alignment)**: Right panel displaying the MusicBrainz release structured into two synchronized subcolumns:
+        - **Subcolumn 1**: Local storage file currently assigned to this track slot (1-line: drag handle, track #, title, duration, rename badge, unpair `X` button, or `[ Drop file here ]`).
+        - **Subcolumn 2**: Official MusicBrainz album track (1-line: write checkbox, official #, title, artist, duration, match score pill, and quick reassign dropdown).
+        - **1-to-1 Horizontal Alignment**: Subcolumn 1 directly corresponds horizontally on the exact same line with Subcolumn 2.
+    - **Fluid Cross-Column Drag & Drop**:
+      - Drag from Column 1 into Subcolumn 1 of any row in Column 2 to pair.
+      - Drag between rows in Column 2 to swap.
+      - Drag back onto Column 1 or click `X` to unpair.
+
 ---
 
 ## 4. Workflows & Verification
