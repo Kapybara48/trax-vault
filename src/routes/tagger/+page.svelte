@@ -37,7 +37,9 @@
 		Copy,
 		ZoomIn,
 		Eye,
-		FileText
+		FileText,
+		GripVertical,
+		ArrowLeftRight
 	} from '@lucide/svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -212,6 +214,26 @@
 		releaseDetail ? releaseDetail.tracks.reduce((max, t) => Math.max(max, t.disc_number || 1), 1) : 1
 	);
 
+	const releaseDiscs = $derived.by(() => {
+		if (!releaseDetail) return [];
+		const discsMap = new Map<number, MusicBrainzReleaseTrack[]>();
+		for (const tr of releaseDetail.tracks) {
+			const d = tr.disc_number || 1;
+			if (!discsMap.has(d)) discsMap.set(d, []);
+			discsMap.get(d)!.push(tr);
+		}
+		return Array.from(discsMap.entries())
+			.sort(([a], [b]) => a - b)
+			.map(([discNumber, tracks]) => ({
+				discNumber,
+				tracks: tracks.sort((a, b) => a.track_number - b.track_number)
+			}));
+	});
+
+	const unmatchedLocalMatches = $derived.by(() => {
+		return matches.filter((m) => !m.mbTrack);
+	});
+
 	function getTargetFilenamePreview(
 		localTrack: Track,
 		mbTrack: MusicBrainzReleaseTrack | null | undefined,
@@ -298,12 +320,16 @@
 
 	// Summary stats
 	const selectedCount = $derived(matches.filter((m) => m.selected && m.mbTrack).length);
-	const allSelected = $derived(matches.length > 0 && matches.every((m) => m.selected));
+	const allSelected = $derived(
+		matches.filter((m) => m.mbTrack).length > 0 && matches.filter((m) => m.mbTrack).every((m) => m.selected)
+	);
 
 	function toggleSelectAll() {
 		const next = !allSelected;
 		for (const m of matches) {
-			m.selected = next;
+			if (m.mbTrack) {
+				m.selected = next;
+			}
 		}
 	}
 
@@ -555,12 +581,7 @@
 		}
 	}
 
-	function handleRemapTrack(matchIndex: number, newMbTrackId: string) {
-		if (!releaseDetail) return;
-		const targetMbTrack = releaseDetail.tracks.find((t) => t.id === newMbTrackId) || null;
-		const m = matches[matchIndex];
-		if (!m) return;
-
+	function applyMatchToTrack(m: EditableMatch, targetMbTrack: MusicBrainzReleaseTrack | null) {
 		m.mbTrack = targetMbTrack;
 		if (targetMbTrack) {
 			m.selected = true;
@@ -585,10 +606,134 @@
 			m.score = 0;
 			m.matchType = 'unmatched';
 		}
+	}
 
-		// Recompute missing tracks in real-time
+	function recomputeMissingTracks() {
+		if (!releaseDetail) return;
 		const matchedMbIds = new Set(matches.map((match) => match.mbTrack?.id).filter(Boolean));
 		missingTracks = releaseDetail.tracks.filter((rt) => !matchedMbIds.has(rt.id));
+	}
+
+	function handleRemapTrack(matchIndex: number, newMbTrackId: string) {
+		if (!releaseDetail) return;
+		const targetMbTrack = releaseDetail.tracks.find((t) => t.id === newMbTrackId) || null;
+		const m = matches[matchIndex];
+		if (!m) return;
+
+		// If another local track already had this newMbTrackId, swap them
+		if (targetMbTrack) {
+			const existingOccupant = matches.find((other, idx) => idx !== matchIndex && other.mbTrack?.id === newMbTrackId);
+			if (existingOccupant) {
+				const oldMbTrack = m.mbTrack;
+				applyMatchToTrack(m, targetMbTrack);
+				applyMatchToTrack(existingOccupant, oldMbTrack);
+				recomputeMissingTracks();
+				return;
+			}
+		}
+
+		applyMatchToTrack(m, targetMbTrack);
+		recomputeMissingTracks();
+	}
+
+	// Native HTML5 Drag and Drop Handlers for Picard Track Matcher
+	let draggedLocalTrackId = $state<number | null>(null);
+	let dragOverMbTrackId = $state<string | null>(null);
+	let isDragOverUnmatchedPool = $state(false);
+
+	function handleDragStart(e: DragEvent, localTrackId: number) {
+		draggedLocalTrackId = localTrackId;
+		if (e.dataTransfer) {
+			e.dataTransfer.setData('text/plain', String(localTrackId));
+			e.dataTransfer.effectAllowed = 'move';
+		}
+	}
+
+	function handleDragEnd() {
+		draggedLocalTrackId = null;
+		dragOverMbTrackId = null;
+		isDragOverUnmatchedPool = false;
+	}
+
+	function handleDragOver(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer) {
+			e.dataTransfer.dropEffect = 'move';
+		}
+	}
+
+	function handleDragEnterMb(mbTrackId: string) {
+		if (draggedLocalTrackId !== null) {
+			dragOverMbTrackId = mbTrackId;
+		}
+	}
+
+	function handleDragLeaveMb(mbTrackId: string) {
+		if (dragOverMbTrackId === mbTrackId) {
+			dragOverMbTrackId = null;
+		}
+	}
+
+	function handleDropOnMbTrack(targetMbTrackId: string) {
+		if (draggedLocalTrackId === null || !releaseDetail) return;
+		const sourceMatch = matches.find((m) => m.localTrack.id === draggedLocalTrackId);
+		if (!sourceMatch) return;
+
+		const targetMbTrack = releaseDetail.tracks.find((t) => t.id === targetMbTrackId) || null;
+		if (!targetMbTrack) return;
+
+		// Check if another local track is already assigned to this target MB track
+		const existingOccupant = matches.find((m) => m.mbTrack?.id === targetMbTrackId && m.localTrack.id !== sourceMatch.localTrack.id);
+
+		if (existingOccupant) {
+			// Picard SWAP: existing occupant takes old source track (or becomes unassigned)
+			const oldSourceMbTrack = sourceMatch.mbTrack;
+			applyMatchToTrack(sourceMatch, targetMbTrack);
+			applyMatchToTrack(existingOccupant, oldSourceMbTrack);
+		} else {
+			applyMatchToTrack(sourceMatch, targetMbTrack);
+		}
+
+		recomputeMissingTracks();
+		handleDragEnd();
+	}
+
+	function handleDropOnUnmatched() {
+		if (draggedLocalTrackId === null) return;
+		const sourceMatch = matches.find((m) => m.localTrack.id === draggedLocalTrackId);
+		if (sourceMatch) {
+			applyMatchToTrack(sourceMatch, null);
+			recomputeMissingTracks();
+		}
+		handleDragEnd();
+	}
+
+	function handleUnpairTrack(localTrackId: number) {
+		const sourceMatch = matches.find((m) => m.localTrack.id === localTrackId);
+		if (sourceMatch) {
+			applyMatchToTrack(sourceMatch, null);
+			recomputeMissingTracks();
+		}
+	}
+
+	function handleAssignLocalIdToMbTrack(localId: number, targetMbTrackId: string) {
+		if (!releaseDetail) return;
+		const sourceMatch = matches.find((m) => m.localTrack.id === localId);
+		if (!sourceMatch) return;
+
+		const targetMbTrack = releaseDetail.tracks.find((t) => t.id === targetMbTrackId) || null;
+		if (!targetMbTrack) return;
+
+		const existingOccupant = matches.find((m) => m.mbTrack?.id === targetMbTrackId && m.localTrack.id !== localId);
+		if (existingOccupant) {
+			const oldSourceMbTrack = sourceMatch.mbTrack;
+			applyMatchToTrack(sourceMatch, targetMbTrack);
+			applyMatchToTrack(existingOccupant, oldSourceMbTrack);
+		} else {
+			applyMatchToTrack(sourceMatch, targetMbTrack);
+		}
+
+		recomputeMissingTracks();
 	}
 
 	async function applyConfirmedTags() {
@@ -1168,7 +1313,7 @@
 		</div>
 
 		<!-- Right Pane: Main Tagger Studio (col-span-8) -->
-		<div class="lg:col-span-8 space-y-6">
+		<div class="lg:col-span-8 min-w-0 space-y-6">
 			{#if (taggerMode === 'albums' && !selectedAlbum) || (taggerMode === 'folders' && !selectedFolderPath)}
 				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/40 p-12 text-center backdrop-blur-xl">
 					<Tag class="h-10 w-10 text-neutral-600 mx-auto mb-3" />
@@ -1595,79 +1740,60 @@
 					</div>
 				{/if}
 
-				<!-- Missing Songs Alert Banner (MusicBrainz release tracks missing from local folder) -->
+				<!-- Missing Songs Alert Banner (Compact Notice) -->
 				{#if releaseDetail && missingTracks.length > 0}
-					<div class="rounded-3xl border border-amber-600/60 bg-amber-950/40 p-4 sm:p-5 backdrop-blur-xl shadow-xl space-y-3">
-						<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-							<div class="flex items-center gap-2.5">
-								<div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
-									<AlertTriangle class="h-5 w-5" />
-								</div>
-								<div>
-									<h3 class="text-sm font-bold text-amber-200 flex items-center gap-2">
-										<span>Missing Songs Detected</span>
-										<span class="rounded-full bg-amber-900/80 border border-amber-500/50 px-2 py-0.5 text-[10px] font-black text-amber-300">
-											{missingTracks.length} Missing
-										</span>
-									</h3>
-									<p class="text-xs text-amber-300/80">
-										The MusicBrainz release has {releaseDetail.tracks.length} tracks, but your local folder only contains {matches.filter(m => m.mbTrack).length} matched songs.
-									</p>
-								</div>
+					<div class="rounded-3xl border border-amber-600/50 bg-amber-950/30 p-4 backdrop-blur-xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+						<div class="flex items-center gap-3 min-w-0">
+							<div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
+								<AlertTriangle class="h-4.5 w-4.5" />
 							</div>
-
-							<span class="text-[11px] text-amber-400 font-medium">
-								Verify completeness before importing to Vault
-							</span>
-						</div>
-
-						<!-- List of Missing Songs -->
-						<div class="pt-2 border-t border-amber-800/40">
-							<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-								{#each missingTracks as mt (mt.id)}
-									<div class="flex items-center gap-2 rounded-xl bg-neutral-950/70 border border-amber-700/40 px-2.5 py-1.5 text-xs">
-										<span class="font-mono text-[10px] text-amber-400 w-6 shrink-0">
-											{mt.disc_number > 1 ? `${mt.disc_number}-` : ''}{mt.track_number.toString().padStart(2, '0')}
-										</span>
-										<div class="min-w-0 flex-1">
-											<div class="font-semibold text-neutral-200 truncate" title={mt.title}>
-												{mt.title}
-											</div>
-											<div class="text-[10px] text-neutral-500">
-												{formatDuration(mt.duration_ms)}
-											</div>
-										</div>
-										<span class="shrink-0 rounded bg-amber-950/80 border border-amber-600/50 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
-											Missing
-										</span>
-									</div>
-								{/each}
+							<div class="min-w-0">
+								<div class="flex items-center gap-2">
+									<h4 class="text-xs font-bold text-amber-200">
+										{missingTracks.length} {missingTracks.length === 1 ? 'Track' : 'Tracks'} Missing in Local Folder
+									</h4>
+									<span class="rounded-full bg-amber-900/80 border border-amber-500/50 px-2 py-0.5 text-[9px] font-bold text-amber-300">
+										{releaseDetail.tracks.length - missingTracks.length} / {releaseDetail.tracks.length} Paired
+									</span>
+								</div>
+								<p class="text-[11px] text-amber-300/80 truncate mt-0.5">
+									Missing release tracks appear as empty drop slots below. Drag any unassigned local file onto them.
+								</p>
 							</div>
 						</div>
 					</div>
 				{/if}
 
-				<!-- Side-by-Side Track Diff Table -->
-				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 overflow-hidden backdrop-blur-xl shadow-xl">
-					<div class="p-4 sm:p-5 border-b border-neutral-800 flex items-center justify-between">
-						<div class="flex items-center gap-2.5">
-							<SlidersHorizontal class="h-4 w-4 text-emerald-400" />
-							<h3 class="text-sm font-bold text-white">Track Tag Alignment Preview</h3>
-							<span class="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] font-semibold text-neutral-400">
-								{matches.length} tracks
-							</span>
+				<!-- Picard-Style Side-by-Side Track Matcher Studio -->
+				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 overflow-hidden backdrop-blur-xl shadow-xl min-w-0">
+					<!-- Matcher Header Bar -->
+					<div class="p-4 sm:p-5 border-b border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+						<div class="flex items-center gap-2.5 min-w-0">
+							<SlidersHorizontal class="h-4 w-4 text-emerald-400 shrink-0" />
+							<h3 class="text-sm font-bold text-white truncate">Picard Track Tag Alignment</h3>
+							{#if releaseDetail}
+								<span class="rounded-full bg-emerald-950/80 border border-emerald-600/50 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 shrink-0">
+									{selectedCount} / {releaseDetail.tracks.length} paired
+								</span>
+							{:else}
+								<span class="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] font-semibold text-neutral-400 shrink-0">
+									{matches.length} local files
+								</span>
+							{/if}
 						</div>
 
-						{#if matches.length > 0}
-							<button
-								type="button"
-								onclick={toggleSelectAll}
-								class="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition font-medium cursor-pointer"
-							>
-								<CheckCheck class="h-3.5 w-3.5 text-emerald-400" />
-								<span>{allSelected ? 'Deselect All' : 'Select All'}</span>
-							</button>
-						{/if}
+						<div class="flex items-center gap-3 shrink-0">
+							{#if releaseDetail && matches.length > 0}
+								<button
+									type="button"
+									onclick={toggleSelectAll}
+									class="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition font-medium cursor-pointer"
+								>
+									<CheckCheck class="h-3.5 w-3.5 text-emerald-400" />
+									<span>{allSelected ? 'Deselect All' : 'Select All'}</span>
+								</button>
+							{/if}
+						</div>
 					</div>
 
 					{#if isLoadingMatches}
@@ -1678,126 +1804,276 @@
 					{:else if matches.length === 0}
 						<div class="py-16 text-center text-xs text-neutral-400">
 							<Tag class="h-6 w-6 text-neutral-600 mx-auto mb-2" />
-							<span>No track alignment available. Please select a candidate release above.</span>
+							<span>No audio files found in this selection.</span>
+						</div>
+					{:else if !releaseDetail}
+						<div class="py-16 text-center text-xs text-neutral-400">
+							<Tag class="h-6 w-6 text-neutral-600 mx-auto mb-2" />
+							<span>Please select a candidate release above to match tracks.</span>
 						</div>
 					{:else}
-						<div class="overflow-x-auto">
-							<table class="w-full text-left text-xs">
-								<thead>
-									<tr class="border-b border-neutral-800 bg-neutral-950/60 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-										<th class="py-3 px-3 w-10 text-center">Write</th>
-										<th class="py-3 px-3">Current Local Track</th>
-										<th class="py-3 px-3 text-center">Match</th>
-										<th class="py-3 px-3">Target MusicBrainz Track</th>
-									</tr>
-								</thead>
-								<tbody class="divide-y divide-neutral-800/60">
-									{#each matches as m, i (m.localTrack.id)}
-										<tr class="hover:bg-neutral-800/30 transition {m.selected ? 'bg-neutral-900/30' : 'opacity-60'}">
-											<!-- Checkbox -->
-											<td class="py-3 px-3 text-center">
-												<input
-													type="checkbox"
-													bind:checked={m.selected}
-													disabled={!m.mbTrack}
-													class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 cursor-pointer"
-												/>
-											</td>
+						<div class="p-4 sm:p-5 space-y-5 min-w-0">
+							<!-- Drag & Drop Instruction Hint -->
+							<div class="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400">
+								<ArrowLeftRight class="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+								<span class="truncate">
+									<strong class="text-neutral-200">Picard Drag & Drop:</strong> Drag any local track from the left onto an album slot on the right to swap or assign.
+								</span>
+							</div>
 
-											<!-- Current Local Track Details -->
-											<td class="py-3 px-3 min-w-[200px]">
-												<div class="flex items-center gap-2">
-													<span class="font-mono text-[11px] text-neutral-500 w-6 shrink-0">
-														{m.localTrack.disc_number > 1 ? `${m.localTrack.disc_number}-` : ''}{m.localTrack.track_number.toString().padStart(2, '0')}
-													</span>
-													<div class="min-w-0">
-														<div class="font-semibold text-neutral-200 truncate {m.titleDiff ? 'text-amber-200' : ''}" title={m.localTrack.file_path || m.localTrack.title}>
-															{m.localTrack.title}
-														</div>
-														<div class="text-[10px] text-neutral-400 truncate">
-															{m.localTrack.artist || (taggerMode === 'albums' ? selectedAlbum?.artist : currentFolderData?.folder_artist)} • {formatDuration(m.localTrack.duration_ms)} • {m.localTrack.format}
-														</div>
-														{#if optRenameFiles && m.mbTrack}
-															{@const preview = getTargetFilenamePreview(m.localTrack, m.mbTrack, totalReleaseDiscs)}
-															{#if preview.willRename}
-																<div class="mt-1 flex items-center gap-1.5 text-[10px] font-mono bg-amber-950/40 border border-amber-800/40 px-2 py-0.5 rounded-md truncate max-w-sm" title={`Will rename on disk to: ${preview.targetName} (and any companion .lrc)`}>
-																	<FileText class="h-3 w-3 shrink-0 text-amber-400" />
-																	<span class="text-neutral-400 truncate">{preview.currentName}</span>
-																	<span class="text-amber-400 shrink-0">➔</span>
-																	<span class="text-emerald-300 font-semibold truncate">{preview.targetName}</span>
+							<!-- Unassigned Local Files Shelf (Draggable Pool) -->
+							{#if unmatchedLocalMatches.length > 0}
+								<div
+									class="rounded-2xl border transition-all duration-200 p-3.5 space-y-2.5 {isDragOverUnmatchedPool
+										? 'ring-2 ring-emerald-500 bg-emerald-950/40 border-emerald-400'
+										: 'border-amber-800/60 bg-amber-950/20'}"
+									ondragover={handleDragOver}
+									ondragenter={() => (isDragOverUnmatchedPool = true)}
+									ondragleave={() => (isDragOverUnmatchedPool = false)}
+									ondrop={(e) => {
+										e.preventDefault();
+										handleDropOnUnmatched();
+									}}
+									role="region"
+									aria-label="Unassigned local files drop zone"
+								>
+									<div class="flex items-center justify-between gap-2">
+										<div class="flex items-center gap-2 min-w-0">
+											<span class="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold shrink-0">
+												{unmatchedLocalMatches.length}
+											</span>
+											<h4 class="text-xs font-bold text-amber-200 truncate">Unassigned Local Files</h4>
+											<span class="text-[10px] text-neutral-400 hidden sm:inline truncate">&bull; Drag onto an album track below to assign, or drop files here to unpair</span>
+										</div>
+									</div>
+
+									<div class="flex flex-wrap gap-2">
+										{#each unmatchedLocalMatches as um (um.localTrack.id)}
+											<div
+												class="flex items-center gap-2 rounded-xl bg-neutral-900 border border-neutral-700/80 px-2.5 py-1.5 text-xs cursor-grab active:cursor-grabbing hover:border-emerald-500/70 hover:bg-neutral-850 transition shadow-sm select-none"
+												draggable="true"
+												ondragstart={(e) => handleDragStart(e, um.localTrack.id)}
+												ondragend={handleDragEnd}
+												title={`Drag onto any track below: ${um.localTrack.title}`}
+												role="listitem"
+											>
+												<GripVertical class="h-3.5 w-3.5 text-neutral-500 shrink-0" />
+												<span class="font-mono text-[10px] text-neutral-400 shrink-0">{um.localTrack.track_number.toString().padStart(2, '0')}</span>
+												<span class="font-semibold text-neutral-200 max-w-[180px] truncate">{um.localTrack.title}</span>
+												<span class="text-[10px] text-neutral-500 font-mono shrink-0">{formatDuration(um.localTrack.duration_ms)}</span>
+											</div>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							<!-- Paired Tracklist by Disc -->
+							<div class="space-y-6 min-w-0">
+								{#each releaseDiscs as disc (disc.discNumber)}
+									<div class="space-y-2.5 min-w-0">
+										<!-- Disc Header if multi-disc release -->
+										{#if releaseDiscs.length > 1}
+											<div class="flex items-center gap-2 px-1 text-xs font-bold text-neutral-400">
+												<Disc3 class="h-3.5 w-3.5 text-purple-400 shrink-0" />
+												<span>Disc {disc.discNumber} ({disc.tracks.length} tracks)</span>
+											</div>
+										{/if}
+
+										<!-- Column Headers Legend -->
+										<div class="hidden md:flex items-center gap-3 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+											<div class="flex-1 min-w-0">Your Local File (On Disk)</div>
+											<div class="w-20 text-center shrink-0">Match</div>
+											<div class="flex-1 min-w-0">Album Track (MusicBrainz)</div>
+										</div>
+
+										<!-- Track Rows -->
+										{#each disc.tracks as mbTr (mbTr.id)}
+											{@const matched = matches.find((m) => m.mbTrack?.id === mbTr.id)}
+											{@const isDragTarget = dragOverMbTrackId === mbTr.id}
+
+											<div
+												class="p-2.5 sm:p-3 rounded-2xl border transition-all duration-150 min-w-0 {isDragTarget
+													? 'ring-2 ring-emerald-500 bg-emerald-950/60 border-emerald-400 shadow-xl scale-[1.008]'
+													: matched
+													? (matched.selected ? 'bg-neutral-950/60 border-neutral-800/80 hover:border-neutral-700' : 'bg-neutral-950/30 border-neutral-900 opacity-60')
+													: 'bg-amber-950/10 border-dashed border-amber-900/50'}"
+												ondragover={handleDragOver}
+												ondragenter={() => handleDragEnterMb(mbTr.id)}
+												ondragleave={() => handleDragLeaveMb(mbTr.id)}
+												ondrop={(e) => {
+													e.preventDefault();
+													handleDropOnMbTrack(mbTr.id);
+												}}
+												role="region"
+												aria-label="Track slot {mbTr.track_number}"
+											>
+												<div class="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 min-w-0">
+													<!-- LEFT: Local Track (What you have on disk) -->
+													<div class="flex-1 min-w-0 flex items-center gap-2">
+														{#if matched}
+															<!-- Checkbox to write tags -->
+															<input
+																type="checkbox"
+																bind:checked={matched.selected}
+																class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 cursor-pointer shrink-0"
+																title="Include in tag write and rename"
+															/>
+
+															<!-- Drag Handle -->
+															<div
+																class="cursor-grab active:cursor-grabbing p-1 text-neutral-500 hover:text-emerald-400 transition shrink-0 select-none"
+																title="Drag to swap or reassign to another track slot"
+																draggable="true"
+																ondragstart={(e) => handleDragStart(e, matched.localTrack.id)}
+																ondragend={handleDragEnd}
+																role="button"
+																tabindex="0"
+															>
+																<GripVertical class="h-4 w-4" />
+															</div>
+
+															<!-- Local Track Details Card -->
+															<div
+																class="min-w-0 flex-1 p-2 rounded-xl bg-neutral-900/90 border border-neutral-800 cursor-grab active:cursor-grabbing hover:border-neutral-700 transition"
+																draggable="true"
+																ondragstart={(e) => handleDragStart(e, matched.localTrack.id)}
+																ondragend={handleDragEnd}
+																role="listitem"
+															>
+																<div class="flex items-center gap-2 min-w-0">
+																	<span class="font-mono text-[11px] text-neutral-400 font-bold shrink-0">
+																		{matched.localTrack.disc_number > 1 ? `${matched.localTrack.disc_number}-` : ''}{matched.localTrack.track_number.toString().padStart(2, '0')}
+																	</span>
+																	<span class="font-semibold text-xs text-neutral-200 truncate flex-1 min-w-0" title={matched.localTrack.file_path || matched.localTrack.title}>
+																		{matched.localTrack.title}
+																	</span>
+																	<span class="text-[10px] font-mono text-neutral-500 shrink-0">
+																		{formatDuration(matched.localTrack.duration_ms)}
+																	</span>
 																</div>
-															{:else if preview.currentName}
-																<div class="mt-1 flex items-center gap-1.5 text-[10px] font-mono text-neutral-500 px-1 py-0.5 truncate">
-																	<Check class="h-3 w-3 shrink-0 text-emerald-500" />
-																	<span class="truncate">{preview.targetName}</span>
-																	<span class="text-neutral-600 text-[9px]">(Standard)</span>
+
+																<div class="flex items-center gap-1.5 mt-0.5 text-[10px] text-neutral-400 min-w-0">
+																	<span class="truncate flex-1 min-w-0" title={matched.localTrack.artist || 'Unknown Artist'}>
+																		{matched.localTrack.artist || 'Unknown Artist'}
+																	</span>
+																	<span class="text-neutral-600 shrink-0">•</span>
+																	<span class="uppercase text-[9px] font-mono text-neutral-500 shrink-0">{matched.localTrack.format || 'AUDIO'}</span>
 																</div>
-															{/if}
+
+																<!-- Real-time Disk Rename Preview -->
+																{#if optRenameFiles}
+																	{@const preview = getTargetFilenamePreview(matched.localTrack, mbTr, totalReleaseDiscs)}
+																	{#if preview.willRename}
+																		<div class="mt-1 flex items-center gap-1.5 text-[10px] font-mono bg-amber-950/40 border border-amber-800/40 px-2 py-0.5 rounded-md min-w-0" title={`Will rename on disk to: ${preview.targetName} (and any companion .lrc)`}>
+																			<FileText class="h-3 w-3 shrink-0 text-amber-400" />
+																			<span class="text-neutral-400 truncate min-w-0">{preview.currentName}</span>
+																			<span class="text-amber-400 shrink-0">➔</span>
+																			<span class="text-emerald-300 font-semibold truncate min-w-0">{preview.targetName}</span>
+																		</div>
+																	{:else if preview.currentName}
+																		<div class="mt-1 flex items-center gap-1.5 text-[10px] font-mono text-neutral-500 px-1 py-0.5 min-w-0">
+																			<Check class="h-3 w-3 shrink-0 text-emerald-500" />
+																			<span class="truncate min-w-0">{preview.targetName}</span>
+																			<span class="text-neutral-600 text-[9px] shrink-0">(Standard)</span>
+																		</div>
+																	{/if}
+																{/if}
+															</div>
+														{:else}
+															<!-- Empty Drop Zone Slot (Missing Song) -->
+															<div class="w-full min-w-0 p-3 rounded-xl border-2 border-dashed border-neutral-700/80 bg-neutral-950/40 flex items-center justify-center gap-2 text-neutral-400 text-xs">
+																<GripVertical class="h-4 w-4 text-neutral-600 shrink-0" />
+																<span class="font-medium text-neutral-400 truncate min-w-0">Drop local track here to assign</span>
+															</div>
 														{/if}
 													</div>
-												</div>
-											</td>
 
-											<!-- Match Indicator Pill -->
-											<td class="py-3 px-3 text-center whitespace-nowrap">
-												{#if m.matchType === 'exact'}
-													<span class="inline-flex items-center gap-1 rounded-full bg-emerald-950/80 border border-emerald-600/60 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-														<Check class="h-3 w-3" />
-														<span>100% Match</span>
-													</span>
-												{:else if m.matchType === 'high'}
-													<span class="inline-flex items-center gap-1 rounded-full bg-cyan-950/80 border border-cyan-600/60 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
-														<Sparkles class="h-3 w-3" />
-														<span>{m.score}% Match</span>
-													</span>
-												{:else if m.matchType === 'medium'}
-													<span class="inline-flex items-center gap-1 rounded-full bg-amber-950/80 border border-amber-600/60 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-														<AlertTriangle class="h-3 w-3" />
-														<span>{m.score}% Diff</span>
-													</span>
-												{:else}
-													<span class="inline-flex items-center gap-1 rounded-full bg-neutral-900 border border-neutral-700 px-2 py-0.5 text-[10px] font-medium text-neutral-400">
-														<span>Unmatched</span>
-													</span>
-												{/if}
-											</td>
+													<!-- CENTER: Match Pill / Unpair Action -->
+													<div class="flex items-center justify-center gap-1.5 shrink-0 px-1 py-0.5">
+														{#if matched}
+															{#if matched.matchType === 'exact'}
+																<span class="inline-flex items-center gap-1 rounded-full bg-emerald-950/80 border border-emerald-600/60 px-2 py-0.5 text-[10px] font-bold text-emerald-300 shrink-0">
+																	<Check class="h-3 w-3" />
+																	<span>100%</span>
+																</span>
+															{:else if matched.matchType === 'high'}
+																<span class="inline-flex items-center gap-1 rounded-full bg-cyan-950/80 border border-cyan-600/60 px-2 py-0.5 text-[10px] font-bold text-cyan-300 shrink-0">
+																	<Sparkles class="h-3 w-3" />
+																	<span>{matched.score}%</span>
+																</span>
+															{:else}
+																<span class="inline-flex items-center gap-1 rounded-full bg-amber-950/80 border border-amber-600/60 px-2 py-0.5 text-[10px] font-bold text-amber-300 shrink-0">
+																	<AlertTriangle class="h-3 w-3" />
+																	<span>Diff</span>
+																</span>
+															{/if}
 
-											<!-- Target MusicBrainz Track & Remap Dropdown -->
-											<td class="py-3 px-3 min-w-[260px]">
-												{#if releaseDetail}
-													<div class="flex flex-col gap-1.5">
-														<div class="flex items-center gap-2">
-															<select
-																value={m.mbTrack?.id || ''}
-																onchange={(e) => handleRemapTrack(i, e.currentTarget.value)}
-																class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-emerald-500 font-medium truncate cursor-pointer"
+															<!-- Quick Unpair Button -->
+															<button
+																type="button"
+																onclick={() => handleUnpairTrack(matched.localTrack.id)}
+																class="p-1 rounded-lg text-neutral-500 hover:text-rose-400 hover:bg-neutral-800 transition cursor-pointer shrink-0"
+																title="Unassign track (move to unmatched)"
 															>
-																<option value="">(No Match / Skip)</option>
-																{#each releaseDetail.tracks as mbTr (mbTr.id)}
-																	<option value={mbTr.id}>
-																		{mbTr.disc_number > 1 ? `${mbTr.disc_number}-` : ''}{mbTr.track_number.toString().padStart(2, '0')}. {mbTr.title} ({formatDuration(mbTr.duration_ms)})
+																<X class="h-3.5 w-3.5" />
+															</button>
+														{:else}
+															<span class="inline-flex items-center gap-1 rounded-full bg-amber-950/60 border border-amber-700/60 px-2 py-0.5 text-[10px] font-bold text-amber-300 shrink-0">
+																<AlertTriangle class="h-3 w-3" />
+																<span>Missing</span>
+															</span>
+														{/if}
+													</div>
+
+													<!-- RIGHT: Target MusicBrainz Release Track (Drop Target) -->
+													<div class="flex-1 min-w-0 p-2.5 rounded-xl bg-neutral-950/80 border border-neutral-800 flex items-center justify-between gap-2.5">
+														<div class="min-w-0 flex-1">
+															<div class="flex items-center gap-2 min-w-0">
+																<span class="font-mono text-[11px] text-emerald-400 font-bold shrink-0">
+																	{mbTr.disc_number > 1 ? `${mbTr.disc_number}-` : ''}{mbTr.track_number.toString().padStart(2, '0')}
+																</span>
+																<span class="font-bold text-xs text-white truncate flex-1 min-w-0" title={mbTr.title}>
+																	{mbTr.title}
+																</span>
+																<span class="text-[10px] font-mono text-neutral-400 shrink-0">
+																	{formatDuration(mbTr.duration_ms)}
+																</span>
+															</div>
+															<div class="text-[10px] text-neutral-400 truncate mt-0.5 min-w-0" title={mbTr.artist || releaseDetail.artist}>
+																{mbTr.artist || releaseDetail.artist}
+															</div>
+														</div>
+
+														<!-- Remap / Select Dropdown Trigger for keyboard or manual select -->
+														<div class="shrink-0 relative">
+															<select
+																value={matched ? matched.localTrack.id : ''}
+																onchange={(e) => {
+																	const val = e.currentTarget.value;
+																	if (val) {
+																		handleAssignLocalIdToMbTrack(parseInt(val, 10), mbTr.id);
+																	} else if (matched) {
+																		handleUnpairTrack(matched.localTrack.id);
+																	}
+																}}
+																class="rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1 text-[11px] text-neutral-300 focus:outline-none focus:border-emerald-500 font-medium cursor-pointer max-w-[120px] truncate"
+																title="Select local file to pair with this track"
+															>
+																<option value="">{matched ? 'Reassign...' : '(Unassigned)'}</option>
+																{#each matches as m (m.localTrack.id)}
+																	<option value={m.localTrack.id}>
+																		{m.localTrack.track_number}. {m.localTrack.title}
 																	</option>
 																{/each}
 															</select>
 														</div>
-														{#if m.mbTrack}
-															<div class="flex items-center gap-1.5 text-[11px] px-1 truncate">
-																<span class="font-bold text-emerald-400 truncate" title={m.mbTrack.artist || releaseDetail.artist}>
-																	{m.mbTrack.artist || releaseDetail.artist}
-																</span>
-																<span class="text-neutral-600">•</span>
-																<span class="text-neutral-300 font-medium truncate" title={m.mbTrack.title}>
-																	{m.mbTrack.title}
-																</span>
-															</div>
-														{/if}
 													</div>
-												{/if}
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/each}
+							</div>
 						</div>
 					{/if}
 				</div>

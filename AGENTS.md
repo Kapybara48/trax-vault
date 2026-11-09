@@ -745,6 +745,25 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added `.slider-compact` styling in `src/routes/layout.css` for both WebKit and Firefox (`::-webkit-slider-thumb` and `::-moz-range-thumb`).
       - Replaced oversized browser default 20px slider thumbs with sleek 10px circular thumbs with 1.25x hover scaling, emerald green accent, white border, and subtle drop shadow across player scrubbers and volume faders.
 
+52. **Picard-Style Drag & Drop Track Alignment & Zero-Overflow Layout (v1.7.12)**:
+    - **Zero-Overflow Responsive Layout**:
+      - Added `min-w-0` to `<div class="lg:col-span-8 min-w-0 space-y-6">` in `src/routes/tagger/+page.svelte`, resolving CSS grid column expansion.
+      - Replaced rigid min-width table cells with flexible, responsive flexbox rows where all song titles, artist labels, and disk rename previews use `min-w-0 flex-1 truncate` with native `title="..."` tooltips.
+      - Completely eliminated forced horizontal scrollbars on long track titles.
+    - **MusicBrainz Picard-Inspired Paired Tracklist**:
+      - Grouped release tracks by Disc (`Disc 1`, `Disc 2`) mirroring official release structure.
+      - Paired view: Local files (what you have on disk) on the left, match confidence badges & controls in center, target MusicBrainz release tracks on the right.
+      - Missing release tracks appear directly within the tracklist as styled, dashed drop slots (`Drop local track here to assign`).
+    - **Interactive Drag & Drop Track Remapping**:
+      - Native HTML5 drag and drop (`draggable="true"`, `handleDragStart`, `handleDropOnMbTrack`, `handleDropOnUnmatched`):
+        - Drag unassigned local files directly onto missing track slots to pair them.
+        - Drag matched files onto other slots to instantly **swap** their targets (Picard behavior).
+        - Drag matched tracks to the Unassigned shelf or click the unpair button (`X`) to reset to unmatched.
+      - Active drop targets render glowing emerald ring highlights (`ring-2 ring-emerald-500 bg-emerald-950/60 border-emerald-400`).
+      - Compact dropdown selector retained on each row for keyboard and click-based reassignments.
+    - **Unassigned Local Files Shelf**:
+      - Draggable badge pool at top displaying all local files not yet matched to release tracks with instant drop re-pairing.
+
 ---
 
 ## 4. Workflows & Verification
