@@ -148,6 +148,9 @@
 	let previewArtworkSource = $state<string>('');
 	let previewArtworkTab = $state<'musicbrainz' | 'local'>('musicbrainz');
 
+	// Toggle full cover comparison & candidate grid details
+	let showReleaseDetails = $state(false);
+
 	let currentCoverUrl = $derived(
 		taggerMode === 'albums' ? selectedAlbum?.cover_url : currentFolderData?.cover_url
 	);
@@ -970,73 +973,60 @@
 	<title>MusicBrainz Tagger Studio - Trax Vault</title>
 </svelte:head>
 
-<div class="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-	<!-- Studio Header -->
-	<div class="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-		<div>
-			<div class="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-400">
-				<Tag class="h-4 w-4" />
-				<span>Native Tagging Studio</span>
-			</div>
-			<h1 class="mt-1 text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5">
+<div class="w-full px-3 sm:px-5 lg:px-6 py-3 space-y-3">
+	<!-- Minimal Studio Header -->
+	<div class="flex items-center justify-between gap-3">
+		<div class="flex items-center gap-2.5 min-w-0">
+			<Tag class="h-4 w-4 text-emerald-400 shrink-0" />
+			<h1 class="text-base sm:text-lg font-black text-white flex items-center gap-2 truncate">
 				<span>MusicBrainz Auto-Tagger</span>
-				<span class="rounded-full bg-emerald-950/80 border border-emerald-500/40 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
-					Built-in
-				</span>
 			</h1>
-			<p class="mt-1 text-xs text-neutral-400">
-				Search official releases, align tracks, detect missing songs, download high-resolution cover art, and write verified ID3/Vorbis tags directly into audio files before or after importing.
-			</p>
 		</div>
 
 		<!-- Quick Actions -->
-		<div class="flex items-center gap-2 flex-wrap">
+		<div class="flex items-center gap-2 shrink-0">
 			<!-- Toggle Library Sidebar -->
 			<button
 				type="button"
 				onclick={() => (showLibrarySidebar = !showLibrarySidebar)}
-				class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition cursor-pointer"
+				class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-semibold text-neutral-300 border border-neutral-700 transition cursor-pointer"
 				title={showLibrarySidebar ? 'Collapse Library Sidebar to maximize workspace' : 'Expand Library Sidebar'}
 			>
 				{#if showLibrarySidebar}
 					<PanelLeftClose class="h-3.5 w-3.5 text-emerald-400" />
-					<span>Hide Library</span>
+					<span class="hidden sm:inline">Hide Library</span>
 				{:else}
 					<PanelLeftOpen class="h-3.5 w-3.5 text-emerald-400" />
-					<span>Show Library</span>
+					<span class="hidden sm:inline">Show Library</span>
 				{/if}
 			</button>
 
 			{#if taggerMode === 'albums' && selectedAlbum}
 				<a
 					href="/album/{selectedAlbum.id}"
-					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
+					class="hidden sm:flex items-center gap-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
+					title="View Album Page"
 				>
-					<ExternalLink class="h-3.5 w-3.5" />
-					<span>View Album Page</span>
+					<ExternalLink class="h-3 w-3" />
+					<span>Album</span>
 				</a>
 			{:else if taggerMode === 'folders' && currentFolderData?.existing_album_id}
 				<a
 					href="/album/{currentFolderData.existing_album_id}"
-					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
+					class="hidden sm:flex items-center gap-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
+					title="View Album Page"
 				>
-					<ExternalLink class="h-3.5 w-3.5" />
-					<span>View Album Page</span>
+					<ExternalLink class="h-3 w-3" />
+					<span>Album</span>
 				</a>
 			{/if}
 			<a
-				href="/scan"
-				class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
-			>
-				<FolderSync class="h-3.5 w-3.5 text-emerald-400" />
-				<span>Library Scanner</span>
-			</a>
-			<a
 				href="/player"
-				class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
+				class="flex items-center gap-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1.5 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
+				title="Open Player"
 			>
-				<Disc3 class="h-3.5 w-3.5 text-emerald-400" />
-				<span>Open Player</span>
+				<Disc3 class="h-3 w-3 text-emerald-400" />
+				<span class="hidden sm:inline">Player</span>
 			</a>
 		</div>
 	</div>
@@ -1348,478 +1338,297 @@
 	{/if}
 
 	<!-- Right Pane: Main Tagger Studio (col-span-9 when sidebar open, col-span-12 when collapsed) -->
-	<div class="{showLibrarySidebar ? 'lg:col-span-9' : 'lg:col-span-12'} min-w-0 space-y-6 transition-all duration-200">
+	<div class="{showLibrarySidebar ? 'lg:col-span-9' : 'lg:col-span-12'} min-w-0 space-y-2.5 transition-all duration-200">
 			{#if (taggerMode === 'albums' && !selectedAlbum) || (taggerMode === 'folders' && !selectedFolderPath)}
-				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/40 p-12 text-center backdrop-blur-xl">
-					<Tag class="h-10 w-10 text-neutral-600 mx-auto mb-3" />
-					<h3 class="text-base font-bold text-white">
+				<div class="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-8 text-center backdrop-blur-xl">
+					<Tag class="h-8 w-8 text-neutral-600 mx-auto mb-2" />
+					<h3 class="text-sm font-bold text-white">
 						{taggerMode === 'albums' ? 'Select an Album to Tag' : 'Select a Folder to Tag'}
 					</h3>
-					<p class="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
-						Choose any album from your library or a scanned music folder on the left to start automatic MusicBrainz matching, missing track detection, and tag alignment.
+					<p class="text-[11px] text-neutral-400 mt-1 max-w-sm mx-auto">
+						Choose any album from your library or a scanned music folder on the left to start MusicBrainz tag matching.
 					</p>
 				</div>
 			{:else}
-				<!-- Album / Folder Active Hero & MusicBrainz Search Box -->
-				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-xl shadow-xl space-y-5">
-					<div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
-						<div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 min-w-0 flex-1">
-							<!-- Album Artwork Preview Strip / Comparison Cards -->
-							<div class="flex items-center gap-2.5 shrink-0">
-								<!-- Current Local Artwork Card -->
-								<div class="flex flex-col items-center gap-1">
-									<div
-										class="h-20 w-20 sm:h-24 sm:w-24 shrink-0 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-700 shadow-lg relative group/art cursor-pointer"
-										onclick={() => {
-											if (currentCoverUrl) {
-												openArtworkModal(currentCoverUrl, currentSourceTitle, currentSourceArtist, 'Local Folder (cover.jpg)', 'local');
-											}
-										}}
-										title={currentCoverUrl ? 'Click to preview local artwork' : 'No local cover image found'}
-										role="button"
-										tabindex="0"
-										onkeydown={(e) => {
-											if ((e.key === 'Enter' || e.key === ' ') && currentCoverUrl) {
-												openArtworkModal(currentCoverUrl, currentSourceTitle, currentSourceArtist, 'Local Folder (cover.jpg)', 'local');
-											}
-										}}
-									>
-										{#if currentCoverUrl}
-											<img src={currentCoverUrl} alt={currentSourceTitle} class="h-full w-full object-cover" />
-											<div class="absolute inset-0 bg-black/60 opacity-0 group-hover/art:opacity-100 flex flex-col items-center justify-center gap-1 text-white transition">
-												<ZoomIn class="h-5 w-5" />
-												<span class="text-[9px] font-bold">Preview</span>
-											</div>
-										{:else}
-											<div class="h-full w-full flex flex-col items-center justify-center text-neutral-600 gap-1 p-2 text-center">
-												{#if taggerMode === 'folders'}
-													<FolderSync class="h-6 w-6 text-emerald-400" />
-												{:else}
-													<Music class="h-6 w-6" />
-												{/if}
-												<span class="text-[8px] text-neutral-500 font-semibold leading-tight">No Local Cover</span>
-											</div>
-										{/if}
+				<!-- Ultra-Compact Hero Bar (~48px) with Integrated Actions -->
+				<div class="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-2 sm:px-3 sm:py-2 backdrop-blur-xl shadow-lg space-y-2">
+					<div class="flex flex-wrap items-center justify-between gap-2.5">
+						<!-- Mini Album Art & Identification -->
+						<div class="flex items-center gap-2.5 min-w-0 flex-1">
+							<div
+								class="h-9 w-9 shrink-0 rounded-lg overflow-hidden bg-neutral-950 border border-neutral-700 shadow relative group/art cursor-pointer"
+								onclick={() => {
+									const targetUrl = releaseDetail?.cover_url || currentCoverUrl;
+									if (targetUrl) {
+										openArtworkModal(
+											targetUrl,
+											releaseDetail ? releaseDetail.title : currentSourceTitle,
+											releaseDetail ? releaseDetail.artist : currentSourceArtist,
+											releaseDetail?.cover_url ? 'MusicBrainz Art' : 'Local (cover.jpg)',
+											releaseDetail?.cover_url ? 'musicbrainz' : 'local'
+										);
+									}
+								}}
+								title="Click to preview artwork"
+								role="button"
+								tabindex="0"
+								onkeydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										const targetUrl = releaseDetail?.cover_url || currentCoverUrl;
+										if (targetUrl) {
+											openArtworkModal(
+												targetUrl,
+												releaseDetail ? releaseDetail.title : currentSourceTitle,
+												releaseDetail ? releaseDetail.artist : currentSourceArtist,
+												releaseDetail?.cover_url ? 'MusicBrainz Art' : 'Local (cover.jpg)',
+												releaseDetail?.cover_url ? 'musicbrainz' : 'local'
+											);
+										}
+									}
+								}}
+							>
+								{#if releaseDetail?.cover_url || currentCoverUrl}
+									<img src={releaseDetail?.cover_url || currentCoverUrl || ''} alt={currentSourceTitle} class="h-full w-full object-cover" />
+									<div class="absolute inset-0 bg-black/60 opacity-0 group-hover/art:opacity-100 flex items-center justify-center text-white transition">
+										<ZoomIn class="h-3 w-3" />
 									</div>
-									<span class="text-[9px] font-bold uppercase tracking-wider text-neutral-400">Local Art</span>
-								</div>
-
-								{#if releaseDetail}
-									<div class="flex flex-col items-center justify-center px-0.5">
-										<ArrowRight class="h-4 w-4 text-emerald-400" />
-									</div>
-
-									<!-- Target MusicBrainz Cover Art Card -->
-									<div class="flex flex-col items-center gap-1">
-										<div
-											class="h-20 w-20 sm:h-24 sm:w-24 shrink-0 rounded-2xl overflow-hidden bg-neutral-950 border {releaseDetail.cover_url ? 'border-emerald-500/80 shadow-emerald-950/60 ring-1 ring-emerald-500/40' : 'border-neutral-800'} shadow-lg relative group/art cursor-pointer"
-											onclick={() => {
-												if (releaseDetail?.cover_url) {
-													openArtworkModal(releaseDetail.cover_url, releaseDetail.title, releaseDetail.artist, 'MusicBrainz Cover Art Archive', 'musicbrainz');
-												}
-											}}
-											title={releaseDetail.cover_url ? 'Click to preview high-res MusicBrainz artwork' : 'No Cover Art Archive image found'}
-											role="button"
-											tabindex="0"
-											onkeydown={(e) => {
-												if ((e.key === 'Enter' || e.key === ' ') && releaseDetail?.cover_url) {
-													openArtworkModal(releaseDetail.cover_url, releaseDetail.title, releaseDetail.artist, 'MusicBrainz Cover Art Archive', 'musicbrainz');
-												}
-											}}
-										>
-											{#if releaseDetail.cover_url}
-												<img src={releaseDetail.cover_url} alt={releaseDetail.title} class="h-full w-full object-cover" />
-												<div class="absolute inset-0 bg-black/60 opacity-0 group-hover/art:opacity-100 flex flex-col items-center justify-center gap-1 text-emerald-300 transition">
-													<ZoomIn class="h-5 w-5" />
-													<span class="text-[9px] font-bold">Preview 500px</span>
-												</div>
-											{:else}
-												<div class="h-full w-full flex flex-col items-center justify-center text-neutral-600 gap-1 p-2 text-center">
-													<ImageIcon class="h-6 w-6" />
-													<span class="text-[8px] text-neutral-500 font-semibold leading-tight">No CAA Art</span>
-												</div>
-											{/if}
-										</div>
-										<span class="text-[9px] font-bold uppercase tracking-wider text-emerald-400">MusicBrainz Art</span>
+								{:else}
+									<div class="h-full w-full flex items-center justify-center text-neutral-600">
+										<Music class="h-4 w-4" />
 									</div>
 								{/if}
 							</div>
 
-							<!-- Release Title, Artist & Diff Info -->
-							<div class="min-w-0 flex-1 space-y-1">
-								<div class="flex items-center gap-2 flex-wrap">
-									<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
-										{taggerMode === 'albums' ? 'Library Album' : 'Scanned Folder'}
-									</span>
-									{#if taggerMode === 'folders'}
-										{#if currentFolderData?.already_in_vault}
-											<span class="rounded-full bg-emerald-950/80 border border-emerald-500/50 px-2 py-0.2 text-[9px] font-bold text-emerald-300">
-												In Vault
-											</span>
-										{:else}
-											<span class="rounded-full bg-amber-950/80 border border-amber-500/50 px-2 py-0.2 text-[9px] font-bold text-amber-300">
-												Unimported Folder
-											</span>
-										{/if}
+							<div class="min-w-0 flex-1">
+								<div class="flex items-center gap-1.5 truncate">
+									<h2 class="text-xs font-bold text-white truncate" title={releaseDetail ? releaseDetail.title : currentSourceTitle}>
+										{releaseDetail ? releaseDetail.title : currentSourceTitle}
+									</h2>
+									{#if overallScore !== null && releaseDetail}
+										<span class="rounded px-1.5 py-0.2 text-[9px] font-black border shrink-0 {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
+											{overallScore}%
+										</span>
 									{/if}
-									{#if releaseDetail && releaseDetail.tracks.length === 1}
-										<span class="rounded-full bg-purple-950/80 border border-purple-500/50 px-2 py-0.2 text-[9px] font-bold text-purple-300">
-											Single Track
+									{#if releaseDetail && missingTracks.length > 0}
+										<span class="rounded bg-amber-950/80 border border-amber-600/50 px-1.5 py-0.2 text-[9px] font-bold text-amber-400 shrink-0" title="{missingTracks.length} tracks from release missing in storage">
+											{missingTracks.length} missing
 										</span>
 									{/if}
 								</div>
-
-								{#if releaseDetail}
-									<!-- Matched MusicBrainz Target Title & Artist -->
-									<h2 class="text-xl font-black text-white flex items-center gap-2 truncate" title={releaseDetail.title}>
-										{releaseDetail.title}
-									</h2>
-									<div class="text-sm font-extrabold text-emerald-400 flex items-center gap-1.5 flex-wrap">
-										<span>{releaseDetail.artist}</span>
-										{#if releaseDetail.release_year}<span>• {releaseDetail.release_year}</span>{/if}
-										<span>• {releaseDetail.media_type || 'Digital'}</span>
-										<span>• {releaseDetail.tracks.length} {releaseDetail.tracks.length === 1 ? 'track' : 'tracks'}</span>
-									</div>
-									<div class="text-[11px] text-neutral-400 flex items-center gap-1.5 flex-wrap pt-0.5">
-										<span class="text-neutral-500">Source:</span>
-										<span class="font-medium text-neutral-300">{currentSourceTitle}</span>
-										<span class="text-neutral-600">by</span>
-										<span class="{isCurrentArtistUnknown ? 'text-amber-400/90 italic font-semibold' : 'text-neutral-300'}">{currentSourceArtist}</span>
-										{#if isCurrentArtistUnknown}
-											<span class="text-[10px] text-emerald-300 font-bold bg-emerald-950/80 border border-emerald-500/50 px-1.5 py-0.5 rounded-full">➔ will update to {releaseDetail.artist}</span>
-										{/if}
-									</div>
-								{:else}
-									<!-- Default Folder / Album Heading -->
-									<h2 class="text-lg font-black text-white truncate">
-										{currentSourceTitle}
-									</h2>
-									<p class="text-xs text-neutral-300 font-medium">
-										{currentSourceArtist} {taggerMode === 'albums' ? (selectedAlbum?.release_year ? `(${selectedAlbum.release_year})` : '') : (currentFolderData?.folder_year ? `(${currentFolderData.folder_year})` : '')} • {taggerMode === 'albums' ? selectedAlbum?.track_count : matches.length} tracks
-									</p>
-								{/if}
-
-								{#if taggerMode === 'folders' && selectedFolderPath}
-									<p class="font-mono text-[10px] text-neutral-500 truncate max-w-md pt-0.5" title={selectedFolderPath}>
-										📁 {selectedFolderPath}
-									</p>
-								{/if}
+								<div class="text-[10px] text-neutral-400 truncate flex items-center gap-1.5">
+									<span class="truncate">{releaseDetail ? releaseDetail.artist : currentSourceArtist}</span>
+									{#if releaseDetail?.release_year}<span>• {releaseDetail.release_year}</span>{/if}
+									{#if releaseDetail}<span>• {releaseDetail.tracks.length} tr</span>{/if}
+									{#if releaseDetail?.media_type}<span>• {releaseDetail.media_type}</span>{/if}
+								</div>
 							</div>
 						</div>
 
-						<!-- Match Confidence Score & Action Buttons -->
-						{#if releaseDetail}
-							<div class="flex flex-col items-start lg:items-end gap-2 shrink-0">
-								<div class="flex items-center gap-2">
-									<span class="rounded-full px-3 py-1 text-xs font-black border {overallScore >= 90 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : overallScore >= 70 ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300' : 'bg-amber-950/80 border-amber-500 text-amber-300'}">
-										{overallScore}% Match
-									</span>
-									<a
-										href="https://musicbrainz.org/release/{releaseDetail.id}"
-										target="_blank"
-										rel="noopener noreferrer"
-										class="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-mono font-semibold bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-purple-300 hover:border-purple-600 transition"
-										title="Open release on MusicBrainz.org"
-									>
-										<span>MBID: {releaseDetail.id.slice(0, 8)}...</span>
-										<ExternalLink class="h-2.5 w-2.5 opacity-70" />
-									</a>
-								</div>
+						<!-- Candidate Releases Dropdown Selector -->
+						{#if candidateReleases.length > 0}
+							<div class="flex items-center gap-1.5 shrink-0 max-w-xs sm:max-w-sm">
+								<select
+									value={selectedReleaseMbid || ''}
+									onchange={(e) => {
+										const val = e.currentTarget.value;
+										if (val) selectCandidateRelease(val);
+									}}
+									class="rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-1 text-[11px] text-neutral-200 focus:outline-none focus:border-emerald-500 truncate max-w-[200px] sm:max-w-[260px] cursor-pointer"
+									title="Select MusicBrainz release candidate"
+								>
+									{#each candidateReleases as rel (rel.id)}
+										<option value={rel.id}>
+											{rel.title} - {rel.artist} ({rel.year || '?'}, {rel.track_count || '?'} tr, {rel.country || 'XW'})
+										</option>
+									{/each}
+								</select>
 
-								<!-- Dedicated Artwork Preview Button -->
 								<button
 									type="button"
-									onclick={() => {
-										const targetUrl = releaseDetail?.cover_url || currentCoverUrl || '';
-										if (targetUrl) {
-											openArtworkModal(targetUrl, releaseDetail ? releaseDetail.title : currentSourceTitle, releaseDetail ? releaseDetail.artist : currentSourceArtist, releaseDetail?.cover_url ? 'MusicBrainz Cover Art Archive' : 'Local Folder (cover.jpg)', releaseDetail?.cover_url ? 'musicbrainz' : 'local');
-										}
-									}}
-									class="flex items-center gap-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700 px-3 py-1 text-[11px] font-semibold text-neutral-200 transition cursor-pointer shadow-sm"
+									onclick={() => (showReleaseDetails = !showReleaseDetails)}
+									class="p-1 rounded-lg border transition cursor-pointer {showReleaseDetails ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white'}"
+									title={showReleaseDetails ? 'Hide candidate details' : 'Show candidate cards & cover comparison'}
 								>
-									<Eye class="h-3.5 w-3.5 text-emerald-400" />
-									<span>Preview Artwork</span>
+									<Eye class="h-3.5 w-3.5" />
 								</button>
 							</div>
 						{/if}
-					</div>
 
-					<!-- MusicBrainz Query Search Input & MBID Direct Lookup -->
-					<div class="pt-4 border-t border-neutral-800/80 flex flex-col sm:flex-row gap-2">
-						<div class="relative flex-1">
-							<Search class="absolute left-3 top-2.5 h-4 w-4 text-neutral-500" />
-							<input
-								type="text"
-								bind:value={mbSearchQuery}
-								onkeydown={(e) => {
-									if (e.key === 'Enter') searchMusicBrainzReleases();
-								}}
-								placeholder="Search release, artist, or paste MBID / URL..."
-								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-9 pr-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-							/>
-						</div>
-						<div class="flex items-center gap-2">
-							<button
-								type="button"
-								onclick={searchMusicBrainzReleases}
-								disabled={isSearchingMB}
-								class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-4 py-2 text-xs font-bold text-neutral-200 border border-neutral-700 transition disabled:opacity-50 cursor-pointer"
-							>
-								{#if isSearchingMB}
-									<RefreshCw class="h-3.5 w-3.5 animate-spin text-emerald-400" />
-									<span>Searching...</span>
-								{:else}
-									<Search class="h-3.5 w-3.5 text-emerald-400" />
-									<span>Search</span>
+						<!-- Compact Options Checkboxes & Write Button -->
+						<div class="flex items-center gap-2.5 shrink-0">
+							{#if releaseDetail}
+								<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Rename files on disk to '01. Artist - Title.ext'">
+									<input
+										type="checkbox"
+										bind:checked={optRenameFiles}
+										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
+									/>
+									<span class="{optRenameFiles ? 'text-amber-300 font-semibold' : 'text-neutral-400'}">Rename</span>
+								</label>
+
+								<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Download front cover as cover.jpg">
+									<input
+										type="checkbox"
+										bind:checked={optUpdateCover}
+										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
+									/>
+									<span class="{optUpdateCover ? 'text-emerald-300 font-semibold' : 'text-neutral-400'}">Cover</span>
+								</label>
+
+								{#if taggerMode === 'folders' && !currentFolderData?.already_in_vault}
+									<label class="flex items-center gap-1 cursor-pointer select-none text-[11px] text-neutral-300" title="Import album into Trax Vault library">
+										<input
+											type="checkbox"
+											bind:checked={optImportToVault}
+											class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 h-3.5 w-3.5"
+										/>
+										<span class="{optImportToVault ? 'text-emerald-300 font-semibold' : 'text-neutral-400'}">Import</span>
+									</label>
 								{/if}
-							</button>
 
-							<button
-								type="button"
-								onclick={() => {
-									mbidError = null;
-									mbidInput = '';
-									isMbidModalOpen = true;
-								}}
-								class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900/60 px-3.5 py-2 text-xs font-bold text-purple-300 border border-purple-700/60 transition cursor-pointer"
-								title="Find exact album details based on MusicBrainz Release ID (MBID) or URL"
-							>
-								<Hash class="h-3.5 w-3.5 text-purple-400" />
-								<span>Lookup MBID</span>
-							</button>
+								<!-- Write Tags Action Button -->
+								<button
+									type="button"
+									onclick={applyConfirmedTags}
+									disabled={isApplyingTags || selectedCount === 0}
+									class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-600/30 hover:brightness-110 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+								>
+									{#if isApplyingTags}
+										<RefreshCw class="h-3.5 w-3.5 animate-spin text-white" />
+										<span>Writing...</span>
+									{:else}
+										<Sparkles class="h-3.5 w-3.5 text-emerald-200" />
+										<span>Write Tags ({selectedCount})</span>
+									{/if}
+								</button>
+							{/if}
 						</div>
 					</div>
 
-					<!-- Candidate Releases Selector -->
-					{#if candidateReleases.length > 0}
-						<div class="space-y-2">
-							<div class="flex items-center justify-between text-[11px] text-neutral-400 font-semibold uppercase tracking-wider">
-								<span>Select MusicBrainz Release ({candidateReleases.length} candidates):</span>
+					<!-- Expanded Candidate Grid & Cover Art Details (Only when user clicks eye icon) -->
+					{#if showReleaseDetails}
+						<div class="pt-2 border-t border-neutral-800/80 space-y-3 animate-in fade-in duration-150">
+							<!-- Search Input & MBID Lookup -->
+							<div class="flex flex-col sm:flex-row gap-2">
+								<div class="relative flex-1">
+									<Search class="absolute left-2.5 top-2 h-3.5 w-3.5 text-neutral-500" />
+									<input
+										type="text"
+										bind:value={mbSearchQuery}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') searchMusicBrainzReleases();
+										}}
+										placeholder="Search release, artist, or paste MBID / URL..."
+										class="w-full rounded-lg border border-neutral-700 bg-neutral-950 pl-8 pr-2.5 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+									/>
+								</div>
+								<div class="flex items-center gap-1.5">
+									<button
+										type="button"
+										onclick={searchMusicBrainzReleases}
+										disabled={isSearchingMB}
+										class="flex items-center gap-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 px-3 py-1 text-xs font-bold text-neutral-200 border border-neutral-700 transition disabled:opacity-50 cursor-pointer"
+									>
+										{#if isSearchingMB}
+											<RefreshCw class="h-3 w-3 animate-spin text-emerald-400" />
+										{:else}
+											<Search class="h-3 w-3 text-emerald-400" />
+										{/if}
+										<span>Search</span>
+									</button>
+									<button
+										type="button"
+										onclick={() => {
+											mbidError = null;
+											mbidInput = '';
+											isMbidModalOpen = true;
+										}}
+										class="flex items-center gap-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 px-3 py-1 text-xs font-bold text-purple-300 border border-purple-700/60 transition cursor-pointer"
+									>
+										<Hash class="h-3 w-3 text-purple-400" />
+										<span>Lookup MBID</span>
+									</button>
+								</div>
 							</div>
 
-							<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto pr-1">
-								{#each candidateReleases as rel (rel.id)}
-									<div
-										role="button"
-										tabindex="0"
-										onclick={() => selectCandidateRelease(rel.id)}
-										onkeydown={(e) => {
-											if (e.key === 'Enter' || e.key === ' ') {
-												selectCandidateRelease(rel.id);
-											}
-										}}
-										class="p-2.5 rounded-2xl border text-left flex items-start gap-2.5 transition cursor-pointer select-none {selectedReleaseMbid === rel.id ? 'bg-emerald-950/70 border-emerald-500 shadow-md shadow-emerald-950/60 ring-1 ring-emerald-500' : 'bg-neutral-950/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'}"
-									>
-										<!-- Release Thumbnail with Zoom Preview -->
-										<div class="h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-neutral-900 border border-neutral-800 relative group/thumb">
-											{#if rel.cover_url}
-												<img src={rel.cover_url} alt={rel.title} class="h-full w-full object-cover" />
-												<button
-													type="button"
-													title="Preview high-res cover"
-													onclick={(e) => {
-														e.stopPropagation();
-														openArtworkModal(rel.cover_url!, rel.title, rel.artist, 'MusicBrainz Candidate Release', 'musicbrainz');
-													}}
-													class="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition cursor-pointer"
-												>
-													<ZoomIn class="h-3.5 w-3.5 text-white" />
-												</button>
-											{:else}
-												<div class="h-full w-full flex items-center justify-center text-neutral-600">
-													<Disc3 class="h-4 w-4" />
+							<!-- Release Candidates Grid -->
+							{#if candidateReleases.length > 0}
+								<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-44 overflow-y-auto pr-1">
+									{#each candidateReleases as rel (rel.id)}
+										<div
+											role="button"
+											tabindex="0"
+											onclick={() => selectCandidateRelease(rel.id)}
+											onkeydown={(e) => {
+												if (e.key === 'Enter' || e.key === ' ') selectCandidateRelease(rel.id);
+											}}
+											class="p-2 rounded-xl border text-left flex items-start gap-2 transition cursor-pointer select-none {selectedReleaseMbid === rel.id ? 'bg-emerald-950/70 border-emerald-500 shadow ring-1 ring-emerald-500' : 'bg-neutral-950/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'}"
+										>
+											<div class="h-8 w-8 shrink-0 rounded overflow-hidden bg-neutral-900 border border-neutral-800 relative">
+												{#if rel.cover_url}
+													<img src={rel.cover_url} alt={rel.title} class="h-full w-full object-cover" />
+												{:else}
+													<div class="h-full w-full flex items-center justify-center text-neutral-600">
+														<Disc3 class="h-3 w-3" />
+													</div>
+												{/if}
+											</div>
+											<div class="min-w-0 flex-1">
+												<div class="text-[11px] font-bold text-white truncate {selectedReleaseMbid === rel.id ? 'text-emerald-300' : ''}">
+													{rel.title}
 												</div>
-											{/if}
-										</div>
-
-										<div class="min-w-0 flex-1">
-											<div class="text-xs font-bold text-white truncate {selectedReleaseMbid === rel.id ? 'text-emerald-300' : ''}">
-												{rel.title}
-											</div>
-											<div class="text-[10px] text-neutral-400 truncate">
-												{rel.artist}
-											</div>
-											<div class="text-[9px] text-neutral-500 flex items-center justify-between gap-1.5 mt-0.5">
-												<div class="flex items-center gap-1.5 truncate">
+												<div class="text-[10px] text-neutral-400 truncate">
+													{rel.artist}
+												</div>
+												<div class="text-[9px] text-neutral-500 flex items-center gap-1 mt-0.5 truncate">
 													<span>{rel.media_format || 'CD'}</span>
 													{#if rel.year}<span>• {rel.year}</span>{/if}
 													{#if rel.track_count}<span>• {rel.track_count} tr</span>{/if}
 													{#if rel.country}<span>• {rel.country}</span>{/if}
 												</div>
-												<span class="font-mono text-[8px] text-neutral-500 opacity-75 shrink-0">{rel.id.slice(0, 8)}</span>
 											</div>
 										</div>
-									</div>
-								{/each}
-							</div>
+									{/each}
+								</div>
+							{/if}
 						</div>
 					{/if}
 				</div>
 
 				<!-- Proactive Write Permission Alert Banner -->
 				{#if (taggerMode === 'folders' && currentFolderData?.is_writable === false) || (taggerMode === 'albums' && !albumIsWritable)}
-					<div class="rounded-3xl border border-rose-500/50 bg-rose-950/40 p-4 sm:p-5 text-xs text-rose-200 shadow-xl backdrop-blur-xl space-y-2.5">
-						<div class="flex items-center gap-2.5">
-							<AlertTriangle class="h-5 w-5 text-rose-400 shrink-0" />
-							<div>
-								<h4 class="font-black text-rose-200 text-sm">File Write Permission Denied (Read-Only)</h4>
-								<p class="text-[11px] text-rose-300/90 mt-0.5">
-									Trax Vault does not have write access to this {taggerMode === 'folders' ? 'music folder' : 'album files'}. Writing audio tags and saving <code class="font-mono bg-rose-900/60 px-1 py-0.5 rounded text-rose-100">cover.jpg</code> will fail until permissions are granted.
-								</p>
-							</div>
+					<div class="rounded-2xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-200 shadow backdrop-blur-xl space-y-1.5">
+						<div class="flex items-center gap-2">
+							<AlertTriangle class="h-4 w-4 text-rose-400 shrink-0" />
+							<h4 class="font-bold text-rose-200 text-xs">File Write Permission Denied (Read-Only)</h4>
 						</div>
-						<div class="rounded-xl bg-neutral-950/80 border border-rose-900/40 p-3 space-y-1">
-							<p class="text-[11px] font-bold text-neutral-300">Run this command on your host machine to grant write permissions:</p>
-							<div class="font-mono text-[11px] text-amber-300 bg-neutral-900 px-2.5 py-1.5 rounded-lg border border-neutral-800 select-all">
-								chmod -R u+rw "{taggerMode === 'folders' ? selectedFolderPath : (albumPermissionPath || './music')}"
-							</div>
-							<p class="text-[10px] text-neutral-400 mt-1">
-								If running inside Docker, also verify that the volume mount in <code class="text-neutral-300">docker-compose.yml</code> is mounted read-write (<code class="text-neutral-300">:rw</code>).
-							</p>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Tag Options & Action Toolbar -->
-				{#if releaseDetail}
-					<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-4 sm:p-5 backdrop-blur-xl shadow-xl space-y-4">
-						<div class="flex flex-wrap items-center justify-between gap-4">
-							<div class="flex flex-wrap items-center gap-4 text-xs font-medium text-neutral-300">
-								<label class="flex items-center gap-2 cursor-pointer select-none">
-									<input
-										type="checkbox"
-										bind:checked={optUpdateCover}
-										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950"
-									/>
-									<span class="flex items-center gap-1">
-										<ImageIcon class="h-3.5 w-3.5 text-emerald-400" />
-										Download Cover Art
-									</span>
-								</label>
-
-								<label class="flex items-center gap-2 cursor-pointer select-none">
-									<input
-										type="checkbox"
-										bind:checked={optUpdateAlbumTitle}
-										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950"
-									/>
-									<span>Update Title</span>
-								</label>
-
-								<label class="flex items-center gap-2 cursor-pointer select-none">
-									<input
-										type="checkbox"
-										bind:checked={optUpdateArtist}
-										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950"
-									/>
-									<span>Update Artist</span>
-								</label>
-
-								<label class="flex items-center gap-2 cursor-pointer select-none">
-									<input
-										type="checkbox"
-										bind:checked={optUpdateYear}
-										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950"
-									/>
-									<span>Update Year</span>
-								</label>
-
-								<label class="flex items-center gap-2 cursor-pointer select-none">
-									<input
-										type="checkbox"
-										bind:checked={optRenameFiles}
-										class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950"
-									/>
-									<span class="flex items-center gap-1 font-semibold {optRenameFiles ? 'text-emerald-300' : 'text-neutral-400'}">
-										<FileText class="h-3.5 w-3.5 text-emerald-400" />
-										Rename Files on Disk
-									</span>
-								</label>
-
-								{#if taggerMode === 'folders'}
-									<label class="flex items-center gap-2 cursor-pointer select-none {currentFolderData?.already_in_vault ? 'opacity-70 cursor-not-allowed' : ''}">
-										<input
-											type="checkbox"
-											bind:checked={optImportToVault}
-											disabled={currentFolderData?.already_in_vault}
-											class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950"
-										/>
-										<span class="flex items-center gap-1 font-bold {optImportToVault ? 'text-emerald-300' : 'text-neutral-400'}">
-											<Sparkles class="h-3.5 w-3.5 text-emerald-400" />
-											{currentFolderData?.already_in_vault ? 'Already in Vault' : 'Import to Vault Now'}
-										</span>
-									</label>
-								{/if}
-							</div>
-
-							<!-- Apply Button -->
-							<button
-								type="button"
-								onclick={applyConfirmedTags}
-								disabled={isApplyingTags || selectedCount === 0}
-								class="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 px-5 py-2.5 text-xs font-black text-white shadow-xl shadow-emerald-600/30 hover:brightness-110 active:scale-95 transition disabled:opacity-50 cursor-pointer"
-							>
-								{#if isApplyingTags}
-									<RefreshCw class="h-4 w-4 animate-spin text-white" />
-									<span>Writing Tags to Files...</span>
-								{:else}
-									<Sparkles class="h-4 w-4 text-emerald-200" />
-									{#if taggerMode === 'folders'}
-										<span>Write Tags {optRenameFiles ? '& Rename Files' : ''} {optImportToVault && !currentFolderData?.already_in_vault ? '& Import' : ''} ({selectedCount} songs)</span>
-									{:else}
-										<span>Write Tags {optRenameFiles ? '& Rename Files' : ''} & Library ({selectedCount} songs)</span>
-									{/if}
-								{/if}
-							</button>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Missing Songs Alert Banner (Compact Notice) -->
-				{#if releaseDetail && missingTracks.length > 0}
-					<div class="rounded-2xl border border-amber-600/50 bg-amber-950/30 p-3.5 backdrop-blur-xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-						<div class="flex items-center gap-3 min-w-0">
-							<div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
-								<AlertTriangle class="h-4 w-4" />
-							</div>
-							<div class="min-w-0">
-								<div class="flex items-center gap-2">
-									<h4 class="text-xs font-bold text-amber-200">
-										{missingTracks.length} {missingTracks.length === 1 ? 'Track' : 'Tracks'} Missing from Storage
-									</h4>
-									<span class="rounded-full bg-amber-900/80 border border-amber-500/50 px-2 py-0.2 text-[9px] font-bold text-amber-300">
-										{releaseDetail.tracks.length - missingTracks.length} / {releaseDetail.tracks.length} Paired
-									</span>
-								</div>
-								<p class="text-[11px] text-amber-300/80 truncate mt-0.5">
-									Missing release tracks appear as empty drop slots in Column 2. Drag any file from Column 1 onto them to pair.
-								</p>
-							</div>
+						<div class="font-mono text-[10px] text-amber-300 bg-neutral-900 px-2 py-1 rounded border border-neutral-800 select-all">
+							chmod -R u+rw "{taggerMode === 'folders' ? selectedFolderPath : (albumPermissionPath || './music')}"
 						</div>
 					</div>
 				{/if}
 
 				<!-- 2-Column Tagger Architecture: Storage Files (Col 1) & Dual-Subcolumn Alignment (Col 2) -->
 				{#if isLoadingMatches}
-					<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-16 text-center text-xs text-neutral-400 backdrop-blur-xl shadow-xl">
-						<RefreshCw class="h-6 w-6 animate-spin text-emerald-400 mx-auto mb-2" />
+					<div class="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-8 text-center text-xs text-neutral-400 backdrop-blur-xl shadow-xl">
+						<RefreshCw class="h-5 w-5 animate-spin text-emerald-400 mx-auto mb-2" />
 						<span>Querying MusicBrainz and aligning audio tracks...</span>
 					</div>
 				{:else if matches.length === 0}
-					<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-16 text-center text-xs text-neutral-400 backdrop-blur-xl shadow-xl">
-						<Tag class="h-6 w-6 text-neutral-600 mx-auto mb-2" />
+					<div class="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-8 text-center text-xs text-neutral-400 backdrop-blur-xl shadow-xl">
+						<Tag class="h-5 w-5 text-neutral-600 mx-auto mb-2" />
 						<span>No audio files found in this selection.</span>
 					</div>
 				{:else if !releaseDetail}
-					<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-16 text-center text-xs text-neutral-400 backdrop-blur-xl shadow-xl">
-						<Tag class="h-6 w-6 text-neutral-600 mx-auto mb-2" />
+					<div class="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-8 text-center text-xs text-neutral-400 backdrop-blur-xl shadow-xl">
+						<Tag class="h-5 w-5 text-neutral-600 mx-auto mb-2" />
 						<span>Please select a candidate release above to align tracks.</span>
 					</div>
 				{:else}
-					<div class="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start min-w-0">
+					<div class="grid grid-cols-1 xl:grid-cols-12 gap-3 items-start min-w-0">
 						<!-- COLUMN 1: Songs You Have in Storage (Left Column, col-span-4) -->
 						<div
-							class="xl:col-span-4 min-w-0 rounded-3xl border transition-all duration-200 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-4 space-y-3 {isDragOverStorageCol
+							class="xl:col-span-4 min-w-0 rounded-2xl border transition-all duration-200 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-2.5 space-y-1.5 {isDragOverStorageCol
 								? 'ring-2 ring-amber-500 bg-amber-950/40 border-amber-400'
 								: 'border-neutral-800'}"
 							ondragover={handleDragOver}
@@ -1833,69 +1642,69 @@
 							aria-label="Storage files column"
 						>
 							<!-- Column 1 Header -->
-							<div class="flex items-center justify-between pb-2.5 border-b border-neutral-800/80">
-								<div class="flex items-center gap-2 min-w-0">
-									<FolderSync class="h-4 w-4 text-emerald-400 shrink-0" />
-									<h3 class="text-xs font-bold text-white truncate">1. Files in Storage</h3>
-									<span class="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] font-semibold text-neutral-400 shrink-0">
+							<div class="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+								<div class="flex items-center gap-1.5 min-w-0">
+									<FolderSync class="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+									<h3 class="text-xs font-bold text-white truncate">Storage</h3>
+									<span class="rounded-full bg-neutral-800 px-1.5 py-0.2 text-[9px] font-semibold text-neutral-400 shrink-0">
 										{matches.length}
 									</span>
 								</div>
 
-								<span class="text-[10px] text-neutral-400 shrink-0 font-medium">
-									{unmatchedLocalMatches.length} unassigned
+								<span class="text-[9px] text-neutral-400 shrink-0 font-medium">
+									{unmatchedLocalMatches.length} free
 								</span>
 							</div>
 
 							<!-- Column 1 Subheader Legend -->
-							<div class="flex items-center gap-2 px-2 text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-								<span class="w-3.5 shrink-0"></span>
-								<span class="w-5 shrink-0 text-center">#</span>
-								<span class="flex-1 min-w-0 truncate">File Title</span>
-								<span class="w-9 text-center shrink-0">Fmt</span>
-								<span class="w-9 text-right shrink-0">Time</span>
-								<span class="w-12 text-right shrink-0">Slot</span>
+							<div class="flex items-center gap-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500">
+								<span class="w-3 shrink-0"></span>
+								<span class="w-4 shrink-0 text-center">#</span>
+								<span class="flex-1 min-w-0 truncate">Title</span>
+								<span class="w-8 text-center shrink-0">Fmt</span>
+								<span class="w-8 text-right shrink-0">Time</span>
+								<span class="w-10 text-right shrink-0">Slot</span>
 							</div>
 
-							<!-- List of Files in Storage (Strict 1-line per song) -->
-							<div class="space-y-1 max-h-[75vh] overflow-y-auto pr-1 min-w-0">
+							<!-- List of Files in Storage (Ultra-compact ~28px row height) -->
+							<div class="space-y-0.5 max-h-[78vh] overflow-y-auto pr-1 min-w-0">
 								{#each matches as m (m.localTrack.id)}
 									{@const isAssigned = Boolean(m.mbTrack)}
 									<div
-										class="h-9 px-2 py-1 rounded-xl border transition-all duration-150 flex items-center gap-1.5 text-xs select-none cursor-grab active:cursor-grabbing {isAssigned
+										class="h-7 px-1.5 py-0.5 rounded-lg border transition-all duration-150 flex items-center gap-1 text-[11px] select-none cursor-grab active:cursor-grabbing {isAssigned
 											? 'bg-neutral-950/70 border-neutral-800/80 hover:border-neutral-700'
 											: 'bg-amber-950/20 border-amber-800/60 hover:border-amber-700 text-amber-200'}"
 										draggable="true"
 										ondragstart={(e) => handleDragStart(e, m.localTrack.id)}
 										ondragend={handleDragEnd}
-										title={`Drag onto any track in Column 2: ${m.localTrack.title}`}
+										title={`Drag onto target slot: ${m.localTrack.title}`}
 										role="listitem"
 									>
-										<GripVertical class="h-3.5 w-3.5 text-neutral-500 shrink-0" />
-										<span class="font-mono text-[10px] text-neutral-400 w-5 shrink-0 text-center">
+										<GripVertical class="h-3 w-3 text-neutral-500 shrink-0" />
+										<span class="font-mono text-[9px] text-neutral-400 w-4 shrink-0 text-center">
 											{m.localTrack.track_number.toString().padStart(2, '0')}
 										</span>
-										<span class="font-medium text-xs text-neutral-200 truncate flex-1 min-w-0" title={m.localTrack.file_path || m.localTrack.title}>
+										<span class="font-medium text-[11px] text-neutral-200 truncate flex-1 min-w-0" title={m.localTrack.file_path || m.localTrack.title}>
 											{m.localTrack.title}
 										</span>
-										<span class="text-[9px] font-mono uppercase px-1 py-0.2 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 shrink-0">
-											{m.localTrack.format || 'AUDIO'}
+										<span class="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 shrink-0">
+											{m.localTrack.format || 'AUD'}
 										</span>
-										<span class="text-[10px] font-mono text-neutral-400 w-9 text-right shrink-0">
+										<span class="text-[9px] font-mono text-neutral-400 w-8 text-right shrink-0">
 											{formatDuration(m.localTrack.duration_ms)}
 										</span>
 
 										<!-- Slot indicator -->
-										<div class="w-12 flex justify-end shrink-0">
+										<div class="w-10 flex justify-end shrink-0">
 											{#if m.mbTrack}
 												<span
-													class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-950/80 border border-emerald-600/50 text-emerald-300 truncate"
-													title={`Paired with MusicBrainz track: ${m.mbTrack.disc_number > 1 ? `${m.mbTrack.disc_number}-` : ''}${m.mbTrack.track_number}. ${m.mbTrack.title}`}
+													class="text-[8px] font-bold px-1 py-0.2 rounded bg-emerald-950/80 border border-emerald-600/50 text-emerald-300 truncate"
+													title={`Paired with MB track: ${m.mbTrack.disc_number > 1 ? `${m.mbTrack.disc_number}-` : ''}${m.mbTrack.track_number}. ${m.mbTrack.title}`}
 												>
 													➔ {m.mbTrack.disc_number > 1 ? `${m.mbTrack.disc_number}-` : ''}{m.mbTrack.track_number.toString().padStart(2, '0')}
 												</span>
 											{:else}
-												<span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-950/80 border border-amber-600/50 text-amber-300">
+												<span class="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-950/80 border border-amber-600/50 text-amber-300">
 													Free
 												</span>
 											{/if}
@@ -1903,62 +1712,56 @@
 									</div>
 								{/each}
 							</div>
-
-							<!-- Drop target instruction footer -->
-							<div class="pt-2 border-t border-neutral-800/80 text-[11px] text-neutral-500 flex items-center justify-between">
-								<span>💡 Drag files from here to pair</span>
-								<span>Drop here to unpair</span>
-							</div>
 						</div>
 
 						<!-- COLUMN 2: Album Tag Alignment with 2 Synchronized Subcolumns (Right Column, col-span-8) -->
-						<div class="xl:col-span-8 min-w-0 rounded-3xl border border-neutral-800 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-4 space-y-3 flex flex-col">
+						<div class="xl:col-span-8 min-w-0 rounded-2xl border border-neutral-800 bg-neutral-900/70 backdrop-blur-xl shadow-xl p-2.5 space-y-1.5 flex flex-col">
 							<!-- Column 2 Header -->
-							<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-2.5 border-b border-neutral-800/80 gap-2">
-								<div class="flex items-center gap-2 min-w-0">
-									<SlidersHorizontal class="h-4 w-4 text-emerald-400 shrink-0" />
-									<h3 class="text-xs font-bold text-white truncate">2. Album Tag Alignment (Release vs Storage)</h3>
-									<span class="rounded-full bg-emerald-950/80 border border-emerald-600/50 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 shrink-0">
+							<div class="flex items-center justify-between pb-1.5 border-b border-neutral-800/80 gap-2">
+								<div class="flex items-center gap-1.5 min-w-0">
+									<SlidersHorizontal class="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+									<h3 class="text-xs font-bold text-white truncate">Alignment</h3>
+									<span class="rounded-full bg-emerald-950/80 border border-emerald-600/50 px-1.5 py-0.2 text-[9px] font-semibold text-emerald-300 shrink-0">
 										{selectedCount} / {releaseDetail.tracks.length} paired
 									</span>
 								</div>
 
-								<div class="flex items-center gap-3 shrink-0">
+								<div class="flex items-center gap-2 shrink-0">
 									<button
 										type="button"
 										onclick={toggleSelectAll}
-										class="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition font-medium cursor-pointer"
+										class="flex items-center gap-1 text-[11px] text-neutral-400 hover:text-white transition font-medium cursor-pointer"
 									>
-										<CheckCheck class="h-3.5 w-3.5 text-emerald-400" />
+										<CheckCheck class="h-3 w-3 text-emerald-400" />
 										<span>{allSelected ? 'Deselect All' : 'Select All'}</span>
 									</button>
 								</div>
 							</div>
 
 							<!-- Dual Subcolumns Legend Header (Strictly Single Line) -->
-							<div class="flex items-center gap-2 px-2 text-[10px] font-bold uppercase tracking-wider text-neutral-500 min-w-0">
+							<div class="flex items-center gap-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500 min-w-0">
 								<!-- Subcolumn 1 Header -->
-								<div class="flex-1 min-w-0 flex items-center gap-2 truncate">
-									<span class="w-4 shrink-0 text-center">✓</span>
-									<span class="truncate">Subcolumn 1: Storage File (Assigned)</span>
+								<div class="flex-1 min-w-0 flex items-center gap-1.5 truncate">
+									<span class="w-3.5 shrink-0 text-center">✓</span>
+									<span class="truncate">Storage File</span>
 								</div>
 								<!-- Center Match Header -->
-								<div class="w-12 text-center shrink-0">Match</div>
+								<div class="w-10 text-center shrink-0">Match</div>
 								<!-- Subcolumn 2 Header -->
-								<div class="flex-1 min-w-0 flex items-center justify-between gap-2 truncate">
-									<span class="truncate">Subcolumn 2: MusicBrainz Track (Target)</span>
-									<span class="w-10 text-right shrink-0">Time</span>
+								<div class="flex-1 min-w-0 flex items-center justify-between gap-1.5 truncate">
+									<span class="truncate">MusicBrainz Track</span>
+									<span class="w-8 text-right shrink-0">Time</span>
 								</div>
 							</div>
 
-							<!-- Paired Rows List (Strict 1-line per row!) -->
-							<div class="space-y-4 max-h-[75vh] overflow-y-auto pr-1 min-w-0">
+							<!-- Paired Rows List (Strict ultra-compact ~28px row height) -->
+							<div class="space-y-3 max-h-[78vh] overflow-y-auto pr-1 min-w-0">
 								{#each releaseDiscs as disc (disc.discNumber)}
-									<div class="space-y-1 min-w-0">
+									<div class="space-y-0.5 min-w-0">
 										<!-- Disc Header if multi-disc release -->
 										{#if releaseDiscs.length > 1}
-											<div class="flex items-center gap-2 px-2 py-1 text-xs font-bold text-neutral-400 bg-neutral-950/80 rounded-xl border border-neutral-800">
-												<Disc3 class="h-3.5 w-3.5 text-purple-400 shrink-0" />
+											<div class="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold text-neutral-400 bg-neutral-950/80 rounded-lg border border-neutral-800">
+												<Disc3 class="h-3 w-3 text-purple-400 shrink-0" />
 												<span>Disc {disc.discNumber} ({disc.tracks.length} tracks)</span>
 											</div>
 										{/if}
@@ -1969,8 +1772,8 @@
 											{@const isDragTarget = dragOverMbTrackId === mbTr.id}
 
 											<div
-												class="h-9 sm:h-10 px-2 py-1 rounded-xl border transition-all duration-150 flex items-center gap-2 text-xs min-w-0 {isDragTarget
-													? 'ring-2 ring-emerald-500 bg-emerald-950/60 border-emerald-400 shadow-xl scale-[1.004]'
+												class="h-7 px-1.5 py-0.5 rounded-lg border transition-all duration-150 flex items-center gap-1.5 text-[11px] min-w-0 {isDragTarget
+													? 'ring-2 ring-emerald-500 bg-emerald-950/60 border-emerald-400 shadow-md scale-[1.002]'
 													: matched
 													? (matched.selected ? 'bg-neutral-950/60 border-neutral-800/80 hover:border-neutral-700' : 'bg-neutral-950/30 border-neutral-900 opacity-60')
 													: 'bg-amber-950/10 border-dashed border-amber-900/50'}"
@@ -1985,32 +1788,32 @@
 												aria-label="Track slot {mbTr.track_number}"
 											>
 												<!-- SUBCOLUMN 1: The Local File From Storage (Left Subcolumn) -->
-												<div class="flex-1 min-w-0 flex items-center gap-1.5">
+												<div class="flex-1 min-w-0 flex items-center gap-1">
 													{#if matched}
 														<input
 															type="checkbox"
 															bind:checked={matched.selected}
-															class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 cursor-pointer shrink-0"
+															class="rounded border-neutral-700 text-emerald-600 focus:ring-emerald-500 bg-neutral-950 cursor-pointer shrink-0 h-3 w-3"
 															title="Include in tag write and rename"
 														/>
 														<div
 															class="cursor-grab active:cursor-grabbing p-0.5 text-neutral-500 hover:text-emerald-400 transition shrink-0 select-none"
-															title="Drag to swap with another track slot"
+															title="Drag to swap"
 															draggable="true"
 															ondragstart={(e) => handleDragStart(e, matched.localTrack.id)}
 															ondragend={handleDragEnd}
 															role="button"
 															tabindex="0"
 														>
-															<GripVertical class="h-3.5 w-3.5" />
+															<GripVertical class="h-3 w-3" />
 														</div>
 
-														<span class="font-mono text-[10px] text-neutral-400 shrink-0">
+														<span class="font-mono text-[9px] text-neutral-400 shrink-0">
 															{matched.localTrack.disc_number > 1 ? `${matched.localTrack.disc_number}-` : ''}{matched.localTrack.track_number.toString().padStart(2, '0')}
 														</span>
 
 														<span
-															class="font-semibold text-xs text-neutral-200 truncate flex-1 min-w-0 cursor-grab active:cursor-grabbing"
+															class="font-semibold text-[11px] text-neutral-200 truncate flex-1 min-w-0 cursor-grab active:cursor-grabbing"
 															title={matched.localTrack.file_path || matched.localTrack.title}
 															draggable="true"
 															ondragstart={(e) => handleDragStart(e, matched.localTrack.id)}
@@ -2026,16 +1829,16 @@
 															{@const preview = getTargetFilenamePreview(matched.localTrack, mbTr, totalReleaseDiscs)}
 															{#if preview.willRename}
 																<span
-																	class="flex items-center gap-0.5 text-[10px] font-mono text-amber-400 bg-amber-950/60 border border-amber-800/50 px-1 py-0.2 rounded shrink-0 cursor-help"
-																	title={`Renames on disk to: ${preview.targetName} (and any companion .lrc)`}
+																	class="flex items-center gap-0.5 text-[8px] font-mono text-amber-400 bg-amber-950/60 border border-amber-800/50 px-1 py-0.2 rounded shrink-0 cursor-help"
+																	title={`Renames on disk to: ${preview.targetName}`}
 																>
-																	<FileText class="h-3 w-3" />
-																	<span class="text-[9px]">Rename</span>
+																	<FileText class="h-2.5 w-2.5" />
+																	<span>Rename</span>
 																</span>
 															{/if}
 														{/if}
 
-														<span class="text-[10px] font-mono text-neutral-400 shrink-0">
+														<span class="text-[9px] font-mono text-neutral-400 shrink-0">
 															{formatDuration(matched.localTrack.duration_ms)}
 														</span>
 
@@ -2043,54 +1846,54 @@
 															type="button"
 															onclick={() => handleUnpairTrack(matched.localTrack.id)}
 															class="p-0.5 rounded text-neutral-500 hover:text-rose-400 hover:bg-neutral-800 transition cursor-pointer shrink-0"
-															title="Unpair (move back to storage)"
+															title="Unpair"
 														>
-															<X class="h-3.5 w-3.5" />
+															<X class="h-3 w-3" />
 														</button>
 													{:else}
 														<!-- Empty Drop Zone Slot (Missing Song) -->
-														<div class="flex-1 min-w-0 h-7 rounded-lg border border-dashed border-neutral-700/80 bg-neutral-950/40 flex items-center justify-center gap-1.5 text-neutral-500 text-[11px] truncate">
-															<GripVertical class="h-3 w-3 text-neutral-600 shrink-0" />
-															<span class="font-medium truncate">Drop file here to pair</span>
+														<div class="flex-1 min-w-0 h-5 rounded border border-dashed border-neutral-700/80 bg-neutral-950/40 flex items-center justify-center gap-1 text-neutral-500 text-[10px] truncate">
+															<GripVertical class="h-2.5 w-2.5 text-neutral-600 shrink-0" />
+															<span class="font-medium truncate">Drop file</span>
 														</div>
 													{/if}
 												</div>
 
 												<!-- CENTER DIVIDER: Match Status Pill -->
-												<div class="w-12 flex items-center justify-center shrink-0">
+												<div class="w-10 flex items-center justify-center shrink-0">
 													{#if matched}
 														{#if matched.matchType === 'exact'}
-															<span class="rounded bg-emerald-950/80 border border-emerald-600/50 px-1.5 py-0.2 text-[9px] font-bold text-emerald-300">
+															<span class="rounded bg-emerald-950/80 border border-emerald-600/50 px-1 py-0.2 text-[8px] font-bold text-emerald-300">
 																100%
 															</span>
 														{:else if matched.matchType === 'high'}
-															<span class="rounded bg-cyan-950/80 border border-cyan-600/50 px-1.5 py-0.2 text-[9px] font-bold text-cyan-300">
+															<span class="rounded bg-cyan-950/80 border border-cyan-600/50 px-1 py-0.2 text-[8px] font-bold text-cyan-300">
 																{matched.score}%
 															</span>
 														{:else}
-															<span class="rounded bg-amber-950/80 border border-amber-600/50 px-1.5 py-0.2 text-[9px] font-bold text-amber-300">
+															<span class="rounded bg-amber-950/80 border border-amber-600/50 px-1 py-0.2 text-[8px] font-bold text-amber-300">
 																Diff
 															</span>
 														{/if}
 													{:else}
-														<span class="rounded bg-amber-950/60 border border-amber-700/50 px-1.5 py-0.2 text-[9px] font-bold text-amber-400">
+														<span class="rounded bg-amber-950/60 border border-amber-700/50 px-1 py-0.2 text-[8px] font-bold text-amber-400">
 															Empty
 														</span>
 													{/if}
 												</div>
 
 												<!-- SUBCOLUMN 2: The MusicBrainz Release Track (Right Subcolumn) -->
-												<div class="flex-1 min-w-0 flex items-center gap-1.5">
-													<span class="font-mono text-[10px] text-emerald-400 font-bold shrink-0">
+												<div class="flex-1 min-w-0 flex items-center gap-1">
+													<span class="font-mono text-[9px] text-emerald-400 font-bold shrink-0">
 														{mbTr.disc_number > 1 ? `${mbTr.disc_number}-` : ''}{mbTr.track_number.toString().padStart(2, '0')}.
 													</span>
-													<span class="font-bold text-xs text-white truncate flex-1 min-w-0" title={mbTr.title}>
+													<span class="font-bold text-[11px] text-white truncate flex-1 min-w-0" title={mbTr.title}>
 														{mbTr.title}
 													</span>
-													<span class="text-[10px] text-neutral-400 truncate max-w-[110px] shrink-0 hidden sm:inline" title={mbTr.artist || releaseDetail.artist}>
+													<span class="text-[9px] text-neutral-400 truncate max-w-[90px] shrink-0 hidden sm:inline" title={mbTr.artist || releaseDetail.artist}>
 														{mbTr.artist || releaseDetail.artist}
 													</span>
-													<span class="text-[10px] font-mono text-neutral-400 shrink-0">
+													<span class="text-[9px] font-mono text-neutral-400 shrink-0">
 														{formatDuration(mbTr.duration_ms)}
 													</span>
 
@@ -2106,8 +1909,8 @@
 																	handleUnpairTrack(matched.localTrack.id);
 																}
 															}}
-															class="rounded border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-300 focus:outline-none focus:border-emerald-500 max-w-[80px] sm:max-w-[100px] truncate cursor-pointer"
-															title="Quick pick storage file for this slot"
+															class="rounded border border-neutral-800 bg-neutral-900 px-1 py-0.2 text-[9px] text-neutral-300 focus:outline-none focus:border-emerald-500 max-w-[65px] sm:max-w-[85px] truncate cursor-pointer"
+															title="Pick storage file"
 														>
 															<option value="">{matched ? 'Swap...' : '(Assign)'}</option>
 															{#each matches as m (m.localTrack.id)}

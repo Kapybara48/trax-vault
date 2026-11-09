@@ -782,6 +782,19 @@ This document preserves persistent context, architectural conventions, recent ch
       - Drag between rows in Column 2 to swap.
       - Drag back onto Column 1 or click `X` to unpair.
 
+54. **Full-Screen Ultra-Compact 28px Minimal-Text Matching Studio (v1.7.14)**:
+    - **Near-100% Screen Height Utilization**:
+      - Eliminated multi-card hero section, large cover cards, redundant instruction boxes, and verbose paragraphs that previously consumed >650px of vertical space before reaching the tracklist.
+      - Built a sleek ~48px top action bar integrating: mini 36x36px cover thumbnail, title & artist, match score badge, missing tracks counter, release candidate `<select>` dropdown, options pills (`Rename`, `Cover`, `Import`), and "Write Tags" action button.
+      - Added an optional expand toggle (`[ 👁️ ]`) to reveal full candidate cards and MBID search only when explicitly requested.
+    - **Ultra-Compact 28px (`h-7`) Row Height**:
+      - Reduced row height from 40px down to ~28px (`h-7` with `py-0.5 px-1.5` and `text-[11px]` typography).
+      - Reduced vertical row spacing to `space-y-0.5`. An entire album of 15-20 tracks fits effortlessly within the viewport without vertical scrolling.
+    - **Zero Clutter & Minimal Text**:
+      - Streamlined labels: `1. Files in Storage` -> `Storage ({matches.length})`, `2. Album Tag Alignment` -> `Alignment`, `Subcolumn 1: Storage File (Assigned)` -> `Storage File`, `Subcolumn 2: MusicBrainz Track (Target)` -> `MusicBrainz Track`.
+      - Removed instructional hint boxes ("💡 Drag files from here to pair / Drop here to unpair") and missing tracks alert banners.
+      - Retained all rich Picard drag-and-drop mechanics, quick-swap dropdowns, and file rename indications in compact inline form.
+
 ---
 
 ## 4. Workflows & Verification
