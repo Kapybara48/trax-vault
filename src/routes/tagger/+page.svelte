@@ -41,7 +41,13 @@
 		GripVertical,
 		ArrowLeftRight,
 		PanelLeftClose,
-		PanelLeftOpen
+		PanelLeftOpen,
+		Upload,
+		Pencil,
+		Plus,
+		Trash2,
+		ArrowUp,
+		ArrowDown
 	} from '@lucide/svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -153,6 +159,37 @@
 
 	// Toggle full cover comparison & candidate grid details in Step 1
 	let showReleaseDetails = $state(true);
+
+	// --- Manual Metadata Editor State ---
+	interface ManualEditorTrackRow {
+		id: string;
+		localTrackId?: number;
+		filePath?: string;
+		filename?: string;
+		discNumber: number;
+		trackNumber: number;
+		title: string;
+		artist: string;
+		duration_ms?: number | null;
+		isMissing?: boolean;
+	}
+
+	let isManualEditorOpen = $state(false);
+	let manualAlbumTitle = $state('');
+	let manualAlbumArtist = $state('');
+	let manualAlbumYear = $state<number | null>(null);
+	let manualAlbumGenre = $state('');
+	let manualCoverUrl = $state<string | null>(null);
+	let isUploadingCover = $state(false);
+	let coverUploadError = $state<string | null>(null);
+	let manualTracksList = $state<ManualEditorTrackRow[]>([]);
+	let manualOptWriteAudioTags = $state(true);
+	let manualOptRenameFiles = $state(true);
+	let manualOptImportToVault = $state(true);
+	let isSavingManualTags = $state(false);
+	let showManualPasteModal = $state(false);
+	let manualPasteText = $state('');
+	let coverFileInputRef = $state<HTMLInputElement | null>(null);
 
 	let currentCoverUrl = $derived(
 		taggerMode === 'albums' ? selectedAlbum?.cover_url : currentFolderData?.cover_url
@@ -499,6 +536,292 @@
 			loadAlbumAndMatch(selectedAlbumId, relId);
 		} else if (taggerMode === 'folders' && selectedFolderPath) {
 			loadFolderAndMatch(selectedFolderPath, relId);
+		}
+	}
+
+	async function openManualMetadataEditor() {
+		// Initialize album metadata
+		if (taggerMode === 'albums' && selectedAlbum) {
+			manualAlbumTitle = selectedAlbum.title || '';
+			manualAlbumArtist = selectedAlbum.artist || '';
+			manualAlbumYear = selectedAlbum.release_year || null;
+			manualAlbumGenre = selectedAlbum.genre || '';
+			manualCoverUrl = selectedAlbum.cover_url || null;
+			manualOptImportToVault = false;
+		} else if (currentFolderData) {
+			manualAlbumTitle = currentFolderData.folder_title || currentFolderData.folder_name || '';
+			manualAlbumArtist = currentFolderData.folder_artist || '';
+			manualAlbumYear = currentFolderData.folder_year || null;
+			manualAlbumGenre = '';
+			manualCoverUrl = currentFolderData.cover_url || null;
+			manualOptImportToVault = !currentFolderData.already_in_vault;
+		} else {
+			manualAlbumTitle = '';
+			manualAlbumArtist = '';
+			manualAlbumYear = null;
+			manualAlbumGenre = '';
+			manualCoverUrl = null;
+			manualOptImportToVault = true;
+		}
+
+		coverUploadError = null;
+
+		// Initialize tracklist from existing storage files / matches
+		if (matches.length > 0) {
+			manualTracksList = matches.map((m, idx) => {
+				const tr = m.localTrack;
+				const diskFilename = tr.file_path ? tr.file_path.split('/').pop() : undefined;
+				return {
+					id: `tr-${tr.id || idx}-${Math.random().toString(36).slice(2, 6)}`,
+					localTrackId: tr.id > 0 ? tr.id : undefined,
+					filePath: tr.file_path || undefined,
+					filename: diskFilename,
+					discNumber: tr.disc_number || 1,
+					trackNumber: tr.track_number || (idx + 1),
+					title: tr.title || (diskFilename ? diskFilename.replace(/\.[^.]+$/, '') : `Track ${idx + 1}`),
+					artist: tr.artist || manualAlbumArtist,
+					duration_ms: tr.duration_ms || null,
+					isMissing: tr.is_missing === 1
+				};
+			});
+		} else if (taggerMode === 'albums' && selectedAlbumId) {
+			// Try to fetch album tracks
+			try {
+				const res = await fetch(`/api/albums/${selectedAlbumId}`);
+				if (res.ok) {
+					const albData = await res.json();
+					if (albData.tracks && albData.tracks.length > 0) {
+						manualTracksList = albData.tracks.map((tr: Track, idx: number) => {
+							const diskFilename = tr.file_path ? tr.file_path.split('/').pop() : undefined;
+							return {
+								id: `tr-${tr.id || idx}-${Math.random().toString(36).slice(2, 6)}`,
+								localTrackId: tr.id,
+								filePath: tr.file_path || undefined,
+								filename: diskFilename,
+								discNumber: tr.disc_number || 1,
+								trackNumber: tr.track_number || (idx + 1),
+								title: tr.title,
+								artist: tr.artist || manualAlbumArtist,
+								duration_ms: tr.duration_ms || null,
+								isMissing: tr.is_missing === 1
+							};
+						});
+					}
+				}
+			} catch {}
+		}
+
+		if (manualTracksList.length === 0) {
+			// Start with at least 1 track row
+			manualTracksList = [
+				{
+					id: `tr-init-${Date.now()}`,
+					discNumber: 1,
+					trackNumber: 1,
+					title: '',
+					artist: manualAlbumArtist,
+					duration_ms: null,
+					isMissing: true
+				}
+			];
+		}
+
+		isManualEditorOpen = true;
+	}
+
+	async function handleManualCoverUpload(file: File) {
+		if (!file) return;
+		isUploadingCover = true;
+		coverUploadError = null;
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+			if (taggerMode === 'folders' && selectedFolderPath) {
+				formData.append('folderPath', selectedFolderPath);
+			} else if (taggerMode === 'albums' && selectedAlbumId) {
+				formData.append('albumId', selectedAlbumId.toString());
+			}
+
+			const res = await fetch('/api/library/cover/upload', {
+				method: 'POST',
+				body: formData
+			});
+			const json = await res.json();
+			if (!res.ok || json.error) {
+				throw new Error(json.error || 'Failed to upload cover');
+			}
+
+			manualCoverUrl = json.coverUrl;
+			if (taggerMode === 'albums' && selectedAlbumId) {
+				const idx = albums.findIndex((a) => a.id === selectedAlbumId);
+				if (idx !== -1) albums[idx].cover_url = json.coverUrl;
+			} else if (currentFolderData) {
+				currentFolderData.cover_url = json.coverUrl;
+			}
+		} catch (err: any) {
+			console.error('Cover upload error:', err);
+			coverUploadError = err.message || 'Upload failed';
+		} finally {
+			isUploadingCover = false;
+		}
+	}
+
+	function addManualTrackRow() {
+		const nextNum = manualTracksList.length + 1;
+		manualTracksList.push({
+			id: `tr-new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+			discNumber: 1,
+			trackNumber: nextNum,
+			title: '',
+			artist: manualAlbumArtist,
+			duration_ms: null,
+			isMissing: true
+		});
+	}
+
+	function moveManualTrack(index: number, direction: 'up' | 'down') {
+		const targetIdx = direction === 'up' ? index - 1 : index + 1;
+		if (targetIdx < 0 || targetIdx >= manualTracksList.length) return;
+		const temp = manualTracksList[index];
+		manualTracksList[index] = manualTracksList[targetIdx];
+		manualTracksList[targetIdx] = temp;
+		manualTracksList.forEach((t, i) => {
+			t.trackNumber = i + 1;
+		});
+	}
+
+	function removeManualTrack(index: number) {
+		manualTracksList.splice(index, 1);
+		manualTracksList.forEach((t, i) => {
+			t.trackNumber = i + 1;
+		});
+	}
+
+	function parseManualPastedTracks() {
+		if (!manualPasteText.trim()) return;
+		const lines = manualPasteText.split('\n').map((l) => l.trim()).filter(Boolean);
+		for (let i = 0; i < lines.length; i++) {
+			let line = lines[i];
+			const numMatch = line.match(/^(\d+)[\.\-\s]+(.*)$/);
+			let trackNum = i + 1;
+			let title = line;
+			if (numMatch) {
+				trackNum = parseInt(numMatch[1], 10);
+				title = numMatch[2].trim();
+			}
+			let durMs: number | null = null;
+			const durMatch = title.match(/[\(\-]?\s*(\d{1,2}:\d{2})\s*[\)]?$/);
+			if (durMatch) {
+				const parts = durMatch[1].split(':');
+				durMs = (parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)) * 1000;
+				title = title.replace(durMatch[0], '').trim();
+			}
+
+			if (i < manualTracksList.length) {
+				manualTracksList[i].title = title;
+				if (durMs) manualTracksList[i].duration_ms = durMs;
+			} else {
+				manualTracksList.push({
+					id: `tr-pasted-${Date.now()}-${i}`,
+					discNumber: 1,
+					trackNumber: trackNum,
+					title,
+					artist: manualAlbumArtist,
+					duration_ms: durMs,
+					isMissing: true
+				});
+			}
+		}
+		showManualPasteModal = false;
+		manualPasteText = '';
+	}
+
+	async function saveManualTags() {
+		if (!manualAlbumTitle.trim()) {
+			alert('Album title is required');
+			return;
+		}
+		if (!manualAlbumArtist.trim()) {
+			alert('Artist is required');
+			return;
+		}
+		if (manualTracksList.length === 0) {
+			alert('Please add at least one track');
+			return;
+		}
+
+		isSavingManualTags = true;
+		try {
+			const payload = {
+				targetMode: taggerMode,
+				albumId: selectedAlbumId || undefined,
+				folderPath: selectedFolderPath || undefined,
+				albumMetadata: {
+					title: manualAlbumTitle.trim(),
+					artist: manualAlbumArtist.trim(),
+					release_year: manualAlbumYear || null,
+					genre: manualAlbumGenre.trim() || null,
+					cover_url: manualCoverUrl || null
+				},
+				tracks: manualTracksList.map((t) => ({
+					localTrackId: t.localTrackId,
+					filePath: t.filePath,
+					title: t.title.trim() || `Track ${t.trackNumber}`,
+					artist: t.artist.trim() || manualAlbumArtist.trim(),
+					trackNumber: t.trackNumber,
+					discNumber: t.discNumber,
+					duration_ms: t.duration_ms,
+					isMissing: t.isMissing
+				})),
+				options: {
+					writeAudioTags: manualOptWriteAudioTags,
+					renameFiles: manualOptRenameFiles,
+					importToVault: manualOptImportToVault
+				}
+			};
+
+			const res = await fetch('/api/tagger/manual/apply', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+
+			const json = await res.json();
+			if (!res.ok || json.error) {
+				statusMessage = {
+					type: 'error',
+					text: json.error || 'Failed to apply manual tags',
+					details: json.fileErrors,
+					isPermission: json.hasPermissionErrors
+				};
+				return;
+			}
+
+			let successText = `Successfully updated metadata for ${json.updatedTracksCount || manualTracksList.length} tracks`;
+			if (json.renamedFilesCount > 0) {
+				successText += ` and renamed ${json.renamedFilesCount} files`;
+			}
+			if (json.importedAlbumId) {
+				successText += ` (Imported to Vault: Album #${json.importedAlbumId})`;
+			}
+			statusMessage = {
+				type: 'success',
+				text: `${successText}!`
+			};
+
+			isManualEditorOpen = false;
+
+			if (taggerMode === 'albums' && selectedAlbumId) {
+				await loadAlbumAndMatch(selectedAlbumId, selectedReleaseMbid || undefined);
+			} else if (taggerMode === 'folders' && selectedFolderPath) {
+				await loadFolderAndMatch(selectedFolderPath, selectedReleaseMbid || undefined);
+				await refreshFolders(false);
+			}
+		} catch (err: any) {
+			console.error('Save manual tags error:', err);
+			statusMessage = { type: 'error', text: err.message || 'Error saving manual tags' };
+		} finally {
+			isSavingManualTags = false;
 		}
 	}
 
@@ -1495,6 +1818,16 @@
 								<Hash class="h-3.5 w-3.5 text-purple-400" />
 								<span>Lookup MBID</span>
 							</button>
+
+							<button
+								type="button"
+								onclick={openManualMetadataEditor}
+								class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-bold text-neutral-200 border border-neutral-700 transition cursor-pointer"
+								title="Edit metadata manually, upload custom cover art, and add tracks"
+							>
+								<Pencil class="h-3.5 w-3.5 text-emerald-400" />
+								<span>Manual Editor</span>
+							</button>
 						</div>
 					</div>
 
@@ -1554,6 +1887,27 @@
 									</div>
 								{/each}
 							</div>
+						</div>
+					{:else if !isSearchingMB}
+						<!-- Not in MusicBrainz Callout -->
+						<div class="rounded-2xl border border-dashed border-neutral-700/80 bg-neutral-900/40 p-6 text-center space-y-3">
+							<div class="h-10 w-10 mx-auto rounded-full bg-neutral-800 flex items-center justify-center text-neutral-400">
+								<Music class="h-5 w-5" />
+							</div>
+							<div>
+								<h4 class="text-xs font-bold text-neutral-200">Song / Album Not Found on MusicBrainz</h4>
+								<p class="text-[11px] text-neutral-400 max-w-md mx-auto mt-1">
+									This release is not cataloged in MusicBrainz. You can use the Manual Metadata Editor to tag tracks, add songs manually, and upload custom cover art.
+								</p>
+							</div>
+							<button
+								type="button"
+								onclick={openManualMetadataEditor}
+								class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-600/30 transition cursor-pointer"
+							>
+								<Pencil class="h-3.5 w-3.5" />
+								<span>Open Manual Metadata Editor</span>
+							</button>
 						</div>
 					{/if}
 				</div>
@@ -2234,6 +2588,395 @@
 							Close
 						</button>
 					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Modal: Manual Metadata Editor -->
+	{#if isManualEditorOpen}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-5 backdrop-blur-md animate-in fade-in duration-150">
+			<div class="w-full max-w-4xl rounded-3xl border border-neutral-800 bg-neutral-900 p-4 sm:p-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden space-y-4">
+				<!-- Header -->
+				<div class="flex items-center justify-between border-b border-neutral-800 pb-3 shrink-0">
+					<div class="flex items-center gap-2.5">
+						<div class="h-9 w-9 rounded-xl bg-emerald-950/80 border border-emerald-600/50 flex items-center justify-center text-emerald-400">
+							<Pencil class="h-5 w-5" />
+						</div>
+						<div>
+							<h3 class="text-base font-bold text-white flex items-center gap-2">
+								Manual Metadata Editor
+								<span class="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-normal">
+									{taggerMode === 'albums' ? 'Vault Album' : 'Scanned Folder'}
+								</span>
+							</h3>
+							<p class="text-xs text-neutral-400">
+								Edit album details, upload custom cover art, and add or manage songs manually.
+							</p>
+						</div>
+					</div>
+					<button
+						type="button"
+						onclick={() => (isManualEditorOpen = false)}
+						class="rounded-xl p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+					>
+						<X class="h-5 w-5" />
+					</button>
+				</div>
+
+				<!-- Main Scrollable Body -->
+				<div class="flex-1 min-h-0 overflow-y-auto pr-1 space-y-5">
+					<!-- Top Row: Cover Art & Album Details -->
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-2xl bg-neutral-950/50 border border-neutral-800/80">
+						<!-- Cover Art Dropzone & Preview -->
+						<div class="flex flex-col items-center justify-center space-y-2">
+							<div class="relative group h-36 w-36 rounded-2xl overflow-hidden bg-neutral-900 border-2 border-dashed {manualCoverUrl ? 'border-neutral-700' : 'border-neutral-700 hover:border-emerald-500'} flex items-center justify-center">
+								{#if manualCoverUrl}
+									<img src={manualCoverUrl} alt="Album Cover" class="h-full w-full object-cover" />
+									<div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition p-2 text-center pointer-events-none">
+										<Upload class="h-6 w-6 text-white mb-1" />
+										<span class="text-[10px] font-bold text-white">Click or Drop to Replace</span>
+									</div>
+								{:else}
+									<div class="flex flex-col items-center justify-center text-neutral-500 p-3 text-center pointer-events-none">
+										<ImageIcon class="h-8 w-8 mb-1.5 opacity-60" />
+										<span class="text-[11px] font-semibold text-neutral-300">Upload Cover</span>
+										<span class="text-[9px] text-neutral-500 mt-0.5">JPG, PNG, WebP</span>
+									</div>
+								{/if}
+
+								<!-- File Input -->
+								<input
+									type="file"
+									accept="image/jpeg,image/png,image/webp"
+									bind:this={coverFileInputRef}
+									onchange={(e) => {
+										const target = e.currentTarget as HTMLInputElement;
+										if (target.files && target.files[0]) {
+											handleManualCoverUpload(target.files[0]);
+										}
+									}}
+									class="absolute inset-0 opacity-0 cursor-pointer"
+									title="Upload cover image"
+								/>
+							</div>
+
+							{#if isUploadingCover}
+								<div class="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold animate-pulse">
+									<RefreshCw class="h-3 w-3 animate-spin" />
+									<span>Saving cover...</span>
+								</div>
+							{:else if coverUploadError}
+								<p class="text-[10px] text-rose-400 font-medium max-w-[150px] text-center">
+									{coverUploadError}
+								</p>
+							{:else}
+								<button
+									type="button"
+									onclick={() => coverFileInputRef?.click()}
+									class="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition cursor-pointer"
+								>
+									{manualCoverUrl ? 'Change Image File' : 'Browse Image File'}
+								</button>
+							{/if}
+						</div>
+
+						<!-- Album Info Form Fields -->
+						<div class="md:col-span-2 space-y-3">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+								<div>
+									<label class="block text-[11px] font-semibold text-neutral-300 mb-1">Album Title *</label>
+									<input
+										type="text"
+										bind:value={manualAlbumTitle}
+										placeholder="e.g. Master of Puppets"
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+									/>
+								</div>
+
+								<div>
+									<label class="block text-[11px] font-semibold text-neutral-300 mb-1">Artist *</label>
+									<input
+										type="text"
+										bind:value={manualAlbumArtist}
+										placeholder="e.g. Metallica"
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+									/>
+								</div>
+							</div>
+
+							<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+								<div>
+									<label class="block text-[11px] font-semibold text-neutral-300 mb-1">Release Year</label>
+									<input
+										type="number"
+										bind:value={manualAlbumYear}
+										placeholder="e.g. 1986"
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+									/>
+								</div>
+
+								<div>
+									<label class="block text-[11px] font-semibold text-neutral-300 mb-1">Genre</label>
+									<input
+										type="text"
+										bind:value={manualAlbumGenre}
+										placeholder="e.g. Thrash Metal"
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+									/>
+								</div>
+
+								<div>
+									<label class="block text-[11px] font-semibold text-neutral-300 mb-1">Cover Image URL (optional)</label>
+									<input
+										type="url"
+										bind:value={manualCoverUrl}
+										placeholder="https://..."
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+									/>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Tracklist Section -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between pb-1">
+							<div class="flex items-center gap-2">
+								<h4 class="text-xs font-bold uppercase tracking-wider text-neutral-300">
+									Songs & Tracklist ({manualTracksList.length} tracks)
+								</h4>
+							</div>
+
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									onclick={() => (showManualPasteModal = true)}
+									class="flex items-center gap-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1 text-[11px] font-semibold text-neutral-300 border border-neutral-700 transition cursor-pointer"
+								>
+									<FileText class="h-3 w-3 text-emerald-400" />
+									<span>Paste Tracklist</span>
+								</button>
+
+								<button
+									type="button"
+									onclick={addManualTrackRow}
+									class="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm transition cursor-pointer"
+								>
+									<Plus class="h-3.5 w-3.5" />
+									<span>Add Song</span>
+								</button>
+							</div>
+						</div>
+
+						<!-- Tracks Table -->
+						<div class="rounded-2xl border border-neutral-800 bg-neutral-950/60 overflow-hidden">
+							<div class="grid grid-cols-12 gap-2 px-3 py-1.5 bg-neutral-900/80 border-b border-neutral-800 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+								<span class="col-span-1 text-center">#</span>
+								<span class="col-span-1 text-center">Disc</span>
+								<span class="col-span-4">Title *</span>
+								<span class="col-span-3">Artist</span>
+								<span class="col-span-2">File / Status</span>
+								<span class="col-span-1 text-right">Actions</span>
+							</div>
+
+							<div class="divide-y divide-neutral-800/60 max-h-64 overflow-y-auto">
+								{#each manualTracksList as tr, idx (tr.id)}
+									<div class="grid grid-cols-12 gap-2 px-3 py-1.5 items-center hover:bg-neutral-900/40 text-xs transition">
+										<!-- Track Number -->
+										<div class="col-span-1 flex items-center justify-center">
+											<input
+												type="number"
+												min="1"
+												bind:value={tr.trackNumber}
+												class="w-9 text-center rounded-lg bg-neutral-900 border border-neutral-700 py-0.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+											/>
+										</div>
+
+										<!-- Disc Number -->
+										<div class="col-span-1 flex items-center justify-center">
+											<input
+												type="number"
+												min="1"
+												bind:value={tr.discNumber}
+												class="w-9 text-center rounded-lg bg-neutral-900 border border-neutral-700 py-0.5 text-xs text-neutral-300 focus:outline-none focus:border-emerald-500"
+											/>
+										</div>
+
+										<!-- Title Input -->
+										<div class="col-span-4">
+											<input
+												type="text"
+												bind:value={tr.title}
+												placeholder={`Track ${tr.trackNumber}`}
+												class="w-full rounded-lg bg-neutral-900 border border-neutral-700 px-2 py-1 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-500"
+											/>
+										</div>
+
+										<!-- Artist Input -->
+										<div class="col-span-3">
+											<input
+												type="text"
+												bind:value={tr.artist}
+												placeholder={manualAlbumArtist || 'Artist'}
+												class="w-full rounded-lg bg-neutral-900 border border-neutral-700 px-2 py-1 text-xs text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-emerald-500"
+											/>
+										</div>
+
+										<!-- File / Status Pill -->
+										<div class="col-span-2 truncate">
+											{#if tr.filename || tr.filePath}
+												<span class="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.5 rounded truncate" title={tr.filePath || tr.filename}>
+													<Music class="h-2.5 w-2.5 shrink-0" />
+													<span class="truncate">{tr.filename || tr.filePath?.split('/').pop()}</span>
+												</span>
+											{:else}
+												<span class="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/60 border border-amber-800/50 px-1.5 py-0.5 rounded" title="This song will be added as a manual missing song">
+													<span>Manual / No File</span>
+												</span>
+											{/if}
+										</div>
+
+										<!-- Actions (Move Up, Move Down, Delete) -->
+										<div class="col-span-1 flex items-center justify-end gap-1">
+											<button
+												type="button"
+												onclick={() => moveManualTrack(idx, 'up')}
+												disabled={idx === 0}
+												class="p-1 rounded text-neutral-400 hover:text-white disabled:opacity-30 transition cursor-pointer"
+												title="Move up"
+											>
+												<ArrowUp class="h-3 w-3" />
+											</button>
+											<button
+												type="button"
+												onclick={() => moveManualTrack(idx, 'down')}
+												disabled={idx === manualTracksList.length - 1}
+												class="p-1 rounded text-neutral-400 hover:text-white disabled:opacity-30 transition cursor-pointer"
+												title="Move down"
+											>
+												<ArrowDown class="h-3 w-3" />
+											</button>
+											<button
+												type="button"
+												onclick={() => removeManualTrack(idx)}
+												class="p-1 rounded text-neutral-500 hover:text-rose-400 transition cursor-pointer"
+												title="Remove track"
+											>
+												<Trash2 class="h-3 w-3" />
+											</button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Footer Controls & Save Action -->
+				<div class="pt-3 border-t border-neutral-800 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+					<!-- Toggles -->
+					<div class="flex flex-wrap items-center gap-3 text-xs text-neutral-300">
+						<label class="flex items-center gap-1.5 cursor-pointer">
+							<input
+								type="checkbox"
+								bind:checked={manualOptWriteAudioTags}
+								class="rounded border-neutral-700 bg-neutral-900 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
+							/>
+							<span>Write audio file tags</span>
+						</label>
+
+						<label class="flex items-center gap-1.5 cursor-pointer">
+							<input
+								type="checkbox"
+								bind:checked={manualOptRenameFiles}
+								class="rounded border-neutral-700 bg-neutral-900 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
+							/>
+							<span>Rename files to clean pattern</span>
+						</label>
+
+						{#if taggerMode === 'folders'}
+							<label class="flex items-center gap-1.5 cursor-pointer text-emerald-400 font-semibold">
+								<input
+									type="checkbox"
+									bind:checked={manualOptImportToVault}
+									class="rounded border-neutral-700 bg-neutral-900 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
+								/>
+								<span>Import into Trax Vault</span>
+							</label>
+						{/if}
+					</div>
+
+					<!-- Actions -->
+					<div class="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+						<button
+							type="button"
+							onclick={() => (isManualEditorOpen = false)}
+							class="rounded-xl border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 px-4 py-2 text-xs font-semibold text-neutral-300 transition cursor-pointer"
+						>
+							Cancel
+						</button>
+
+						<button
+							type="button"
+							onclick={saveManualTags}
+							disabled={isSavingManualTags}
+							class="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:brightness-110 active:scale-95 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer"
+						>
+							{#if isSavingManualTags}
+								<RefreshCw class="h-3.5 w-3.5 animate-spin" />
+								<span>Writing Tags...</span>
+							{:else}
+								<Check class="h-3.5 w-3.5" />
+								<span>Save & Write Tags ({manualTracksList.length} songs)</span>
+							{/if}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Modal: Paste Tracklist helper -->
+	{#if showManualPasteModal}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in duration-100">
+			<div class="w-full max-w-md rounded-3xl border border-neutral-800 bg-neutral-900 p-5 shadow-2xl space-y-4">
+				<div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+					<h3 class="text-sm font-bold text-white flex items-center gap-2">
+						<FileText class="h-4 w-4 text-emerald-400" />
+						Paste Tracklist
+					</h3>
+					<button type="button" onclick={() => (showManualPasteModal = false)} class="text-neutral-400 hover:text-white cursor-pointer">
+						<X class="h-4 w-4" />
+					</button>
+				</div>
+
+				<p class="text-xs text-neutral-400">
+					Paste a list of songs (one per line). Supported formats: <code class="text-emerald-300">01. Song Title 3:45</code> or <code class="text-emerald-300">Song Title</code>.
+				</p>
+
+				<textarea
+					bind:value={manualPasteText}
+					rows="8"
+					placeholder="1. First Song 3:30&#10;2. Second Song 4:15&#10;3. Third Song"
+					class="w-full rounded-xl border border-neutral-700 bg-neutral-950 p-3 text-xs text-white placeholder-neutral-600 font-mono focus:outline-none focus:border-emerald-500"
+				></textarea>
+
+				<div class="flex justify-end gap-2 pt-2 border-t border-neutral-800">
+					<button
+						type="button"
+						onclick={() => (showManualPasteModal = false)}
+						class="rounded-xl bg-neutral-800 px-3.5 py-1.5 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 transition cursor-pointer"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						onclick={parseManualPastedTracks}
+						class="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 text-xs font-bold text-white transition shadow-md shadow-emerald-600/30 cursor-pointer"
+					>
+						Apply to Tracklist
+					</button>
 				</div>
 			</div>
 		</div>

@@ -837,6 +837,26 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Subsonic API Sanitization**:
       - Updated `getLyricsBySongId.view` and `getLyrics.view` in `src/lib/server/subsonic/handlers.ts` using `parseLrcEnhanced` to strip word tokens `<...>` and metadata headers so mobile clients (Symfonium/Feishin) display clean lines.
 
+58. **Manual Metadata Editor, Custom Track Addition, & Cover Image Upload (v1.7.18)**:
+    - **Cover Image Upload API**:
+      - Added endpoint `POST /api/library/cover/upload` accepting `multipart/form-data` image files (`.jpg`, `.png`, `.webp`).
+      - Added `POST` handler to `src/routes/api/albums/[id]/cover/+server.ts`.
+      - Automatically saves cover files as `cover.jpg` (and `cover.png` if PNG) in the target album's folder on disk for native compatibility with Subsonic/media servers, or stores in `data/covers/{uuid}.ext` for new entries.
+      - Refreshes scan cache and updates `albums.cover_url` in SQLite immediately.
+    - **Manual Metadata Editor in Tagger (`/tagger`)**:
+      - Added prominent `Manual Editor` toolbar button and empty candidate state callout ("Not in MusicBrainz? Tag Manually").
+      - Opens rich modal to edit Album Title, Artist, Release Year, Genre, and upload cover artwork with instant thumbnail preview.
+      - Interactive tracklist editor supporting inline track title and artist edits, move up/down reordering, delete, and "+ Add Song" button for unindexed or missing tracks.
+      - Added multi-line "Paste Tracklist" helper (`01. Title 3:45`).
+    - **Audio Tag Writing & File Renaming via TagLib**:
+      - Added `saveUploadedCoverImage` and `applyManualTags` in `src/lib/server/tagger.ts`.
+      - Writes ID3v2/FLAC/MP4 tags directly into audio files on disk and renames audio and companion `.lrc` files to clean standardized pattern (`01. Artist - Title.ext`).
+      - In folders mode, optionally imports the newly created/tagged release into the Trax Vault library.
+    - **Cover Art Replacement in Album Hero (`/album/[id]`) & Add Album (`/add`)**:
+      - Enabled hover camera overlay and drag-and-drop file upload directly onto the album hero cover art in `/album/[id]`.
+      - Added upload file picker to Edit Album Info modal.
+      - Added file upload dropzone to manual album creation tab in `/add`.
+
 ---
 
 ## 4. Workflows & Verification

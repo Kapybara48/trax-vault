@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import dns from 'node:dns';
 import net from 'node:net';
 
@@ -34,6 +35,11 @@ import {
 	updateAlbumAndTracksFromMusicBrainz,
 	mergeScannedTracksIntoVaultAlbum,
 	getAlbumWithTracks,
+	getAlbumById,
+	updateAlbum,
+	updateTrack,
+	addTrackToAlbum,
+	createAlbum,
 	db
 } from '$lib/server/db.js';
 import type {
@@ -1632,6 +1638,430 @@ export async function applyFolderTags(
 		coverPath,
 		coverDownloaded: Boolean(coverPath && fs.existsSync(coverPath)),
 		coverError,
+		fileErrors,
+		hasPermissionErrors,
+		error: overallError
+	};
+}
+
+/**
+ * Saves an uploaded image file (Buffer) as cover art for an album or folder.
+ * If targetFolder or album folder on disk exists, writes cover.jpg (and cover.png if png).
+ * Otherwise, saves to data/covers/{uuid}.ext.
+ * Updates album cover_url in database if albumId is provided.
+ */
+export async function saveUploadedCoverImage(
+	buffer: Buffer,
+	options: {
+		folderPath?: string;
+		albumId?: number;
+		filename?: string;
+		mimeType?: string;
+	}
+): Promise<{
+	success: boolean;
+	coverUrl?: string;
+	coverPath?: string;
+	error?: string;
+	isPermissionDenied?: boolean;
+}> {
+	try {
+		if (!buffer || buffer.length === 0) {
+			return { success: false, error: 'Empty image buffer received' };
+		}
+
+		let targetFolder: string | null = null;
+
+		// 1. If explicit folderPath is provided
+		if (options.folderPath) {
+			const resolved = resolveMusicFolderPath(options.folderPath);
+			if (resolved && fs.existsSync(resolved)) {
+				targetFolder = resolved;
+			}
+		}
+
+		// 2. If albumId provided, check if album tracks exist on disk
+		if (!targetFolder && options.albumId) {
+			const albumRes = getAlbumById(options.albumId);
+			if (albumRes && albumRes.tracks.length > 0) {
+				for (const t of albumRes.tracks) {
+					const resolvedFile = resolveTrackFilePath(t);
+					if (resolvedFile && fs.existsSync(resolvedFile)) {
+						targetFolder = path.dirname(resolvedFile);
+						break;
+					}
+				}
+			}
+		}
+
+		const isPng = options.mimeType === 'image/png' || (options.filename && /\.png$/i.test(options.filename));
+		let savedCoverPath = '';
+		let coverUrl = '';
+
+		if (targetFolder && fs.existsSync(targetFolder)) {
+			// Check write permission
+			try {
+				fs.accessSync(targetFolder, fs.constants.W_OK);
+			} catch (accessErr: any) {
+				const permErr = formatPermissionError(targetFolder, accessErr);
+				return { success: false, error: permErr, isPermissionDenied: true };
+			}
+
+			const standardJpg = path.join(targetFolder, 'cover.jpg');
+			try {
+				fs.writeFileSync(standardJpg, buffer);
+				savedCoverPath = standardJpg;
+				if (isPng) {
+					try {
+						fs.writeFileSync(path.join(targetFolder, 'cover.png'), buffer);
+					} catch {}
+				}
+			} catch (wErr: any) {
+				const permErr = formatPermissionError(standardJpg, wErr);
+				return { success: false, error: permErr, isPermissionDenied: isPermissionError(wErr) };
+			}
+
+			coverUrl = `/api/library/cover?path=${encodeURIComponent(savedCoverPath)}`;
+		} else {
+			// Save in data/covers/
+			const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve('./data');
+			const coversDir = path.join(dataDir, 'covers');
+			if (!fs.existsSync(coversDir)) {
+				fs.mkdirSync(coversDir, { recursive: true });
+			}
+
+			const ext = isPng ? '.png' : (options.mimeType === 'image/webp' ? '.webp' : '.jpg');
+			const uniqueName = `cover_${Date.now()}_${crypto.randomUUID().slice(0, 8)}${ext}`;
+			savedCoverPath = path.join(coversDir, uniqueName);
+
+			try {
+				fs.writeFileSync(savedCoverPath, buffer);
+			} catch (wErr: any) {
+				return { success: false, error: wErr.message || 'Failed writing cover to storage' };
+			}
+
+			coverUrl = `/api/library/cover?path=${encodeURIComponent(savedCoverPath)}`;
+		}
+
+		// Update database if albumId was provided
+		if (options.albumId) {
+			updateAlbum(options.albumId, { cover_url: coverUrl });
+		}
+
+		// Invalidate / refresh scan cache
+		if (targetFolder) {
+			await refreshAlbumInScanCache(targetFolder, { coverUrl });
+		} else {
+			invalidateScanCache();
+		}
+
+		return {
+			success: true,
+			coverUrl,
+			coverPath: savedCoverPath
+		};
+	} catch (err: any) {
+		console.error('Error saving uploaded cover image:', err);
+		const isPerm = isPermissionError(err);
+		return {
+			success: false,
+			error: isPerm ? formatPermissionError(options.folderPath || './music', err) : (err.message || 'Cover upload failed'),
+			isPermissionDenied: isPerm
+		};
+	}
+}
+
+export interface ManualTrackInput {
+	localTrackId?: number;
+	filePath?: string;
+	title: string;
+	artist?: string | null;
+	trackNumber: number;
+	discNumber: number;
+	duration_ms?: number | null;
+	isMissing?: boolean;
+}
+
+export interface ApplyManualTagsOptions {
+	targetMode: 'albums' | 'folders';
+	albumId?: number;
+	folderPath?: string;
+	albumMetadata: {
+		title: string;
+		artist: string;
+		release_year?: number | null;
+		genre?: string | null;
+		cover_url?: string | null;
+	};
+	tracks: ManualTrackInput[];
+	options: {
+		writeAudioTags?: boolean;
+		renameFiles?: boolean;
+		importToVault?: boolean;
+	};
+}
+
+/**
+ * Applies manual metadata tags to tracks and albums:
+ * 1. Writes audio tags (Title, Artist, Album, Year, Track #, Disc #, Genre) to disk files via TagLib
+ * 2. Optionally renames files to standardized clean names ("01. Artist - Title.ext")
+ * 3. Updates SQLite database album and tracks records
+ * 4. Imports folders into the vault if requested
+ */
+export async function applyManualTags(
+	payload: ApplyManualTagsOptions
+): Promise<{
+	success: boolean;
+	updatedTracksCount: number;
+	renamedFilesCount: number;
+	importedAlbumId?: number;
+	album?: Album | null;
+	tracks?: Track[];
+	fileErrors: Array<{ file: string; path?: string; error: string; isPermissionDenied?: boolean }>;
+	hasPermissionErrors: boolean;
+	error?: string;
+}> {
+	const { targetMode, albumId, folderPath, albumMetadata, tracks, options } = payload;
+	const writeAudioTags = options.writeAudioTags !== false;
+	const renameFiles = Boolean(options.renameFiles);
+	const importToVault = Boolean(options.importToVault);
+
+	const fileErrors: Array<{ file: string; path?: string; error: string; isPermissionDenied?: boolean }> = [];
+	let updatedTracksCount = 0;
+	let renamedFilesCount = 0;
+	let importedAlbumId: number | undefined = undefined;
+
+	const targetAlbumTitle = albumMetadata.title.trim();
+	const targetArtist = albumMetadata.artist.trim();
+	const targetYear = albumMetadata.release_year;
+	const targetGenre = albumMetadata.genre?.trim() || null;
+	const targetCoverUrl = albumMetadata.cover_url?.trim() || null;
+
+	const totalDiscs = tracks.reduce((max, t) => Math.max(max, t.discNumber || 1), 1);
+
+	// Load existing album if in albums mode
+	let albumRes = albumId ? getAlbumById(albumId) : null;
+	let targetFoldersList: string[] = [];
+
+	if (targetMode === 'folders' && folderPath) {
+		const resolvedFld = resolveMusicFolderPath(folderPath);
+		if (resolvedFld && fs.existsSync(resolvedFld)) {
+			targetFoldersList.push(resolvedFld);
+		}
+	} else if (albumRes) {
+		for (const t of albumRes.tracks) {
+			const resolvedPath = resolveTrackFilePath(t);
+			if (resolvedPath && fs.existsSync(resolvedPath)) {
+				const fld = path.dirname(resolvedPath);
+				if (!targetFoldersList.includes(fld)) {
+					targetFoldersList.push(fld);
+				}
+			}
+		}
+	}
+
+	// 1. Process files: Tagging & Renaming
+	const processedTracks: Array<ManualTrackInput & { finalFilePath?: string }> = [];
+
+	for (const tr of tracks) {
+		let diskPath: string | null = null;
+
+		if (tr.filePath) {
+			diskPath = resolveTrackFilePath({ file_path: tr.filePath } as Track);
+		} else if (tr.localTrackId && albumRes) {
+			const matchingDbTrack = albumRes.tracks.find((t) => t.id === tr.localTrackId);
+			if (matchingDbTrack) {
+				diskPath = resolveTrackFilePath(matchingDbTrack);
+			}
+		}
+
+		let finalDiskPath = diskPath;
+
+		if (diskPath && fs.existsSync(diskPath)) {
+			// A. Write tags to audio file
+			if (writeAudioTags) {
+				const tagResult = await writeTagsToAudioFile(diskPath, {
+					title: tr.title.trim(),
+					artist: (tr.artist?.trim() || targetArtist),
+					album: targetAlbumTitle,
+					albumArtist: targetArtist,
+					year: targetYear || undefined,
+					track: tr.trackNumber,
+					disc: tr.discNumber,
+					genre: targetGenre || undefined
+				});
+
+				if (tagResult.success) {
+					updatedTracksCount++;
+				} else {
+					fileErrors.push({
+						file: path.basename(diskPath),
+						path: diskPath,
+						error: tagResult.error || 'Write error',
+						isPermissionDenied: tagResult.isPermissionDenied
+					});
+				}
+			}
+
+			// B. Rename audio and companion files if requested
+			if (renameFiles) {
+				const ext = path.extname(diskPath);
+				const standardFilename = formatStandardTrackFilename(
+					{
+						discNumber: tr.discNumber,
+						trackNumber: tr.trackNumber,
+						title: tr.title.trim(),
+						artist: (tr.artist?.trim() || targetArtist),
+						totalDiscs
+					},
+					ext
+				);
+
+				const renameResult = renameAudioAndCompanionFiles(diskPath, standardFilename);
+				if (renameResult.success) {
+					finalDiskPath = renameResult.newFilePath;
+					if (path.resolve(diskPath) !== path.resolve(renameResult.newFilePath)) {
+						renamedFilesCount++;
+					}
+				} else if (renameResult.error) {
+					fileErrors.push({
+						file: path.basename(diskPath),
+						path: diskPath,
+						error: renameResult.error,
+						isPermissionDenied: renameResult.isPermissionDenied
+					});
+				}
+			}
+		}
+
+		processedTracks.push({
+			...tr,
+			finalFilePath: finalDiskPath || undefined
+		});
+	}
+
+	// 2. Database Updates
+	let finalAlbum: Album | null = null;
+	let finalTracks: Track[] = [];
+
+	if (targetMode === 'albums' && albumId) {
+		// Update album info
+		updateAlbum(albumId, {
+			title: targetAlbumTitle,
+			artist: targetArtist,
+			release_year: targetYear || null,
+			genre: targetGenre || null,
+			cover_url: targetCoverUrl || null
+		});
+
+		// Update or insert tracks
+		for (const tr of processedTracks) {
+			if (tr.localTrackId) {
+				updateTrack(tr.localTrackId, {
+					title: tr.title.trim(),
+					artist: tr.artist?.trim() || null,
+					track_number: tr.trackNumber,
+					disc_number: tr.discNumber,
+					file_path: tr.finalFilePath || null,
+					manually_checked: 1
+				});
+			} else {
+				// Manually added track
+				addTrackToAlbum(albumId, {
+					title: tr.title.trim(),
+					artist: tr.artist?.trim() || null,
+					track_number: tr.trackNumber,
+					disc_number: tr.discNumber,
+					file_path: tr.finalFilePath || null,
+					is_missing: tr.isMissing ? 1 : (tr.finalFilePath ? 0 : 1),
+					manually_checked: 1
+				});
+			}
+		}
+
+		const refreshed = getAlbumById(albumId);
+		if (refreshed) {
+			finalAlbum = refreshed.album;
+			finalTracks = refreshed.tracks;
+		}
+	} else if (targetMode === 'folders') {
+		if (importToVault) {
+			// Create album in vault
+			const newId = createAlbum({
+				title: targetAlbumTitle,
+				artist: targetArtist,
+				release_year: targetYear || null,
+				genre: targetGenre || null,
+				cover_url: targetCoverUrl || null,
+				media_type: 'Digital'
+			});
+			importedAlbumId = newId;
+
+			for (const tr of processedTracks) {
+				let trackDetails: Partial<Track> = {};
+				if (tr.finalFilePath && fs.existsSync(tr.finalFilePath)) {
+					try {
+						const scanned = await scanAudioFile(tr.finalFilePath);
+						if (scanned) {
+							trackDetails = {
+								format: scanned.format,
+								bitrate_kbps: scanned.bitrate_kbps,
+								sample_rate: scanned.sample_rate,
+								bits_per_sample: scanned.bits_per_sample,
+								quality_rating: scanned.quality_rating,
+								duration_ms: scanned.duration_ms
+							};
+						}
+					} catch {}
+				}
+
+				addTrackToAlbum(newId, {
+					title: tr.title.trim(),
+					artist: tr.artist?.trim() || null,
+					track_number: tr.trackNumber,
+					disc_number: tr.discNumber,
+					duration_ms: tr.duration_ms ?? trackDetails.duration_ms ?? null,
+					format: trackDetails.format || 'FLAC',
+					bitrate_kbps: trackDetails.bitrate_kbps || null,
+					sample_rate: trackDetails.sample_rate || null,
+					bits_per_sample: trackDetails.bits_per_sample || null,
+					quality_rating: trackDetails.quality_rating || 'good',
+					file_path: tr.finalFilePath || null,
+					is_missing: tr.isMissing ? 1 : (tr.finalFilePath ? 0 : 1),
+					manually_checked: 1
+				});
+			}
+
+			const refreshed = getAlbumById(newId);
+			if (refreshed) {
+				finalAlbum = refreshed.album;
+				finalTracks = refreshed.tracks;
+			}
+		}
+	}
+
+	// 3. Cache Invalidation & Refresh
+	for (const folder of targetFoldersList) {
+		await refreshAlbumInScanCache(folder, {
+			title: targetAlbumTitle,
+			artist: targetArtist,
+			year: targetYear || null,
+			coverUrl: targetCoverUrl || null,
+			existingAlbumId: importedAlbumId || albumId || null
+		});
+	}
+	invalidateScanCache();
+
+	const hasPermissionErrors = fileErrors.some((e) => e.isPermissionDenied);
+	const overallError = fileErrors.find((e) => e.isPermissionDenied)?.error || fileErrors[0]?.error;
+
+	return {
+		success: fileErrors.length === 0,
+		updatedTracksCount,
+		renamedFilesCount,
+		importedAlbumId,
+		album: finalAlbum,
+		tracks: finalTracks,
 		fileErrors,
 		hasPermissionErrors,
 		error: overallError

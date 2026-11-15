@@ -401,6 +401,37 @@
 		}
 	}
 
+	let albumCoverFileInputRef = $state<HTMLInputElement | null>(null);
+	let isUploadingAlbumCover = $state(false);
+
+	async function handleAlbumCoverUpload(file: File) {
+		if (!file) return;
+		isUploadingAlbumCover = true;
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+			formData.append('albumId', album.id.toString());
+
+			const res = await fetch(`/api/albums/${album.id}/cover`, {
+				method: 'POST',
+				body: formData
+			});
+			const json = await res.json();
+			if (!res.ok || json.error) {
+				alert(json.error || 'Failed to upload cover image');
+				return;
+			}
+			album.cover_url = json.coverUrl;
+			editCoverUrl = json.coverUrl;
+			await invalidateAll();
+		} catch (err: any) {
+			console.error('Album cover upload error:', err);
+			alert(err.message || 'Error uploading cover');
+		} finally {
+			isUploadingAlbumCover = false;
+		}
+	}
+
 	async function submitAddTrack() {
 		try {
 			// Parse duration mm:ss to ms if provided
@@ -490,7 +521,7 @@
 	<div class="relative overflow-hidden rounded-3xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-neutral-950 p-6 md:p-8 shadow-2xl">
 		<div class="flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start">
 			<!-- Album Cover Art -->
-			<div class="relative aspect-square w-48 sm:w-56 shrink-0 overflow-hidden rounded-2xl bg-neutral-950 shadow-2xl border border-neutral-800 mx-auto md:mx-0">
+			<div class="group relative aspect-square w-48 sm:w-56 shrink-0 overflow-hidden rounded-2xl bg-neutral-950 shadow-2xl border border-neutral-800 mx-auto md:mx-0">
 				{#if album.cover_url}
 					<img
 						src={album.cover_url}
@@ -506,8 +537,29 @@
 					</div>
 				{/if}
 
+				<!-- Overlay on hover to Upload / Replace Cover Image -->
+				<div class="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition p-3 text-center pointer-events-none">
+					<Upload class="h-8 w-8 text-white mb-1.5 drop-shadow" />
+					<span class="text-xs font-bold text-white">Upload New Cover</span>
+					<span class="text-[10px] text-neutral-300 mt-0.5">Click or drag image file</span>
+				</div>
+
+				<input
+					type="file"
+					accept="image/jpeg,image/png,image/webp"
+					bind:this={albumCoverFileInputRef}
+					onchange={(e) => {
+						const target = e.currentTarget as HTMLInputElement;
+						if (target.files && target.files[0]) {
+							handleAlbumCoverUpload(target.files[0]);
+						}
+					}}
+					class="absolute inset-0 opacity-0 cursor-pointer"
+					title="Upload cover image"
+				/>
+
 				{#if album.media_type}
-					<span class="absolute bottom-3 left-3 rounded bg-black/80 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-300 backdrop-blur-sm border border-white/10">
+					<span class="absolute bottom-3 left-3 rounded bg-black/80 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-neutral-300 backdrop-blur-sm border border-white/10 pointer-events-none">
 						{album.media_type}
 					</span>
 				{/if}
@@ -1093,13 +1145,30 @@
 				</div>
 
 				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Cover Image URL</label>
-					<input
-						type="url"
-						bind:value={editCoverUrl}
-						placeholder="https://..."
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					/>
+					<label class="block text-xs font-semibold text-neutral-300 mb-1">Cover Image</label>
+					<div class="flex items-center gap-2">
+						<input
+							type="url"
+							bind:value={editCoverUrl}
+							placeholder="https://... or upload file"
+							class="flex-1 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+						/>
+						<label class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-neutral-200 cursor-pointer transition">
+							<Upload class="h-3.5 w-3.5 text-emerald-400" />
+							<span>Upload</span>
+							<input
+								type="file"
+								accept="image/jpeg,image/png,image/webp"
+								onchange={(e) => {
+									const target = e.currentTarget as HTMLInputElement;
+									if (target.files && target.files[0]) {
+										handleAlbumCoverUpload(target.files[0]);
+									}
+								}}
+								class="hidden"
+							/>
+						</label>
+					</div>
 				</div>
 
 				<div>

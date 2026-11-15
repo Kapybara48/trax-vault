@@ -28,7 +28,10 @@
 		FileText,
 		Layers,
 		Trash2,
-		FolderSync
+		FolderSync,
+		Upload,
+		RefreshCw,
+		Image as ImageIcon
 	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import CustomToggle from '$lib/components/CustomToggle.svelte';
@@ -80,6 +83,32 @@
 	let manualTracks = $state<ManualTrackRow[]>([]);
 	let pasteText = $state('');
 	let showPasteArea = $state(false);
+	let isUploadingCover = $state(false);
+	let coverUploadError = $state<string | null>(null);
+
+	async function handleCoverUpload(file: File) {
+		if (!file) return;
+		isUploadingCover = true;
+		coverUploadError = null;
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+			const res = await fetch('/api/library/cover/upload', {
+				method: 'POST',
+				body: formData
+			});
+			const json = await res.json();
+			if (!res.ok || json.error) {
+				throw new Error(json.error || 'Failed to upload cover');
+			}
+			manualCoverUrl = json.coverUrl;
+		} catch (err: any) {
+			console.error('Add page cover upload error:', err);
+			coverUploadError = err.message || 'Upload failed';
+		} finally {
+			isUploadingCover = false;
+		}
+	}
 
 	// Search MusicBrainz
 	async function searchMB() {
@@ -689,13 +718,44 @@
 				</div>
 
 				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Cover Art URL (optional)</label>
-					<input
-						type="url"
-						bind:value={manualCoverUrl}
-						placeholder="https://..."
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					/>
+					<label class="block text-xs font-semibold text-neutral-300 mb-1">Cover Artwork</label>
+					<div class="flex items-center gap-2">
+						<input
+							type="url"
+							bind:value={manualCoverUrl}
+							placeholder="https://... or upload file"
+							class="flex-1 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+						/>
+						<label class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-neutral-200 cursor-pointer transition">
+							{#if isUploadingCover}
+								<RefreshCw class="h-3.5 w-3.5 text-emerald-400 animate-spin" />
+								<span>Uploading...</span>
+							{:else}
+								<Upload class="h-3.5 w-3.5 text-emerald-400" />
+								<span>Upload File</span>
+							{/if}
+							<input
+								type="file"
+								accept="image/jpeg,image/png,image/webp"
+								onchange={(e) => {
+									const target = e.currentTarget as HTMLInputElement;
+									if (target.files && target.files[0]) {
+										handleCoverUpload(target.files[0]);
+									}
+								}}
+								class="hidden"
+							/>
+						</label>
+					</div>
+					{#if coverUploadError}
+						<p class="text-[11px] text-rose-400 mt-1">{coverUploadError}</p>
+					{/if}
+					{#if manualCoverUrl}
+						<div class="mt-2 flex items-center gap-2">
+							<img src={manualCoverUrl} alt="Cover Preview" class="h-10 w-10 rounded-lg object-cover border border-neutral-700" />
+							<span class="text-[11px] text-emerald-400 font-semibold">Cover image attached</span>
+						</div>
+					{/if}
 				</div>
 			</div>
 

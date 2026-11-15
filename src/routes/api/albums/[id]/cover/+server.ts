@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getAlbumById } from '$lib/server/db.js';
 import { getMusicDirectory, resolveTrackFilePath } from '$lib/server/scanner.js';
+import { saveUploadedCoverImage } from '$lib/server/tagger.js';
 
 const IMAGE_MIME_MAP: Record<string, string> = {
 	'.jpg': 'image/jpeg',
@@ -100,5 +102,48 @@ export const GET: RequestHandler = async ({ params }) => {
 	} catch (err: any) {
 		console.error(`Failed to serve album ${albumId} cover:`, err);
 		return new Response('Failed to read cover image', { status: 500 });
+	}
+};
+
+export const POST: RequestHandler = async ({ params, request }) => {
+	const albumId = parseInt(params.id, 10);
+	if (isNaN(albumId)) {
+		return json({ error: 'Invalid album ID' }, { status: 400 });
+	}
+
+	try {
+		const formData = await request.formData();
+		const file = formData.get('file') as File | null;
+		if (!file) {
+			return json({ error: 'No image file provided' }, { status: 400 });
+		}
+
+		const arrayBuffer = await file.arrayBuffer();
+		const buffer = Buffer.from(arrayBuffer);
+
+		const result = await saveUploadedCoverImage(buffer, {
+			albumId,
+			filename: file.name,
+			mimeType: file.type
+		});
+
+		if (!result.success) {
+			return json(
+				{
+					error: result.error || 'Failed to save cover image',
+					isPermissionDenied: result.isPermissionDenied
+				},
+				{ status: result.isPermissionDenied ? 403 : 500 }
+			);
+		}
+
+		return json({
+			success: true,
+			coverUrl: result.coverUrl,
+			coverPath: result.coverPath
+		});
+	} catch (err: any) {
+		console.error(`Error uploading cover for album ${albumId}:`, err);
+		return json({ error: err.message || 'Failed to upload cover' }, { status: 500 });
 	}
 };
