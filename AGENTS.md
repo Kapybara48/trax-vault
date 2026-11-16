@@ -857,6 +857,14 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added upload file picker to Edit Album Info modal.
       - Added file upload dropzone to manual album creation tab in `/add`.
 
+59. **Symfonium & Subsonic Cache Invalidation, ETag HTTP Caching, & Scan Advancements (v1.7.19)**:
+    - **Subsonic Scan Timestamp Fix**: In `src/lib/server/subsonic/handlers.ts`, updated `getScanStatus` to use `Math.max(lastScan || 0, dbLastModified)`. Whenever a track, lyrics file, album, or cover is edited, `lastScan` immediately advances so Symfonium detects modifications on sync.
+    - **HTTP Caching Headers (`ETag` & `Last-Modified`)**:
+      - In `handleSubsonicStream` (`src/lib/server/subsonic/media.ts`), added strong `ETag` and `Last-Modified` headers derived from audio file stats and added conditional `If-None-Match` / `If-Modified-Since` handling returning HTTP `304 Not Modified`.
+      - In `handleSubsonicCoverArt`, added `ETag` and `Last-Modified` headers with 304 conditional revalidation so mobile clients immediately recognize refreshed cover art.
+    - **Dynamic API Cache-Control**: Added `Cache-Control: no-cache, no-store, must-revalidate` in `src/lib/server/subsonic/format.ts` for JSON and XML responses, preventing intermediate proxies or Android HTTP stacks from serving stale lyrics or scan status.
+    - **In-App Symfonium Sync & Cache Guidance**: Added an interactive collapsible guidance card in `src/routes/settings/+page.svelte` under the Subsonic section explaining how Symfonium manages lyrics and offline files, with exact steps to refresh lyrics or re-cache updated music.
+
 ---
 
 ## 4. Workflows & Verification

@@ -107,7 +107,7 @@ async function handleSubsonic(endpoint: string, request: Request, url: URL): Pro
 		if (auth.error) {
 			return buildSubsonicError(auth.error.code, auth.error.message, format, jsonpCallback);
 		}
-		return handleSubsonicCoverArt(params);
+		return handleSubsonicCoverArt(params, request.headers);
 	}
 
 	// OpenSubsonic specification mandates that getOpenSubsonicExtensions must be publicly accessible without auth.

@@ -313,7 +313,7 @@ export const subsonicHandlers: Record<
 					scanning,
 					count: row?.count || 0,
 					folderCount: albumRow?.count || 1,
-					lastScan: lastScan || dbLastModified
+					lastScan: Math.max(lastScan || 0, dbLastModified)
 				}
 			}
 		};

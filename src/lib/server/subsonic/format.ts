@@ -118,6 +118,7 @@ export function buildSubsonicResponse(
 			status: 200,
 			headers: {
 				'Content-Type': contentType,
+				'Cache-Control': 'no-cache, no-store, must-revalidate',
 				'Access-Control-Allow-Origin': '*',
 				'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 				'Access-Control-Allow-Headers': '*'
@@ -141,6 +142,7 @@ export function buildSubsonicResponse(
 		status: 200,
 		headers: {
 			'Content-Type': 'text/xml; charset=utf-8',
+			'Cache-Control': 'no-cache, no-store, must-revalidate',
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 			'Access-Control-Allow-Headers': '*'

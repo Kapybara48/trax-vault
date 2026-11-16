@@ -79,6 +79,8 @@ export async function handleSubsonicStream(
 	const ext = path.extname(canonicalFilePath).toLowerCase();
 	const contentType = MIME_MAP[ext] || 'audio/mpeg';
 	const fileSize = stat.size;
+	const etag = `"${stat.mtimeMs.toString(36)}-${fileSize.toString(36)}"`;
+	const lastModified = stat.mtime.toUTCString();
 
 	const rangeHeader = requestHeaders.get('range');
 	if (rangeHeader) {
@@ -104,10 +106,41 @@ export async function handleSubsonicStream(
 				'Accept-Ranges': 'bytes',
 				'Content-Length': chunkSize.toString(),
 				'Content-Type': contentType,
+				'ETag': etag,
+				'Last-Modified': lastModified,
 				'Cache-Control': 'no-cache',
 				'Access-Control-Allow-Origin': '*'
 			}
 		});
+	}
+
+	// Conditional GET handling for full stream
+	const ifNoneMatch = requestHeaders.get('if-none-match');
+	const ifModifiedSince = requestHeaders.get('if-modified-since');
+	if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch === '*')) {
+		return new Response(null, {
+			status: 304,
+			headers: {
+				'ETag': etag,
+				'Last-Modified': lastModified,
+				'Cache-Control': 'no-cache',
+				'Access-Control-Allow-Origin': '*'
+			}
+		});
+	}
+	if (ifModifiedSince) {
+		const modifiedSinceDate = new Date(ifModifiedSince);
+		if (!isNaN(modifiedSinceDate.getTime()) && stat.mtime.getTime() <= modifiedSinceDate.getTime()) {
+			return new Response(null, {
+				status: 304,
+				headers: {
+					'ETag': etag,
+					'Last-Modified': lastModified,
+					'Cache-Control': 'no-cache',
+					'Access-Control-Allow-Origin': '*'
+				}
+			});
+		}
 	}
 
 	const stream = fs.createReadStream(canonicalFilePath);
@@ -119,6 +152,8 @@ export async function handleSubsonicStream(
 			'Accept-Ranges': 'bytes',
 			'Content-Length': fileSize.toString(),
 			'Content-Type': contentType,
+			'ETag': etag,
+			'Last-Modified': lastModified,
 			'Cache-Control': 'no-cache',
 			'Access-Control-Allow-Origin': '*'
 		}
@@ -146,7 +181,10 @@ function resolveCoverFromFolder(folder: string): string | null {
 /**
  * Handle cover art serving for Subsonic /rest/getCoverArt
  */
-export async function handleSubsonicCoverArt(params: Record<string, any>): Promise<Response> {
+export async function handleSubsonicCoverArt(
+	params: Record<string, any>,
+	requestHeaders?: Headers
+): Promise<Response> {
 	const rawId = String(params.id || '');
 	let imageDiskPath: string | null = null;
 
@@ -250,6 +288,40 @@ export async function handleSubsonicCoverArt(params: Record<string, any>): Promi
 		try {
 			const ext = path.extname(imageDiskPath).toLowerCase();
 			const contentType = IMAGE_MIME_MAP[ext] || 'image/jpeg';
+			const imgStat = fs.statSync(imageDiskPath);
+			const etag = `"${imgStat.mtimeMs.toString(36)}-${imgStat.size.toString(36)}"`;
+			const lastModified = imgStat.mtime.toUTCString();
+
+			if (requestHeaders) {
+				const ifNoneMatch = requestHeaders.get('if-none-match');
+				const ifModifiedSince = requestHeaders.get('if-modified-since');
+				if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch === '*')) {
+					return new Response(null, {
+						status: 304,
+						headers: {
+							'ETag': etag,
+							'Last-Modified': lastModified,
+							'Cache-Control': 'public, max-age=86400, must-revalidate',
+							'Access-Control-Allow-Origin': '*'
+						}
+					});
+				}
+				if (ifModifiedSince) {
+					const modifiedSinceDate = new Date(ifModifiedSince);
+					if (!isNaN(modifiedSinceDate.getTime()) && imgStat.mtime.getTime() <= modifiedSinceDate.getTime()) {
+						return new Response(null, {
+							status: 304,
+							headers: {
+								'ETag': etag,
+								'Last-Modified': lastModified,
+								'Cache-Control': 'public, max-age=86400, must-revalidate',
+								'Access-Control-Allow-Origin': '*'
+							}
+						});
+					}
+				}
+			}
+
 			const buffer = fs.readFileSync(imageDiskPath);
 
 			return new Response(buffer, {
@@ -257,7 +329,9 @@ export async function handleSubsonicCoverArt(params: Record<string, any>): Promi
 				headers: {
 					'Content-Type': contentType,
 					'Content-Length': buffer.length.toString(),
-					'Cache-Control': 'public, max-age=86400',
+					'ETag': etag,
+					'Last-Modified': lastModified,
+					'Cache-Control': 'public, max-age=86400, must-revalidate',
 					'Access-Control-Allow-Origin': '*'
 				}
 			});

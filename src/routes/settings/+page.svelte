@@ -27,7 +27,8 @@
 		Heart,
 		Music,
 		X,
-		ShieldAlert
+		ShieldAlert,
+		ChevronDown
 	} from '@lucide/svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 
@@ -51,6 +52,7 @@
 	let isSyncingSubsonic = $state(false);
 	let subsonicMsg = $state<string | null>(null);
 	let subsonicErr = $state<string | null>(null);
+	let showSubsonicCacheTips = $state(false);
 
 	function copyBaseUrl() {
 		navigator.clipboard.writeText(data.serverBaseUrl);
@@ -618,6 +620,49 @@
 								{/if}
 							</form>
 						{/if}
+
+						<!-- Symfonium & Client Sync Guidance -->
+						<div class="mt-4 pt-3 border-t border-neutral-800/60 space-y-2">
+							<button
+								type="button"
+								onclick={() => (showSubsonicCacheTips = !showSubsonicCacheTips)}
+								class="w-full flex items-center justify-between text-left text-neutral-300 hover:text-white transition py-1 cursor-pointer group"
+							>
+								<span class="flex items-center gap-1.5 font-semibold text-[11px] text-purple-400 group-hover:text-purple-300">
+									<Smartphone class="h-3.5 w-3.5" />
+									Symfonium Sync & Cache Guide
+								</span>
+								<ChevronDown class="h-3.5 w-3.5 text-neutral-500 transition-transform duration-200 {showSubsonicCacheTips ? 'rotate-180' : ''}" />
+							</button>
+
+							{#if showSubsonicCacheTips}
+								<div class="rounded-xl bg-neutral-950/80 border border-neutral-800 p-3 space-y-2.5 text-[11px] text-neutral-400">
+									<div>
+										<p class="font-semibold text-neutral-200 mb-0.5">🎵 Updating Synced Lyrics (.lrc) & Tags</p>
+										<p class="leading-relaxed text-[11px]">
+											Symfonium caches lyrics in its <span class="text-neutral-200">Media Info Cache</span>. For streaming tracks, go to 
+											<span class="text-purple-300">Settings → Advanced → Clear media info cache</span>, then tap <span class="text-purple-300">Sync</span> to immediately fetch fresh lyrics.
+										</p>
+									</div>
+
+									<div class="pt-2 border-t border-neutral-800/60">
+										<p class="font-semibold text-neutral-200 mb-0.5">💾 Updating Offline Downloaded Songs</p>
+										<p class="leading-relaxed text-[11px]">
+											Subsonic mobile players do not overwrite downloaded audio files automatically to prevent unexpected mobile data use. To refresh an offline song:
+										</p>
+										<ul class="list-disc list-inside mt-1 space-y-0.5 text-neutral-400">
+											<li>Tap the 3-dot menu on the song or album → <span class="text-neutral-200">Remove from cache</span></li>
+											<li>Tap 3-dot menu → <span class="text-neutral-200">Download</span> to re-download the updated audio & lyrics</li>
+											<li>Or configure <span class="text-purple-300">Settings → Offline and cache → Automatic offline cache</span> for auto-maintenance on sync.</li>
+										</ul>
+									</div>
+
+									<div class="pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500">
+										💡 Trax Vault automatically supplies <code class="text-neutral-400">ETag</code>, <code class="text-neutral-400">Last-Modified</code>, and updates <code class="text-neutral-400">lastScan</code> whenever you edit tags or lyrics so Symfonium always knows when library items change.
+									</div>
+								</div>
+							{/if}
+						</div>
 					</div>
 				</div>
 			</div>
