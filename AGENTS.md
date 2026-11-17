@@ -871,6 +871,13 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Real-Time `navigator.mediaSession.playbackState` Synchronization**: Added `updatePlaybackState('playing' | 'paused' | 'none')` bound to audio element events (`onplay`, `onplaying`, `onpause`, `onerror`, `onended`, `stop()`), keeping the OS/browser MPRIS daemon accurately informed of playback state.
     - **`stop()` State Reset**: Ensured stopping or closing the mini player clears `mediaSession.metadata = null` and transitions `playbackState` to `'none'`.
 
+61. **Manual Metadata Editor Audio File Selection & Folder Tracks Loading (v1.7.21)**:
+    - **Zero-Match Folder & Album Fallback**: In `src/routes/api/tagger/folder/match/+server.ts` and `src/routes/api/tagger/albums/[id]/match/+server.ts`, updated endpoints when 0 MusicBrainz candidates exist to construct fallback matches from existing folder/album tracks on disk rather than returning empty `matches: []`.
+    - **Audio File Dropdown Selector Per Song**: In `src/routes/tagger/+page.svelte`, replaced the static non-interactive `File / Status` badge in the Manual Metadata Editor with an interactive `<select>` dropdown populated from `manualAvailableFiles`. Users can map any audio file in the folder/album to a song or select `— No File (Missing Track) —`.
+    - **Auto-Title & Duration Mapping**: Selecting an audio file automatically updates file path, filename, and duration, and automatically extracts clean song titles from filenames when blank or generic.
+    - **Auto-Assign Files in Order**: Added 1-click `Auto-Assign Files` button mapping all available folder audio files sequentially to track rows.
+    - **Direct Audio File Upload (`POST /api/library/track/upload`)**: Added dedicated track upload endpoint allowing users to upload audio files from their computer directly into the album or folder during manual tagging.
+
 ---
 
 ## 4. Workflows & Verification

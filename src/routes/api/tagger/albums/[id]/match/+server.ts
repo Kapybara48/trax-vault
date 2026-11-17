@@ -45,11 +45,38 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			candidates = await searchMusicBrainz(album.title, effectiveArtist);
 		}
 
+		const albumAudioFiles = tracks
+			.filter((t) => t.is_missing !== 1 && !!t.file_path)
+			.map((t) => ({
+				filePath: t.file_path,
+				filename: t.file_path ? path.basename(t.file_path) : t.title,
+				duration_ms: t.duration_ms,
+				localTrackId: t.id,
+				trackNumber: t.track_number,
+				discNumber: t.disc_number,
+				title: t.title,
+				artist: t.artist
+			}));
+
 		if (!targetMbid) {
+			const fallbackMatches = tracks
+				.filter((t) => t.is_missing !== 1 && !!t.file_path)
+				.map((tr) => ({
+					local_track: tr,
+					mb_track: null,
+					score: 0,
+					match_type: 'unmatched',
+					title_diff: false,
+					artist_diff: false,
+					number_diff: false,
+					duration_diff: false
+				}));
+
 			return json({
 				album,
 				release: null,
-				matches: [],
+				matches: fallbackMatches,
+				files: albumAudioFiles,
 				candidates,
 				overall_score: 0,
 				message: 'No matching releases found on MusicBrainz.'
@@ -58,10 +85,24 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
 		const release = await getMusicBrainzRelease(targetMbid);
 		if (!release) {
+			const fallbackMatches = tracks
+				.filter((t) => t.is_missing !== 1 && !!t.file_path)
+				.map((tr) => ({
+					local_track: tr,
+					mb_track: null,
+					score: 0,
+					match_type: 'unmatched',
+					title_diff: false,
+					artist_diff: false,
+					number_diff: false,
+					duration_diff: false
+				}));
+
 			return json({
 				album,
 				release: null,
-				matches: [],
+				matches: fallbackMatches,
+				files: albumAudioFiles,
 				candidates,
 				overall_score: 0,
 				message: `Could not load release details for MBID: ${targetMbid}`
@@ -126,6 +167,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			album,
 			release,
 			matches,
+			files: albumAudioFiles,
 			missing_tracks: missingTracks,
 			candidates,
 			overall_score: overallScore,

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import {
@@ -34,7 +35,28 @@ export const GET: RequestHandler = async ({ url }) => {
 			candidates = await searchMusicBrainz(folderData.folder_title, effectiveArtist);
 		}
 
+		const folderAudioFiles = folderData.tracks.map((t) => ({
+			filePath: t.file_path,
+			filename: t.file_path ? path.basename(t.file_path) : t.title,
+			duration_ms: t.duration_ms,
+			trackNumber: t.track_number,
+			discNumber: t.disc_number,
+			title: t.title,
+			artist: t.artist
+		}));
+
 		if (!targetMbid) {
+			const fallbackMatches = folderData.tracks.map((tr) => ({
+				local_track: tr,
+				mb_track: null,
+				score: 0,
+				match_type: 'unmatched',
+				title_diff: false,
+				artist_diff: false,
+				number_diff: false,
+				duration_diff: false
+			}));
+
 			return json({
 				folder_path: folderData.folder_path,
 				folder_name: folderData.folder_name,
@@ -44,9 +66,13 @@ export const GET: RequestHandler = async ({ url }) => {
 				cover_url: folderData.cover_url,
 				already_in_vault: folderData.already_in_vault,
 				existing_album_id: folderData.existing_album_id,
+				is_writable: folderData.is_writable,
+				permission_error: folderData.permission_error,
+				unwritable_files: folderData.unwritable_files,
 				release: null,
 				candidates,
-				matches: [],
+				matches: fallbackMatches,
+				files: folderAudioFiles,
 				missing_tracks: [],
 				overall_score: 0,
 				message: 'No matching releases found on MusicBrainz.'
@@ -55,6 +81,17 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		const release = await getMusicBrainzRelease(targetMbid);
 		if (!release) {
+			const fallbackMatches = folderData.tracks.map((tr) => ({
+				local_track: tr,
+				mb_track: null,
+				score: 0,
+				match_type: 'unmatched',
+				title_diff: false,
+				artist_diff: false,
+				number_diff: false,
+				duration_diff: false
+			}));
+
 			return json({
 				folder_path: folderData.folder_path,
 				folder_name: folderData.folder_name,
@@ -64,9 +101,13 @@ export const GET: RequestHandler = async ({ url }) => {
 				cover_url: folderData.cover_url,
 				already_in_vault: folderData.already_in_vault,
 				existing_album_id: folderData.existing_album_id,
+				is_writable: folderData.is_writable,
+				permission_error: folderData.permission_error,
+				unwritable_files: folderData.unwritable_files,
 				release: null,
 				candidates,
-				matches: [],
+				matches: fallbackMatches,
+				files: folderAudioFiles,
 				missing_tracks: [],
 				overall_score: 0,
 				message: `Could not load release details for MBID: ${targetMbid}`
@@ -109,6 +150,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			release,
 			candidates,
 			matches,
+			files: folderAudioFiles,
 			missing_tracks: missingTracks,
 			overall_score: overallScore
 		});

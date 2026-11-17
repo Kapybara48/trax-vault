@@ -161,6 +161,15 @@
 	let showReleaseDetails = $state(true);
 
 	// --- Manual Metadata Editor State ---
+	interface AvailableAudioFile {
+		filePath: string;
+		filename: string;
+		duration_ms?: number | null;
+		localTrackId?: number;
+		title?: string;
+		artist?: string;
+	}
+
 	interface ManualEditorTrackRow {
 		id: string;
 		localTrackId?: number;
@@ -182,6 +191,9 @@
 	let manualCoverUrl = $state<string | null>(null);
 	let isUploadingCover = $state(false);
 	let coverUploadError = $state<string | null>(null);
+	let manualAvailableFiles = $state<AvailableAudioFile[]>([]);
+	let isUploadingManualAudio = $state(false);
+	let manualAudioUploadError = $state<string | null>(null);
 	let manualTracksList = $state<ManualEditorTrackRow[]>([]);
 	let manualOptWriteAudioTags = $state(true);
 	let manualOptRenameFiles = $state(true);
@@ -190,6 +202,7 @@
 	let showManualPasteModal = $state(false);
 	let manualPasteText = $state('');
 	let coverFileInputRef = $state<HTMLInputElement | null>(null);
+	let manualAudioInputRef = $state<HTMLInputElement | null>(null);
 
 	let currentCoverUrl = $derived(
 		taggerMode === 'albums' ? selectedAlbum?.cover_url : currentFolderData?.cover_url
@@ -565,8 +578,83 @@
 		}
 
 		coverUploadError = null;
+		manualAudioUploadError = null;
 
-		// Initialize tracklist from existing storage files / matches
+		// 1. Gather all available audio files in the folder or album
+		const filesMap = new Map<string, AvailableAudioFile>();
+
+		const addFile = (filePath: string, title?: string | null, artist?: string | null, duration_ms?: number | null, localTrackId?: number) => {
+			if (!filePath) return;
+			const filename = filePath.split('/').pop() || filePath;
+			if (!filesMap.has(filePath)) {
+				filesMap.set(filePath, {
+					filePath,
+					filename,
+					title: (title || filename.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]+/, '')).trim(),
+					artist: (artist || manualAlbumArtist).trim(),
+					duration_ms: duration_ms || null,
+					localTrackId
+				});
+			}
+		};
+
+		// Collect from existing matches if available
+		for (const m of matches) {
+			if (m.localTrack?.file_path) {
+				addFile(
+					m.localTrack.file_path,
+					m.localTrack.title,
+					m.localTrack.artist,
+					m.localTrack.duration_ms,
+					m.localTrack.id > 0 ? m.localTrack.id : undefined
+				);
+			}
+		}
+
+		// If no matches in memory or folder files not loaded, fetch from server
+		if (filesMap.size === 0) {
+			if (taggerMode === 'folders' && selectedFolderPath) {
+				try {
+					const res = await fetch(`/api/tagger/folder/match?folderPath=${encodeURIComponent(selectedFolderPath)}`);
+					if (res.ok) {
+						const resData = await res.json();
+						if (Array.isArray(resData.files)) {
+							for (const f of resData.files) {
+								addFile(f.filePath, f.title, f.artist, f.duration_ms, f.localTrackId);
+							}
+						} else if (Array.isArray(resData.matches)) {
+							for (const m of resData.matches) {
+								if (m.local_track?.file_path) {
+									addFile(m.local_track.file_path, m.local_track.title, m.local_track.artist, m.local_track.duration_ms);
+								}
+							}
+						}
+					}
+				} catch (e) {
+					console.warn('Failed to load folder files:', e);
+				}
+			} else if (taggerMode === 'albums' && selectedAlbumId) {
+				try {
+					const res = await fetch(`/api/albums/${selectedAlbumId}`);
+					if (res.ok) {
+						const albData = await res.json();
+						if (albData.tracks) {
+							for (const tr of albData.tracks) {
+								if (tr.file_path && tr.is_missing !== 1) {
+									addFile(tr.file_path, tr.title, tr.artist, tr.duration_ms, tr.id);
+								}
+							}
+						}
+					}
+				} catch (e) {
+					console.warn('Failed to load album tracks:', e);
+				}
+			}
+		}
+
+		manualAvailableFiles = Array.from(filesMap.values());
+
+		// 2. Initialize tracklist
 		if (matches.length > 0) {
 			manualTracksList = matches.map((m, idx) => {
 				const tr = m.localTrack;
@@ -578,41 +666,26 @@
 					filename: diskFilename,
 					discNumber: tr.disc_number || 1,
 					trackNumber: tr.track_number || (idx + 1),
-					title: tr.title || (diskFilename ? diskFilename.replace(/\.[^.]+$/, '') : `Track ${idx + 1}`),
+					title: tr.title || (diskFilename ? diskFilename.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]+/, '') : `Track ${idx + 1}`),
 					artist: tr.artist || manualAlbumArtist,
 					duration_ms: tr.duration_ms || null,
-					isMissing: tr.is_missing === 1
+					isMissing: tr.is_missing === 1 || !tr.file_path
 				};
 			});
-		} else if (taggerMode === 'albums' && selectedAlbumId) {
-			// Try to fetch album tracks
-			try {
-				const res = await fetch(`/api/albums/${selectedAlbumId}`);
-				if (res.ok) {
-					const albData = await res.json();
-					if (albData.tracks && albData.tracks.length > 0) {
-						manualTracksList = albData.tracks.map((tr: Track, idx: number) => {
-							const diskFilename = tr.file_path ? tr.file_path.split('/').pop() : undefined;
-							return {
-								id: `tr-${tr.id || idx}-${Math.random().toString(36).slice(2, 6)}`,
-								localTrackId: tr.id,
-								filePath: tr.file_path || undefined,
-								filename: diskFilename,
-								discNumber: tr.disc_number || 1,
-								trackNumber: tr.track_number || (idx + 1),
-								title: tr.title,
-								artist: tr.artist || manualAlbumArtist,
-								duration_ms: tr.duration_ms || null,
-								isMissing: tr.is_missing === 1
-							};
-						});
-					}
-				}
-			} catch {}
-		}
-
-		if (manualTracksList.length === 0) {
-			// Start with at least 1 track row
+		} else if (manualAvailableFiles.length > 0) {
+			manualTracksList = manualAvailableFiles.map((file, idx) => ({
+				id: `tr-${file.localTrackId || idx}-${Math.random().toString(36).slice(2, 6)}`,
+				localTrackId: file.localTrackId,
+				filePath: file.filePath,
+				filename: file.filename,
+				discNumber: 1,
+				trackNumber: idx + 1,
+				title: file.title || file.filename.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]+/, '') || `Track ${idx + 1}`,
+				artist: file.artist || manualAlbumArtist,
+				duration_ms: file.duration_ms,
+				isMissing: false
+			}));
+		} else {
 			manualTracksList = [
 				{
 					id: `tr-init-${Date.now()}`,
@@ -668,15 +741,132 @@
 
 	function addManualTrackRow() {
 		const nextNum = manualTracksList.length + 1;
+		const lastDisc = manualTracksList.length > 0 ? manualTracksList[manualTracksList.length - 1].discNumber : 1;
+
+		// Automatically pick the next unassigned audio file from the folder if available!
+		const unassignedFile = manualAvailableFiles.find(
+			(f) => !manualTracksList.some((t) => t.filePath === f.filePath)
+		);
+
+		let initialTitle = '';
+		if (unassignedFile) {
+			const cleanTitle = unassignedFile.filename.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]+/, '');
+			if (cleanTitle) initialTitle = cleanTitle;
+		}
+
 		manualTracksList.push({
 			id: `tr-new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-			discNumber: 1,
+			localTrackId: unassignedFile?.localTrackId,
+			filePath: unassignedFile?.filePath,
+			filename: unassignedFile?.filename,
+			discNumber: lastDisc,
 			trackNumber: nextNum,
-			title: '',
+			title: initialTitle,
 			artist: manualAlbumArtist,
-			duration_ms: null,
-			isMissing: true
+			duration_ms: unassignedFile?.duration_ms || null,
+			isMissing: !unassignedFile
 		});
+	}
+
+	function handleTrackFileSelect(tr: ManualEditorTrackRow, newFilePath: string) {
+		if (!newFilePath) {
+			tr.filePath = undefined;
+			tr.filename = undefined;
+			tr.duration_ms = null;
+			tr.isMissing = true;
+			return;
+		}
+
+		const found = manualAvailableFiles.find((f) => f.filePath === newFilePath);
+		if (found) {
+			tr.filePath = found.filePath;
+			tr.filename = found.filename;
+			tr.duration_ms = found.duration_ms;
+			tr.localTrackId = found.localTrackId;
+			tr.isMissing = false;
+
+			// If title was generic or empty, auto-fill clean title from filename
+			if (!tr.title || /^Track\s+\d+$/i.test(tr.title.trim())) {
+				tr.title = found.title || found.filename.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]+/, '');
+			}
+			if (!tr.artist) {
+				tr.artist = found.artist || manualAlbumArtist;
+			}
+		}
+	}
+
+	function autoAssignManualFiles() {
+		for (let i = 0; i < manualTracksList.length; i++) {
+			if (i < manualAvailableFiles.length) {
+				const file = manualAvailableFiles[i];
+				handleTrackFileSelect(manualTracksList[i], file.filePath);
+			}
+		}
+	}
+
+	async function handleManualAudioUpload(files: FileList | null) {
+		if (!files || files.length === 0) return;
+		isUploadingManualAudio = true;
+		manualAudioUploadError = null;
+
+		try {
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				const formData = new FormData();
+				formData.append('file', file);
+				if (taggerMode === 'folders' && selectedFolderPath) {
+					formData.append('folderPath', selectedFolderPath);
+				} else if (taggerMode === 'albums' && selectedAlbumId) {
+					formData.append('albumId', selectedAlbumId.toString());
+				}
+
+				const res = await fetch('/api/library/track/upload', {
+					method: 'POST',
+					body: formData
+				});
+				const json = await res.json();
+				if (!res.ok || json.error) {
+					throw new Error(json.error || `Upload failed for ${file.name}`);
+				}
+
+				const newFile: AvailableAudioFile = {
+					filePath: json.filePath,
+					filename: json.filename,
+					duration_ms: json.duration_ms,
+					title: json.title,
+					artist: json.artist
+				};
+
+				// Add to available files pool
+				manualAvailableFiles = [...manualAvailableFiles, newFile];
+
+				// Assign to first unassigned track or append a new track
+				const emptyRow = manualTracksList.find((t) => !t.filePath);
+				if (emptyRow) {
+					handleTrackFileSelect(emptyRow, newFile.filePath);
+				} else {
+					manualTracksList.push({
+						id: `tr-uploaded-${Date.now()}-${i}`,
+						filePath: newFile.filePath,
+						filename: newFile.filename,
+						discNumber: manualTracksList.length > 0 ? manualTracksList[manualTracksList.length - 1].discNumber : 1,
+						trackNumber: manualTracksList.length + 1,
+						title: newFile.title || newFile.filename.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]+/, ''),
+						artist: newFile.artist || manualAlbumArtist,
+						duration_ms: newFile.duration_ms,
+						isMissing: false
+					});
+				}
+			}
+		} catch (err: any) {
+			console.error('Audio upload error:', err);
+			manualAudioUploadError = err.message || 'Audio upload failed';
+		} finally {
+			isUploadingManualAudio = false;
+			if (manualAudioInputRef) {
+				manualAudioInputRef.value = '';
+			}
+		}
 	}
 
 	function moveManualTrack(index: number, direction: 'up' | 'down') {
@@ -2741,14 +2931,53 @@
 
 					<!-- Tracklist Section -->
 					<div class="space-y-2">
-						<div class="flex items-center justify-between pb-1">
+						<div class="flex flex-wrap items-center justify-between gap-2 pb-1">
 							<div class="flex items-center gap-2">
 								<h4 class="text-xs font-bold uppercase tracking-wider text-neutral-300">
 									Songs & Tracklist ({manualTracksList.length} tracks)
 								</h4>
+								{#if manualAvailableFiles.length > 0}
+									<span class="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-400 font-mono">
+										{manualTracksList.filter((t) => !!t.filePath).length} of {manualAvailableFiles.length} files assigned
+									</span>
+								{/if}
 							</div>
 
-							<div class="flex items-center gap-2">
+							<div class="flex flex-wrap items-center gap-2">
+								{#if manualAvailableFiles.length > 0}
+									<button
+										type="button"
+										onclick={autoAssignManualFiles}
+										class="flex items-center gap-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1 text-[11px] font-semibold text-neutral-300 border border-neutral-700 transition cursor-pointer"
+										title="Map available audio files in order to track rows"
+									>
+										<Sparkles class="h-3 w-3 text-amber-400" />
+										<span>Auto-Assign Files</span>
+									</button>
+								{/if}
+
+								<label
+									class="flex items-center gap-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1 text-[11px] font-semibold text-neutral-300 border border-neutral-700 transition cursor-pointer"
+									title="Upload audio files from your computer into this album"
+								>
+									{#if isUploadingManualAudio}
+										<div class="h-3 w-3 rounded-full border-2 border-purple-400 border-t-transparent animate-spin"></div>
+										<span>Uploading...</span>
+									{:else}
+										<Upload class="h-3 w-3 text-purple-400" />
+										<span>Upload Audio</span>
+									{/if}
+									<input
+										type="file"
+										accept="audio/*,.flac,.mp3,.m4a,.ogg,.opus,.wav"
+										multiple
+										bind:this={manualAudioInputRef}
+										onchange={(e) => handleManualAudioUpload(e.currentTarget.files)}
+										class="hidden"
+										disabled={isUploadingManualAudio}
+									/>
+								</label>
+
 								<button
 									type="button"
 									onclick={() => (showManualPasteModal = true)}
@@ -2769,14 +2998,20 @@
 							</div>
 						</div>
 
+						{#if manualAudioUploadError}
+							<div class="rounded-xl bg-rose-950/40 border border-rose-800/50 p-2 text-[11px] text-rose-300">
+								{manualAudioUploadError}
+							</div>
+						{/if}
+
 						<!-- Tracks Table -->
 						<div class="rounded-2xl border border-neutral-800 bg-neutral-950/60 overflow-hidden">
 							<div class="grid grid-cols-12 gap-2 px-3 py-1.5 bg-neutral-900/80 border-b border-neutral-800 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
 								<span class="col-span-1 text-center">#</span>
 								<span class="col-span-1 text-center">Disc</span>
-								<span class="col-span-4">Title *</span>
+								<span class="col-span-3">Title *</span>
 								<span class="col-span-3">Artist</span>
-								<span class="col-span-2">File / Status</span>
+								<span class="col-span-3">Choose Audio File</span>
 								<span class="col-span-1 text-right">Actions</span>
 							</div>
 
@@ -2804,7 +3039,7 @@
 										</div>
 
 										<!-- Title Input -->
-										<div class="col-span-4">
+										<div class="col-span-3">
 											<input
 												type="text"
 												bind:value={tr.title}
@@ -2823,18 +3058,23 @@
 											/>
 										</div>
 
-										<!-- File / Status Pill -->
-										<div class="col-span-2 truncate">
-											{#if tr.filename || tr.filePath}
-												<span class="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-1.5 py-0.5 rounded truncate" title={tr.filePath || tr.filename}>
-													<Music class="h-2.5 w-2.5 shrink-0" />
-													<span class="truncate">{tr.filename || tr.filePath?.split('/').pop()}</span>
-												</span>
-											{:else}
-												<span class="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/60 border border-amber-800/50 px-1.5 py-0.5 rounded" title="This song will be added as a manual missing song">
-													<span>Manual / No File</span>
-												</span>
-											{/if}
+										<!-- Audio File Dropdown Selector -->
+										<div class="col-span-3 relative">
+											<select
+												value={tr.filePath || ''}
+												onchange={(e) => handleTrackFileSelect(tr, e.currentTarget.value)}
+												class="w-full rounded-lg bg-neutral-900 border {tr.filePath ? 'border-emerald-700/70 text-emerald-300 font-medium' : 'border-amber-700/60 text-amber-400/90'} px-2 py-1 text-xs focus:outline-none focus:border-emerald-500 cursor-pointer truncate"
+												title={tr.filePath || 'No audio file assigned (Missing Song)'}
+											>
+												<option value="">— No File (Missing Track) —</option>
+												{#each manualAvailableFiles as file}
+													{@const isAssignedToOther = manualTracksList.some((other) => other.id !== tr.id && other.filePath === file.filePath)}
+													{@const assignedTrack = isAssignedToOther ? manualTracksList.find((other) => other.id !== tr.id && other.filePath === file.filePath) : null}
+													<option value={file.filePath}>
+														🎵 {file.filename} {isAssignedToOther ? `(Track ${assignedTrack?.trackNumber})` : ''}
+													</option>
+												{/each}
+											</select>
 										</div>
 
 										<!-- Actions (Move Up, Move Down, Delete) -->
