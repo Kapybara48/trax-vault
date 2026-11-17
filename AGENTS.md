@@ -898,6 +898,17 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added a `docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}` check before building. If an image for that commit SHA was already built, the job re-tags it (`:latest`, `:vX.Y.Z`, `:X.Y.Z`) and pushes in ~5 seconds without running `docker build` again.
       - Enabled `DOCKER_BUILDKIT=1`, layer caching via `--cache-from ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest`, and `BUILDKIT_INLINE_CACHE=1`.
 
+63. **Tag-First Canonical Docker Build & Main Branch Image Polling/Reuse (v1.7.23)**:
+    - **Ref-Based Concurrency Isolation (`.forgejo/workflows/docker-publish.yml`)**:
+      - Reverted concurrency group to `${{ github.workflow }}-${{ github.ref }}` so branch pushes (`refs/heads/main`) and release tags (`refs/tags/v*`) do not cancel each other.
+    - **Tag Workflow as Canonical Builder**:
+      - If `ref_type == 'tag'`, executes `docker build` immediately with `APP_VERSION=${RAW_TAG#v}` without any preliminary checks or delays.
+      - Pushes `${COMMIT_IMAGE}`, `${LATEST_IMAGE}`, and both version tags (`:${RAW_TAG}`, `:${APP_VERSION}`).
+    - **Main Branch Workflow Image Reuser**:
+      - If `ref_type == 'branch'`, inspects git history for matching release tags (`git tag --points-at HEAD`).
+      - If a release tag exists, polls the container registry for `${COMMIT_IMAGE}` (up to 5 minutes). Once published by the tag workflow, it pulls the image, tags `:latest`, and exits cleanly in ~5s without running a duplicate `docker build`.
+      - If no tag exists (untagged development push), it builds normally for `main`.
+
 ---
 
 ## 4. Workflows & Verification
