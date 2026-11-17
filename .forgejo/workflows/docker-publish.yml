@@ -85,7 +85,7 @@ jobs:
 
           else
             # =========================================================================
-            # MAIN BRANCH WORKFLOW: Check for existing/building tag image & copy/reuse
+            # MAIN BRANCH WORKFLOW: Reuse existing image or yield to tag builder
             # =========================================================================
             echo "Running on branch '${{ github.ref_name }}' for commit ${{ github.sha }}."
 
@@ -93,30 +93,21 @@ jobs:
             git fetch --tags --force origin 2>/dev/null || true
             MATCHING_TAG=$(git tag --points-at ${{ github.sha }} 2>/dev/null | grep '^v' | head -n 1 || true)
 
-            # 1. Quick check: is the commit image already in the registry?
+            # 1. Quick check: is the commit image already in the registry (built by tag)?
             if docker pull "${COMMIT_IMAGE}" >/dev/null 2>&1; then
-              echo "Commit image ${COMMIT_IMAGE} was already built! Reusing image without rebuilding..."
+              echo "Commit image ${COMMIT_IMAGE} was already built by tag! Reusing image without rebuilding..."
               docker tag "${COMMIT_IMAGE}" "${LATEST_IMAGE}"
               docker push "${LATEST_IMAGE}"
-              echo "Successfully copied image to :latest in ~5s."
+              echo "Successfully copied image to :latest in ~3s."
               exit 0
             fi
 
-            # 2. If this commit has a matching version tag, wait for the tag workflow to finish building it
+            # 2. If this commit has a matching version tag but image isn't in registry yet,
+            # YIELD IMMEDIATELY so we do not block the sequential runner from running the tag job!
             if [ -n "${MATCHING_TAG}" ]; then
-              echo "Commit ${{ github.sha }} has release tag ${MATCHING_TAG}. Waiting for tag release build to finish..."
-              for i in $(seq 1 30); do
-                echo "Waiting for tag image ${COMMIT_IMAGE}... (attempt $i/30)"
-                sleep 10
-                if docker pull "${COMMIT_IMAGE}" >/dev/null 2>&1; then
-                  echo "Found published tag image ${COMMIT_IMAGE}! Reusing image without rebuilding..."
-                  docker tag "${COMMIT_IMAGE}" "${LATEST_IMAGE}"
-                  docker push "${LATEST_IMAGE}"
-                  echo "Successfully copied tag release image to :latest."
-                  exit 0
-                fi
-              done
-              echo "Timed out waiting for tag image. Falling back to building directly on branch..."
+              echo "Commit ${{ github.sha }} has release tag ${MATCHING_TAG}."
+              echo "Yielding runner immediately so the tag workflow can build and publish the release image."
+              exit 0
             fi
 
             # 3. Untagged branch build (normal development push on main)

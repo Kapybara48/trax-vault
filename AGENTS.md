@@ -909,6 +909,11 @@ This document preserves persistent context, architectural conventions, recent ch
       - If a release tag exists, polls the container registry for `${COMMIT_IMAGE}` (up to 5 minutes). Once published by the tag workflow, it pulls the image, tags `:latest`, and exits cleanly in ~5s without running a duplicate `docker build`.
       - If no tag exists (untagged development push), it builds normally for `main`.
 
+64. **Sequential Runner Deadlock Fix: Tag-First Push & Instant Branch Yield (v1.7.24)**:
+    - **Single Sequential Runner Deadlock Resolved**: Because Forgejo executes queued jobs sequentially on a single runner, a polling loop in `main` held the runner and blocked queued tag jobs from ever starting.
+    - **Instant Yield on Branch**: In `.forgejo/workflows/docker-publish.yml`, eliminated the sleep loop. If a release tag points to the commit, `main` checks if the image exists: if yes, it copies it in ~3s; if not, it yields immediately (`exit 0`), instantly releasing the runner for the tag job.
+    - **Tag-First Push Position**: Pushing the tag first (`git push origin vX.Y.Z && git push origin main`) ensures the tag job is positioned at the head of the runner queue.
+
 ---
 
 ## 4. Workflows & Verification
@@ -942,5 +947,9 @@ docker logs trax-vault --tail 20
   1. Check git status: `git status`
   2. Stage files: `git add <files>`
   3. Commit with a clear, concise message: `git commit -m "..."`
-  4. Push to remote: `git push origin main`
+  4. Create tag: `git tag vX.Y.Z`
+  5. Push tag first, then branch (ensures tag build runs first on single runner):
+     ```bash
+     git push origin vX.Y.Z && git push origin main
+     ```
 
