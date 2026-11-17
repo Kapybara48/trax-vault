@@ -865,6 +865,12 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Dynamic API Cache-Control**: Added `Cache-Control: no-cache, no-store, must-revalidate` in `src/lib/server/subsonic/format.ts` for JSON and XML responses, preventing intermediate proxies or Android HTTP stacks from serving stale lyrics or scan status.
     - **In-App Symfonium Sync & Cache Guidance**: Added an interactive collapsible guidance card in `src/routes/settings/+page.svelte` under the Subsonic section explaining how Symfonium manages lyrics and offline files, with exact steps to refresh lyrics or re-cache updated music.
 
+60. **MediaSession Pause on Suspend/Sleep Fix & Playback State Sync (v1.7.20)**:
+    - **KDE Plasma / OS Sleep Pause Bug**: Fixed an issue in `src/lib/services/player.svelte.ts` where `navigator.mediaSession.setActionHandler('pause', ...)` called `this.togglePlay()`. When an already-paused/stopped player was put to sleep by KDE Plasma (or received an OS pause broadcast), `togglePlay()` inverted the state, causing the audio to start playing for a split second right before system suspend and resume playing after wake up.
+    - **Dedicated `play()` and `pause()` Actions**: Separated action handlers so `play` strictly calls `this.play()` and `pause`/`stop` strictly calls `this.pause()`.
+    - **Real-Time `navigator.mediaSession.playbackState` Synchronization**: Added `updatePlaybackState('playing' | 'paused' | 'none')` bound to audio element events (`onplay`, `onplaying`, `onpause`, `onerror`, `onended`, `stop()`), keeping the OS/browser MPRIS daemon accurately informed of playback state.
+    - **`stop()` State Reset**: Ensured stopping or closing the mini player clears `mediaSession.metadata = null` and transitions `playbackState` to `'none'`.
+
 ---
 
 ## 4. Workflows & Verification

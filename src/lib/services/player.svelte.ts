@@ -71,60 +71,91 @@ class GlobalPlayer {
 
 		el.onplay = () => {
 			this.isPlaying = true;
+			this.updatePlaybackState('playing');
 		};
 
 		el.onplaying = () => {
 			this.isPlaying = true;
+			this.updatePlaybackState('playing');
 		};
 
 		el.onpause = () => {
 			this.isPlaying = false;
+			this.updatePlaybackState('paused');
 		};
 
 		el.onerror = () => {
 			this.isPlaying = false;
+			this.updatePlaybackState('none');
 		};
 
 		el.onended = () => {
 			this.isPlaying = false;
+			this.updatePlaybackState('paused');
 			this.handleTrackEnded();
 		};
 
 		this.setupMediaSession();
 	}
 
+	private updatePlaybackState(state: 'playing' | 'paused' | 'none') {
+		if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+			try {
+				navigator.mediaSession.playbackState = state;
+			} catch {}
+		}
+	}
+
 	private setupMediaSession() {
 		if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
 
-		navigator.mediaSession.setActionHandler('play', () => this.togglePlay());
-		navigator.mediaSession.setActionHandler('pause', () => this.togglePlay());
-		navigator.mediaSession.setActionHandler('previoustrack', () => this.previousTrack());
-		navigator.mediaSession.setActionHandler('nexttrack', () => this.nextTrack());
-		navigator.mediaSession.setActionHandler('seekto', (details) => {
-			if (details.seekTime !== undefined) {
-				this.seekTo(details.seekTime);
-			}
-		});
+		try {
+			navigator.mediaSession.setActionHandler('play', () => this.play());
+			navigator.mediaSession.setActionHandler('pause', () => this.pause());
+			navigator.mediaSession.setActionHandler('stop', () => this.pause());
+			navigator.mediaSession.setActionHandler('previoustrack', () => this.previousTrack());
+			navigator.mediaSession.setActionHandler('nexttrack', () => this.nextTrack());
+			navigator.mediaSession.setActionHandler('seekto', (details) => {
+				if (details.seekTime !== undefined) {
+					this.seekTo(details.seekTime);
+				}
+			});
+		} catch (err) {
+			console.warn('[MediaSession] Action handler setup error:', err);
+		}
 	}
 
 	private updateMediaSession() {
-		if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || !this.currentTrack) return;
+		if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+
+		if (!this.currentTrack) {
+			try {
+				navigator.mediaSession.metadata = null;
+				navigator.mediaSession.playbackState = 'none';
+			} catch {}
+			return;
+		}
 
 		const artist = this.currentTrack.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Trax Vault');
 		const albumTitle = this.currentAlbum ? this.currentAlbum.title : 'Trax Vault';
 		const artworkUrl = this.currentAlbum?.cover_url;
 
-		navigator.mediaSession.metadata = new MediaMetadata({
-			title: this.currentTrack.title,
-			artist: artist,
-			album: albumTitle,
-			artwork: artworkUrl
-				? [
-						{ src: artworkUrl, sizes: '300x300', type: 'image/jpeg' },
-						{ src: artworkUrl, sizes: '512x512', type: 'image/jpeg' }
-				  ]
-				: []
-		});
+		try {
+			navigator.mediaSession.metadata = new MediaMetadata({
+				title: this.currentTrack.title,
+				artist: artist,
+				album: albumTitle,
+				artwork: artworkUrl
+					? [
+							{ src: artworkUrl, sizes: '300x300', type: 'image/jpeg' },
+							{ src: artworkUrl, sizes: '512x512', type: 'image/jpeg' }
+					  ]
+					: []
+			});
+			navigator.mediaSession.playbackState = this.isPlaying ? 'playing' : 'paused';
+		} catch (err) {
+			console.warn('[MediaSession] Failed to update metadata:', err);
+		}
 	}
 
 	playTrack(track: Track, album?: PlayerAlbum, queue?: Track[]) {
@@ -196,7 +227,7 @@ class GlobalPlayer {
 		this.playTrack(tracks[safeIndex], syntheticAlbum, tracks);
 	}
 
-	togglePlay() {
+	play() {
 		if (!this.audioEl) return;
 
 		if (!this.currentTrack) {
@@ -206,26 +237,34 @@ class GlobalPlayer {
 			return;
 		}
 
-		if (this.isPlaying) {
-			this.audioEl.pause();
-			this.isPlaying = false;
-		} else {
+		if (!this.isPlaying) {
 			this.audioEl
 				.play()
 				.then(() => {
 					this.isPlaying = true;
+					this.updatePlaybackState('playing');
 				})
 				.catch((e) => {
 					console.warn('Play error:', e);
 					this.isPlaying = false;
+					this.updatePlaybackState('paused');
 				});
 		}
 	}
 
 	pause() {
-		if (this.audioEl && this.isPlaying) {
+		if (this.audioEl) {
 			this.audioEl.pause();
 			this.isPlaying = false;
+			this.updatePlaybackState('paused');
+		}
+	}
+
+	togglePlay() {
+		if (this.isPlaying) {
+			this.pause();
+		} else {
+			this.play();
 		}
 	}
 
@@ -359,6 +398,12 @@ class GlobalPlayer {
 		this.isPlaying = false;
 		this.currentTime = 0;
 		this.duration = 0;
+		this.updatePlaybackState('none');
+		if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+			try {
+				navigator.mediaSession.metadata = null;
+			} catch {}
+		}
 		if (typeof document !== 'undefined') {
 			document.title = 'Trax Vault - Music Quality & Lyrics Tracker';
 		}
