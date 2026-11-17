@@ -13,11 +13,23 @@ export interface PlayerPlaylist extends Playlist {
 	tracks: Track[];
 }
 
+export interface PlayerArtist {
+	name: string;
+	album_count: number;
+	song_count: number;
+	cover_url: string | null;
+	albums: PlayerAlbum[];
+	tracks: Track[];
+}
+
 export const load: PageServerLoad = async ({ url, locals }) => {
 	const initialAlbumId = url.searchParams.get('albumId') ? parseInt(url.searchParams.get('albumId')!, 10) : null;
 	const initialTrackId = url.searchParams.get('trackId') ? parseInt(url.searchParams.get('trackId')!, 10) : null;
 	const initialPlaylistId = url.searchParams.get('playlistId') ? parseInt(url.searchParams.get('playlistId')!, 10) : null;
-	const initialView = url.searchParams.get('view') === 'playlists' || initialPlaylistId ? 'playlists' : 'albums';
+	const initialArtist = url.searchParams.get('artist') || null;
+	const initialView = url.searchParams.get('view') === 'playlists' || initialPlaylistId
+		? 'playlists'
+		: (url.searchParams.get('view') === 'artists' || initialArtist ? 'artists' : 'albums');
 
 	const userId = locals.user?.id || 1;
 
@@ -113,12 +125,60 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		tracks: tracksByPlaylist.get(pl.id) || []
 	}));
 
+	// Aggregate artists and their discography / songs
+	const artistsMap = new Map<string, {
+		name: string;
+		albumIds: Set<number>;
+		cover_url: string | null;
+		albums: PlayerAlbum[];
+		tracks: Track[];
+	}>();
+
+	for (const alb of albums) {
+		const albArtist = alb.artist?.trim() || 'Unknown Artist';
+		const key = albArtist.toLowerCase();
+		let entry = artistsMap.get(key);
+		if (!entry) {
+			entry = {
+				name: albArtist,
+				albumIds: new Set<number>(),
+				cover_url: alb.cover_url || null,
+				albums: [],
+				tracks: []
+			};
+			artistsMap.set(key, entry);
+		}
+		if (!entry.albumIds.has(alb.id)) {
+			entry.albumIds.add(alb.id);
+			entry.albums.push(alb);
+			if (!entry.cover_url && alb.cover_url) {
+				entry.cover_url = alb.cover_url;
+			}
+		}
+		for (const tr of alb.tracks) {
+			entry.tracks.push(tr);
+		}
+	}
+
+	const artists: PlayerArtist[] = Array.from(artistsMap.values())
+		.map((a) => ({
+			name: a.name,
+			album_count: a.albums.length,
+			song_count: a.tracks.length,
+			cover_url: a.cover_url,
+			albums: a.albums,
+			tracks: a.tracks
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
 	return {
 		albums,
 		playlists,
+		artists,
 		initialAlbumId,
 		initialTrackId,
 		initialPlaylistId,
+		initialArtist,
 		initialView
 	};
 };

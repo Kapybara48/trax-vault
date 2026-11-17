@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types.js';
 	import type { Track, Playlist } from '$lib/types/index.js';
-	import type { PlayerAlbum, PlayerPlaylist } from './+page.server.js';
+	import type { PlayerAlbum, PlayerPlaylist, PlayerArtist } from './+page.server.js';
 	import { player } from '$lib/services/player.svelte.js';
 	import {
 		Play,
@@ -34,7 +34,8 @@
 		Lock,
 		AlertTriangle,
 		Library,
-		Compass
+		Compass,
+		User
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -45,14 +46,20 @@
 	// Local data collections
 	let albums = $state<PlayerAlbum[]>([...data.albums]);
 	let playlists = $state<PlayerPlaylist[]>([...data.playlists]);
+	let artists = $state<PlayerArtist[]>([...(data.artists || [])]);
 
-	// Library Switcher Tab: 'albums' vs 'playlists'
-	let libraryTab = $state<'albums' | 'playlists'>(data.initialView === 'playlists' ? 'playlists' : 'albums');
+	// Library Switcher Tab: 'albums' vs 'artists' vs 'playlists'
+	let libraryTab = $state<'albums' | 'artists' | 'playlists'>(
+		data.initialView === 'playlists' ? 'playlists' : (data.initialView === 'artists' ? 'artists' : 'albums')
+	);
 
 	// Active Main View Target
-	let selectedType = $state<'album' | 'playlist'>('album');
+	let selectedType = $state<'album' | 'artist' | 'playlist'>(
+		data.initialArtist ? 'artist' : (data.initialView === 'playlists' ? 'playlist' : 'album')
+	);
 	let selectedAlbum = $state<PlayerAlbum | null>(null);
 	let selectedPlaylist = $state<PlayerPlaylist | null>(null);
+	let selectedArtist = $state<PlayerArtist | null>(null);
 
 	// Filters & Search
 	let librarySearch = $state('');
@@ -292,9 +299,21 @@
 		return list;
 	});
 
-	// Filtered tracks within currently selected item (album or playlist)
+	// Filtered library artists
+	let filteredArtists = $derived.by(() => {
+		let list = artists;
+		if (librarySearch.trim()) {
+			const q = librarySearch.trim().toLowerCase();
+			list = list.filter((a) => a.name.toLowerCase().includes(q));
+		}
+		return list;
+	});
+
+	// Filtered tracks within currently selected item (album, artist, or playlist)
 	let displayedTracks = $derived.by(() => {
-		const targetTracks = selectedType === 'album' ? selectedAlbum?.tracks : selectedPlaylist?.tracks;
+		const targetTracks = selectedType === 'album'
+			? selectedAlbum?.tracks
+			: (selectedType === 'artist' ? selectedArtist?.tracks : selectedPlaylist?.tracks);
 		if (!targetTracks) return [];
 		if (!albumTrackSearch.trim()) return targetTracks;
 		const q = albumTrackSearch.trim().toLowerCase();
@@ -327,6 +346,7 @@
 		selectedType = 'album';
 		selectedAlbum = album;
 		selectedPlaylist = null;
+		selectedArtist = null;
 		albumTrackSearch = '';
 		mobilePlayerTab = 'tracks';
 	}
@@ -335,8 +355,51 @@
 		selectedType = 'playlist';
 		selectedPlaylist = playlist;
 		selectedAlbum = null;
+		selectedArtist = null;
 		albumTrackSearch = '';
 		mobilePlayerTab = 'tracks';
+	}
+
+	function selectArtist(artist: PlayerArtist | string) {
+		const found = typeof artist === 'string'
+			? artists.find((a) => a.name.toLowerCase() === artist.toLowerCase().trim())
+			: artist;
+		if (found) {
+			selectedArtist = found;
+			selectedType = 'artist';
+			selectedAlbum = null;
+			selectedPlaylist = null;
+			albumTrackSearch = '';
+			mobilePlayerTab = 'tracks';
+		}
+	}
+
+	function playArtistTrack(track: Track) {
+		if (track.is_missing === 1 || !selectedArtist) return;
+		const playable = selectedArtist.tracks.filter((t) => t.is_missing !== 1);
+		const parentAlbum = selectedArtist.albums.find((a) => a.id === track.album_id) || selectedArtist.albums[0] || {
+			id: track.album_id || -9999,
+			title: track.album_title || `${selectedArtist.name} Tracks`,
+			artist: selectedArtist.name,
+			cover_url: track.album_cover_url || selectedArtist.cover_url
+		};
+		player.playTrack(track, parentAlbum as any, playable);
+	}
+
+	function playArtistAll() {
+		if (!selectedArtist || selectedArtist.tracks.length === 0) return;
+		const playable = selectedArtist.tracks.filter((t) => t.is_missing !== 1);
+		if (playable.length === 0) return;
+		playArtistTrack(playable[0]);
+	}
+
+	function playArtistShuffle() {
+		if (!selectedArtist || selectedArtist.tracks.length === 0) return;
+		const playable = selectedArtist.tracks.filter((t) => t.is_missing !== 1);
+		if (playable.length === 0) return;
+		const shuffled = [...playable].sort(() => Math.random() - 0.5);
+		const parentAlbum = selectedArtist.albums.find((a) => a.id === shuffled[0].album_id) || selectedArtist.albums[0];
+		player.playTrack(shuffled[0], parentAlbum as any, shuffled);
 	}
 
 	// Playlist Actions
@@ -586,7 +649,13 @@
 
 	onMount(() => {
 		// Initial Target Selection from parameters or player state
-		if (data.initialPlaylistId) {
+		if (data.initialArtist) {
+			const foundArt = artists.find((a) => a.name.toLowerCase() === data.initialArtist!.toLowerCase().trim());
+			if (foundArt) {
+				selectArtist(foundArt);
+				libraryTab = 'artists';
+			}
+		} else if (data.initialPlaylistId) {
 			const foundPl = playlists.find((p) => p.id === data.initialPlaylistId);
 			if (foundPl) {
 				selectPlaylist(foundPl);
@@ -617,11 +686,15 @@
 		}
 
 		// Fallback default selection
-		if (!selectedAlbum && !selectedPlaylist) {
-			if (libraryTab === 'playlists' && playlists.length > 0) {
+		if (!selectedAlbum && !selectedPlaylist && !selectedArtist) {
+			if (libraryTab === 'artists' && artists.length > 0) {
+				selectArtist(artists[0]);
+			} else if (libraryTab === 'playlists' && playlists.length > 0) {
 				selectPlaylist(playlists[0]);
 			} else if (albums.length > 0) {
 				selectAlbum(albums[0]);
+			} else if (artists.length > 0) {
+				selectArtist(artists[0]);
 			} else if (playlists.length > 0) {
 				selectPlaylist(playlists[0]);
 			}
@@ -718,8 +791,8 @@
 					</div>
 				</div>
 
-				<!-- Segmented Switcher: Albums vs Playlists -->
-				<div class="grid grid-cols-2 p-0.5 rounded-xl bg-neutral-950/80 border border-neutral-800 mb-2.5">
+				<!-- Segmented Switcher: Albums vs Artists vs Playlists -->
+				<div class="grid grid-cols-3 p-0.5 rounded-xl bg-neutral-950/80 border border-neutral-800 mb-2.5">
 					<button
 						type="button"
 						onclick={() => (libraryTab = 'albums')}
@@ -728,7 +801,18 @@
 							: 'text-neutral-400 hover:text-neutral-200'}"
 					>
 						<Disc3 class="w-3.5 h-3.5 {libraryTab === 'albums' ? 'text-emerald-400' : ''}" />
-						<span>Albums ({albums.length})</span>
+						<span class="truncate">Albums ({albums.length})</span>
+					</button>
+
+					<button
+						type="button"
+						onclick={() => (libraryTab = 'artists')}
+						class="flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer {libraryTab === 'artists'
+							? 'bg-neutral-800 text-white shadow-sm'
+							: 'text-neutral-400 hover:text-neutral-200'}"
+					>
+						<User class="w-3.5 h-3.5 {libraryTab === 'artists' ? 'text-emerald-400' : ''}" />
+						<span class="truncate">Artists ({artists.length})</span>
 					</button>
 
 					<button
@@ -739,7 +823,7 @@
 							: 'text-neutral-400 hover:text-neutral-200'}"
 					>
 						<ListMusic class="w-3.5 h-3.5 {libraryTab === 'playlists' ? 'text-emerald-400' : ''}" />
-						<span>Playlists ({playlists.length})</span>
+						<span class="truncate">Playlists ({playlists.length})</span>
 					</button>
 				</div>
 
@@ -749,7 +833,7 @@
 					<input
 						type="text"
 						bind:value={librarySearch}
-						placeholder={libraryTab === 'albums' ? 'Search album, artist...' : 'Search playlists...'}
+						placeholder={libraryTab === 'albums' ? 'Search album, artist...' : (libraryTab === 'artists' ? 'Search artists...' : 'Search playlists...')}
 						class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-8 pr-3 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60 transition"
 					/>
 					{#if librarySearch}
@@ -764,8 +848,8 @@
 				</div>
 
 				<!-- Filter Chips -->
-				<div class="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pb-1 text-xs">
-					{#if libraryTab === 'albums'}
+				{#if libraryTab === 'albums'}
+					<div class="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pb-1 text-xs">
 						{#each [
 							{ id: 'all', label: 'All' },
 							{ id: 'lossless', label: 'FLAC / Hi-Res' },
@@ -781,7 +865,9 @@
 								{chip.label}
 							</button>
 						{/each}
-					{:else}
+					</div>
+				{:else if libraryTab === 'playlists'}
+					<div class="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pb-1 text-xs">
 						{#each [
 							{ id: 'all', label: 'All Playlists' },
 							{ id: 'public', label: 'Public' },
@@ -797,8 +883,8 @@
 								{chip.label}
 							</button>
 						{/each}
-					{/if}
-				</div>
+					</div>
+				{/if}
 			</div>
 
 			<!-- Scrollable Items List -->
@@ -868,6 +954,64 @@
 							</button>
 						</div>
 					{/each}
+				{:else if libraryTab === 'artists'}
+					{#each filteredArtists as artist}
+						{@const isSelected = selectedType === 'artist' && selectedArtist?.name.toLowerCase() === artist.name.toLowerCase()}
+						<div
+							role="button"
+							tabindex="0"
+							onclick={() => selectArtist(artist)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') selectArtist(artist);
+							}}
+							class="w-full flex items-center gap-2.5 p-2 rounded-xl transition text-left cursor-pointer group border {isSelected
+								? 'bg-neutral-800/80 border-emerald-500/40 text-white shadow-md'
+								: 'border-transparent text-neutral-300 hover:bg-neutral-800/40 hover:text-white'}"
+						>
+							<!-- Artist Avatar -->
+							<div class="relative w-11 h-11 rounded-full overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm flex items-center justify-center">
+								{#if artist.cover_url}
+									<img src={artist.cover_url} alt={artist.name} class="w-full h-full object-cover" />
+								{:else}
+									<User class="w-5 h-5 text-neutral-500" />
+								{/if}
+							</div>
+
+							<!-- Details -->
+							<div class="min-w-0 flex-1">
+								<div class="text-xs font-semibold truncate {isSelected ? 'text-emerald-400' : 'text-neutral-100'}">
+									{artist.name}
+								</div>
+								<div class="text-[10px] text-neutral-400 truncate mt-0.5 flex items-center gap-1.5">
+									<span>{artist.album_count} {artist.album_count === 1 ? 'album' : 'albums'}</span>
+									<span>&bull;</span>
+									<span>{artist.song_count} {artist.song_count === 1 ? 'song' : 'songs'}</span>
+								</div>
+							</div>
+
+							<!-- Instant Play Trigger on Hover -->
+							<button
+								type="button"
+								onclick={(e) => {
+									e.stopPropagation();
+									selectArtist(artist);
+									if (artist.tracks.length > 0) {
+										playArtistTrack(artist.tracks[0]);
+									}
+								}}
+								class="w-7 h-7 rounded-full bg-emerald-500 hover:bg-emerald-400 text-neutral-950 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md cursor-pointer shrink-0"
+								title="Play {artist.name}"
+							>
+								<Play class="w-3.5 h-3.5 fill-current ml-0.5" />
+							</button>
+						</div>
+					{/each}
+
+					{#if filteredArtists.length === 0}
+						<div class="p-6 text-center text-xs text-neutral-500">
+							No artists found matching your search.
+						</div>
+					{/if}
 				{:else}
 					<!-- PLAYLISTS LIST -->
 					<!-- Quick Add Card -->
@@ -1158,9 +1302,14 @@
 							</h1>
 
 							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 text-xs text-neutral-300">
-								<span class="font-bold text-white truncate max-w-[200px]">
+								<button
+									type="button"
+									onclick={() => selectArtist(selectedAlbum!.artist)}
+									class="font-bold text-white hover:text-emerald-400 hover:underline transition truncate max-w-[200px] cursor-pointer"
+									title="View {selectedAlbum.artist} discography & songs"
+								>
 									{selectedAlbum.artist}
-								</span>
+								</button>
 								{#if selectedAlbum.release_year}
 									<span>&bull;</span>
 									<span class="text-neutral-400">{selectedAlbum.release_year}</span>
@@ -1353,7 +1502,16 @@
 											{/if}
 										</div>
 										<div class="text-[10px] text-neutral-400 truncate">
-											{track.artist || selectedAlbum!.artist}
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													selectArtist(track.artist || selectedAlbum!.artist);
+												}}
+												class="hover:text-emerald-300 hover:underline transition truncate max-w-[200px] text-left cursor-pointer"
+											>
+												{track.artist || selectedAlbum!.artist}
+											</button>
 										</div>
 									</td>
 
@@ -1618,7 +1776,20 @@
 												{track.title}
 											</div>
 											<div class="text-[10px] text-neutral-400 truncate">
-												{track.artist}
+												{#if track.artist}
+													<button
+														type="button"
+														onclick={(e) => {
+															e.stopPropagation();
+															selectArtist(track.artist!);
+														}}
+														class="hover:text-emerald-300 hover:underline transition truncate max-w-[200px] text-left cursor-pointer"
+													>
+														{track.artist}
+													</button>
+												{:else}
+													<span>Unknown Artist</span>
+												{/if}
 											</div>
 										</td>
 
@@ -1728,6 +1899,262 @@
 							</button>
 						</div>
 					{/if}
+				</div>
+			{:else if selectedType === 'artist' && selectedArtist}
+				<!-- ARTIST VIEW -->
+				<div class="relative overflow-hidden bg-gradient-to-b from-neutral-800/40 via-neutral-900/60 to-transparent p-4 sm:p-6 pb-4 border-b border-neutral-800/80 shrink-0">
+					<!-- Hero -->
+					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-5">
+						<!-- Large Artist Circular Avatar -->
+						<div class="relative group w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden bg-neutral-950 shadow-2xl border-2 border-neutral-700/60 shrink-0 flex items-center justify-center">
+							{#if selectedArtist.cover_url}
+								<img src={selectedArtist.cover_url} alt={selectedArtist.name} class="w-full h-full object-cover" />
+							{:else}
+								<User class="w-16 h-16 text-neutral-600" />
+							{/if}
+						</div>
+
+						<!-- Artist Meta -->
+						<div class="flex-1 min-w-0 text-center sm:text-left space-y-2">
+							<div class="flex items-center justify-center sm:justify-start gap-2">
+								<span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+									Artist
+								</span>
+								<span class="text-xs text-neutral-400 font-mono">
+									{selectedArtist.album_count} {selectedArtist.album_count === 1 ? 'album' : 'albums'} &bull; {selectedArtist.song_count} {selectedArtist.song_count === 1 ? 'song' : 'songs'}
+								</span>
+							</div>
+
+							<h1 class="text-2xl sm:text-4xl font-black text-white tracking-tight truncate leading-tight">
+								{selectedArtist.name}
+							</h1>
+
+							<!-- Action Buttons -->
+							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 pt-1.5">
+								<!-- Play All Button -->
+								<button
+									type="button"
+									onclick={playArtistAll}
+									class="flex items-center gap-2 px-5 py-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/25 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
+								>
+									<Play class="w-4 h-4 fill-current" />
+									<span>Play All</span>
+								</button>
+
+								<!-- Shuffle Button -->
+								<button
+									type="button"
+									onclick={playArtistShuffle}
+									class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-white font-semibold text-xs transition cursor-pointer"
+								>
+									<Shuffle class="w-4 h-4 text-emerald-400" />
+									<span>Shuffle</span>
+								</button>
+
+								<!-- Add All to Playlist -->
+								<button
+									type="button"
+									onclick={() => openAddToPlaylist(selectedArtist!.tracks.map((t) => t.id), selectedArtist!.name)}
+									class="p-2 rounded-2xl bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer"
+									title="Add all songs by this artist to a playlist"
+								>
+									<ListPlus class="w-4 h-4 text-emerald-400" />
+								</button>
+
+								<!-- Search in Artist Tracks -->
+								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-36' : 'w-52'}">
+									<Search class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+									<input
+										type="text"
+										bind:value={albumTrackSearch}
+										placeholder="Filter artist songs..."
+										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-8 pr-3 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
+									/>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Artist Scrollable Body: Discography Albums Grid + All Songs Table -->
+				<div class="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-6">
+					<!-- Section 1: Discography Albums -->
+					{#if selectedArtist.albums.length > 0}
+						<div class="space-y-2.5">
+							<div class="flex items-center justify-between">
+								<h3 class="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+									<Disc3 class="w-3.5 h-3.5 text-emerald-400" />
+									<span>Discography & Albums ({selectedArtist.albums.length})</span>
+								</h3>
+							</div>
+
+							<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+								{#each selectedArtist.albums as alb (alb.id)}
+									<div
+										role="button"
+										tabindex="0"
+										onclick={() => selectAlbum(alb)}
+										onkeydown={(e) => {
+											if (e.key === 'Enter' || e.key === ' ') selectAlbum(alb);
+										}}
+										class="group/alb p-2.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/80 hover:bg-neutral-850 hover:border-neutral-700 transition cursor-pointer text-left flex flex-col space-y-2 shadow-sm"
+									>
+										<!-- Artwork -->
+										<div class="aspect-square rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 relative shadow-inner">
+											{#if alb.cover_url}
+												<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover group-hover/alb:scale-105 transition duration-300" />
+											{:else}
+												<div class="w-full h-full flex items-center justify-center text-neutral-600">
+													<Disc3 class="w-8 h-8 opacity-40" />
+												</div>
+											{/if}
+										</div>
+
+										<!-- Title & Year -->
+										<div class="min-w-0">
+											<h4 class="text-xs font-bold text-neutral-100 truncate group-hover/alb:text-emerald-400 transition">
+												{alb.title}
+											</h4>
+											<p class="text-[10px] text-neutral-400 truncate mt-0.5">
+												{alb.release_year || 'Unknown Year'} &bull; {alb.tracks.length} {alb.tracks.length === 1 ? 'song' : 'songs'}
+											</p>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Section 2: All Songs Table -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<h3 class="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+								<Music class="w-3.5 h-3.5 text-emerald-400" />
+								<span>All Songs ({displayedTracks.length})</span>
+							</h3>
+						</div>
+
+						<table class="w-full text-left text-xs border-collapse">
+							<thead class="text-neutral-400 border-b border-neutral-800/60 sticky top-0 bg-neutral-900/90 backdrop-blur z-10">
+								<tr class="h-8">
+									<th class="w-10 text-center font-semibold">#</th>
+									<th class="font-semibold">Title</th>
+									<th class="font-semibold hidden sm:table-cell">Album</th>
+									{#if !showLyricsDrawer}
+										<th class="font-semibold hidden md:table-cell">Quality</th>
+									{/if}
+									<th class="w-14 text-right pr-2 font-semibold"><Clock class="w-3.5 h-3.5 inline text-neutral-500" /></th>
+									<th class="w-8 text-center pr-3 font-semibold"></th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-neutral-800/30">
+								{#each displayedTracks as track, idx (track.id)}
+									{@const isMissing = track.is_missing === 1}
+									{@const isCurrent = player.currentTrack?.id === track.id}
+									{@const isCurrentPlaying = isCurrent && player.isPlaying}
+
+									<tr
+										onclick={() => {
+											if (isMissing) return;
+											playArtistTrack(track);
+										}}
+										class="group transition rounded-xl h-12 {isMissing ? 'opacity-60 bg-rose-950/10 cursor-not-allowed' : 'hover:bg-neutral-800/50 cursor-pointer'} {isCurrent ? 'bg-emerald-950/20 text-white' : 'text-neutral-300'}"
+									>
+										<!-- Track # or Play Action -->
+										<td class="text-center font-mono w-10">
+											<div class="flex items-center justify-center">
+												{#if isCurrentPlaying}
+													<div class="flex items-end justify-center gap-0.5 h-3.5 w-3.5">
+														<span class="w-0.5 bg-emerald-400 animate-[bounce_0.8s_infinite] h-full rounded-full"></span>
+														<span class="w-0.5 bg-emerald-400 animate-[bounce_0.6s_infinite] h-2/3 rounded-full"></span>
+														<span class="w-0.5 bg-emerald-400 animate-[bounce_1.0s_infinite] h-4/5 rounded-full"></span>
+													</div>
+												{:else if isCurrent}
+													<Play class="w-3.5 h-3.5 text-emerald-400 fill-current" />
+												{:else}
+													<span class="group-hover:hidden text-neutral-500 text-[11px]">{idx + 1}</span>
+													<Play class="w-3.5 h-3.5 text-white fill-current hidden group-hover:block transition" />
+												{/if}
+											</div>
+										</td>
+
+										<!-- Title -->
+										<td class="py-2 pr-3">
+											<div class="flex items-center gap-2">
+												<div class="truncate">
+													<div class="font-semibold text-xs truncate {isCurrent ? 'text-emerald-400' : 'text-neutral-100'}">
+														{track.title}
+													</div>
+													{#if track.artist && track.artist.toLowerCase() !== selectedArtist.name.toLowerCase()}
+														<div class="text-[10px] text-neutral-400 truncate">
+															feat. {track.artist}
+														</div>
+													{/if}
+												</div>
+											</div>
+										</td>
+
+										<!-- Album (Clickable) -->
+										<td class="py-2 pr-3 hidden sm:table-cell">
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													const foundAlb = albums.find((a) => a.id === track.album_id);
+													if (foundAlb) selectAlbum(foundAlb);
+												}}
+												class="text-neutral-400 hover:text-emerald-300 hover:underline truncate text-left max-w-[200px] cursor-pointer"
+											>
+												{track.album_title || 'Unknown Album'}
+											</button>
+										</td>
+
+										<!-- Quality Pill -->
+										{#if !showLyricsDrawer}
+											<td class="py-2 pr-3 hidden md:table-cell">
+												<div class="flex items-center gap-1.5">
+													<span class="font-mono text-[9px] uppercase px-1.5 py-0.5 rounded bg-neutral-800/80 border border-neutral-700/60 {track.format === 'FLAC' || track.format === 'WAV' || track.format === 'ALAC' ? 'text-emerald-300 border-emerald-500/30' : 'text-neutral-400'}">
+														{track.format || 'AUDIO'}
+													</span>
+													{#if track.bitrate_kbps}
+														<span class="font-mono text-[9px] text-neutral-400">
+															{track.bitrate_kbps} kbps
+														</span>
+													{/if}
+												</div>
+											</td>
+										{/if}
+
+										<!-- Duration -->
+										<td class="text-right pr-2 font-mono tabular-nums text-xs text-neutral-400">
+											{formatDurationMs(track.duration_ms)}
+										</td>
+
+										<!-- Action: Add to Playlist -->
+										<td class="text-center pr-3">
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													openAddToPlaylist([track.id], track.title);
+												}}
+												class="p-1 rounded text-neutral-500 hover:text-emerald-400 hover:bg-neutral-800 transition cursor-pointer"
+												title="Add to playlist"
+											>
+												<ListPlus class="w-3.5 h-3.5" />
+											</button>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+
+						{#if displayedTracks.length === 0}
+							<div class="py-12 text-center text-xs text-neutral-500">
+								No songs match your search in this artist.
+							</div>
+						{/if}
+					</div>
 				</div>
 			{:else}
 				<!-- Empty Selection Fallback -->

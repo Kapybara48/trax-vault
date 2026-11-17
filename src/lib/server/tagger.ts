@@ -1962,8 +1962,7 @@ export async function applyManualTags(
 					artist: tr.artist?.trim() || null,
 					track_number: tr.trackNumber,
 					disc_number: tr.discNumber,
-					file_path: tr.finalFilePath || null,
-					manually_checked: 1
+					file_path: tr.finalFilePath || null
 				});
 			} else {
 				// Manually added track
@@ -1974,7 +1973,7 @@ export async function applyManualTags(
 					disc_number: tr.discNumber,
 					file_path: tr.finalFilePath || null,
 					is_missing: tr.isMissing ? 1 : (tr.finalFilePath ? 0 : 1),
-					manually_checked: 1
+					manually_checked: 0
 				});
 			}
 		}
@@ -2028,7 +2027,7 @@ export async function applyManualTags(
 					quality_rating: trackDetails.quality_rating || 'good',
 					file_path: tr.finalFilePath || null,
 					is_missing: tr.isMissing ? 1 : (tr.finalFilePath ? 0 : 1),
-					manually_checked: 1
+					manually_checked: 0
 				});
 			}
 

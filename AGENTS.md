@@ -878,6 +878,26 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Auto-Assign Files in Order**: Added 1-click `Auto-Assign Files` button mapping all available folder audio files sequentially to track rows.
     - **Direct Audio File Upload (`POST /api/library/track/upload`)**: Added dedicated track upload endpoint allowing users to upload audio files from their computer directly into the album or folder during manual tagging.
 
+62. **Visual Song Connector for Manual Tagger, Complex Player Artist Browsing, Auto-Verification Removal, & Forgejo Single Build (v1.7.22)**:
+    - **Visual 2-Column Song Connector for Manual Tagger (`src/routes/tagger/+page.svelte`)**:
+      - Replaced the in-modal file dropdowns with a prominent **"Assign Songs in Connector (Step 2) ➔"** action button.
+      - Clicking the button synthesizes a release edition (`id: 'manual'`) from user-entered metadata and transitions seamlessly into Step 2—the full-screen, 2-column Picard-style connector workspace.
+      - Storage files appear on the left in the Unassigned Pool and manual song tracks on the right. Users can drag, drop, swap, remap via dropdown, unpair, and write tags using the exact same interface as MusicBrainz.
+      - Step 2 top bar shows "← Edit Metadata" to re-open the editor modal, and Step 1 features a prominent "Manual Release Ready" banner.
+    - **Do NOT Auto-Verify Songs on Manual Edit (`src/lib/server/tagger.ts`)**:
+      - In `applyManualTags`, removed forced `manually_checked: 1`. Existing tracks preserve their current verification status without changes, and new tracks or imported folders default to `manually_checked: 0`.
+    - **Complex Music Player Artist Browsing & Discography (`src/routes/player/+page.server.ts`, `src/routes/player/+page.svelte`)**:
+      - Server loader derives and returns an aggregated `artists` catalog (`name`, `album_count`, `song_count`, `cover_url`, `albums`, `tracks`) sorted alphabetically.
+      - "Your Library" sidebar features a 3-tab switcher: `[ Albums ] [ Artists ] [ Playlists ]` with search filtering.
+      - Artist view in center pane features an artist hero banner (avatar, name, stats, "Play All", "Shuffle", "Add All to Playlist", and song search).
+      - Section 1 displays an interactive "Discography & Albums" grid; clicking an album navigates to that album view.
+      - Section 2 displays an "All Songs" tracklist table with playback equalizer animations, clickable album links, format/bitrate pills, and add-to-playlist actions.
+      - Artist names across Album Hero and track rows in Album and Playlist views are clickable, jumping directly to that artist's discography.
+    - **Forgejo CI/CD Single Build & Image Reuse (`.forgejo/workflows/docker-publish.yml`)**:
+      - Changed concurrency group to `${{ github.workflow }}-${{ github.sha }}` so simultaneous branch and tag pushes for the same commit cancel duplicate in-progress builds.
+      - Added a `docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}` check before building. If an image for that commit SHA was already built, the job re-tags it (`:latest`, `:vX.Y.Z`, `:X.Y.Z`) and pushes in ~5 seconds without running `docker build` again.
+      - Enabled `DOCKER_BUILDKIT=1`, layer caching via `--cache-from ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest`, and `BUILDKIT_INLINE_CACHE=1`.
+
 ---
 
 ## 4. Workflows & Verification

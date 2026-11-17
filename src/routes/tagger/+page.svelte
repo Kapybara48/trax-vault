@@ -184,6 +184,8 @@
 	}
 
 	let isManualEditorOpen = $state(false);
+	let isManualRelease = $state(false);
+	let manualGenre = $state('');
 	let manualAlbumTitle = $state('');
 	let manualAlbumArtist = $state('');
 	let manualAlbumYear = $state<number | null>(null);
@@ -420,6 +422,7 @@
 	async function loadAlbumAndMatch(albumId: number, targetMbid?: string) {
 		isLoadingMatches = true;
 		statusMessage = null;
+		isManualRelease = false;
 		matches = [];
 		missingTracks = [];
 		candidateReleases = [];
@@ -482,6 +485,7 @@
 	async function loadFolderAndMatch(folderPath: string, targetMbid?: string) {
 		isLoadingMatches = true;
 		statusMessage = null;
+		isManualRelease = false;
 		matches = [];
 		missingTracks = [];
 		candidateReleases = [];
@@ -554,7 +558,14 @@
 
 	async function openManualMetadataEditor() {
 		// Initialize album metadata
-		if (taggerMode === 'albums' && selectedAlbum) {
+		if (isManualRelease && releaseDetail) {
+			manualAlbumTitle = releaseDetail.title || '';
+			manualAlbumArtist = releaseDetail.artist || '';
+			manualAlbumYear = releaseDetail.release_year || null;
+			manualAlbumGenre = manualGenre;
+			manualCoverUrl = releaseDetail.cover_url || null;
+			manualOptImportToVault = taggerMode === 'folders' && !currentFolderData?.already_in_vault;
+		} else if (taggerMode === 'albums' && selectedAlbum) {
 			manualAlbumTitle = selectedAlbum.title || '';
 			manualAlbumArtist = selectedAlbum.artist || '';
 			manualAlbumYear = selectedAlbum.release_year || null;
@@ -655,7 +666,24 @@
 		manualAvailableFiles = Array.from(filesMap.values());
 
 		// 2. Initialize tracklist
-		if (matches.length > 0) {
+		if (isManualRelease && releaseDetail && releaseDetail.tracks.length > 0) {
+			manualTracksList = releaseDetail.tracks.map((mbTr, idx) => {
+				const matched = matches.find((m) => m.mbTrack?.id === mbTr.id);
+				const diskFilename = matched?.localTrack?.file_path ? matched.localTrack.file_path.split('/').pop() : undefined;
+				return {
+					id: `tr-${idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
+					localTrackId: matched?.localTrack?.id && matched.localTrack.id > 0 ? matched.localTrack.id : undefined,
+					filePath: matched?.localTrack?.file_path || undefined,
+					filename: diskFilename,
+					discNumber: mbTr.disc_number,
+					trackNumber: mbTr.track_number,
+					title: mbTr.title,
+					artist: mbTr.artist || manualAlbumArtist,
+					duration_ms: mbTr.duration_ms || matched?.localTrack?.duration_ms || null,
+					isMissing: !matched?.localTrack?.file_path
+				};
+			});
+		} else if (matches.length > 0) {
 			manualTracksList = matches.map((m, idx) => {
 				const tr = m.localTrack;
 				const diskFilename = tr.file_path ? tr.file_path.split('/').pop() : undefined;
@@ -737,6 +765,141 @@
 		} finally {
 			isUploadingCover = false;
 		}
+	}
+
+	function proceedToConnectorFromManual() {
+		if (!manualAlbumTitle.trim()) {
+			alert('Please enter an album title.');
+			return;
+		}
+		if (!manualAlbumArtist.trim()) {
+			alert('Please enter an artist name.');
+			return;
+		}
+		if (manualTracksList.length === 0) {
+			alert('Please add at least one track to the tracklist.');
+			return;
+		}
+
+		isManualRelease = true;
+		manualGenre = manualAlbumGenre.trim();
+		selectedReleaseMbid = 'manual';
+
+		const mbTracks: MusicBrainzReleaseTrack[] = manualTracksList.map((t, idx) => ({
+			id: `manual-tr-${idx + 1}`,
+			position: t.trackNumber || (idx + 1),
+			title: t.title.trim() || `Track ${t.trackNumber || (idx + 1)}`,
+			artist: t.artist.trim() || manualAlbumArtist.trim(),
+			duration_ms: t.duration_ms || null,
+			track_number: t.trackNumber || (idx + 1),
+			disc_number: t.discNumber || 1
+		}));
+
+		releaseDetail = {
+			id: 'manual',
+			title: manualAlbumTitle.trim(),
+			artist: manualAlbumArtist.trim(),
+			release_year: manualAlbumYear || null,
+			genre: manualGenre || null,
+			cover_url: manualCoverUrl || null,
+			media_type: 'Digital',
+			tracks: mbTracks
+		};
+
+		// Gather all available storage files
+		const allStorageFiles: Track[] = [];
+		const seenPaths = new Set<string>();
+
+		for (const m of matches) {
+			if (m.localTrack.file_path && !seenPaths.has(m.localTrack.file_path)) {
+				seenPaths.add(m.localTrack.file_path);
+				allStorageFiles.push(m.localTrack);
+			} else if (!m.localTrack.file_path && m.localTrack.id) {
+				allStorageFiles.push(m.localTrack);
+			}
+		}
+
+		for (const f of manualAvailableFiles) {
+			if (f.filePath && !seenPaths.has(f.filePath)) {
+				seenPaths.add(f.filePath);
+				allStorageFiles.push({
+					id: f.localTrackId || (allStorageFiles.length + 1),
+					album_id: selectedAlbumId || 0,
+					disc_number: 1,
+					track_number: allStorageFiles.length + 1,
+					title: f.title || f.filename,
+					artist: f.artist || manualAlbumArtist,
+					duration_ms: f.duration_ms || null,
+					format: 'FLAC',
+					bitrate_kbps: null,
+					sample_rate: null,
+					bits_per_sample: null,
+					quality_rating: 'good',
+					censorship: 'unknown',
+					lyrics: 'missing',
+					lyrics_status: 'missing',
+					status: 'missing',
+					needs_attention: 0,
+					manually_checked: 0,
+					is_missing: 0,
+					notes: null,
+					file_path: f.filePath,
+					created_at: new Date().toISOString(),
+					updated_at: new Date().toISOString()
+				} as unknown as Track);
+			}
+		}
+
+		// Pair tracks
+		const newMatches: EditableMatch[] = [];
+		const assignedPaths = new Set<string>();
+
+		for (let i = 0; i < mbTracks.length; i++) {
+			const mbTr = mbTracks[i];
+			const manualTr = manualTracksList[i];
+
+			let matchedStorage: Track | null = null;
+			if (manualTr?.filePath) {
+				matchedStorage = allStorageFiles.find((s) => s.file_path === manualTr.filePath) || null;
+			}
+
+			if (matchedStorage) {
+				if (matchedStorage.file_path) assignedPaths.add(matchedStorage.file_path);
+				newMatches.push({
+					localTrack: matchedStorage,
+					mbTrack: mbTr,
+					score: 100,
+					matchType: 'exact',
+					selected: true,
+					titleDiff: false,
+					artistDiff: false,
+					numberDiff: false,
+					durationDiff: false
+				});
+			}
+		}
+
+		// Add unassigned storage files with mbTrack: null so they appear in Column 1 (Storage unassigned pool)
+		for (const s of allStorageFiles) {
+			if (s.file_path && assignedPaths.has(s.file_path)) continue;
+			newMatches.push({
+				localTrack: s,
+				mbTrack: null,
+				score: 0,
+				matchType: 'unmatched',
+				selected: false,
+				titleDiff: false,
+				artistDiff: false,
+				numberDiff: false,
+				durationDiff: false
+			});
+		}
+
+		matches = newMatches;
+		overallScore = 100;
+		missingTracks = [];
+		isManualEditorOpen = false;
+		taggerStep = 2;
 	}
 
 	function addManualTrackRow() {
@@ -1273,6 +1436,108 @@
 	}
 
 	async function applyConfirmedTags() {
+		if (isManualRelease || selectedReleaseMbid === 'manual') {
+			if (!releaseDetail) return;
+			const confirmedTracks = releaseDetail.tracks
+				.map((mbTr) => {
+					const matched = matches.find((m) => m.selected && m.mbTrack?.id === mbTr.id);
+					if (!matched) return null;
+					return {
+						localTrackId: matched.localTrack.id > 0 ? matched.localTrack.id : undefined,
+						filePath: matched.localTrack.file_path || undefined,
+						title: mbTr.title,
+						artist: mbTr.artist || releaseDetail?.artist || manualAlbumArtist,
+						trackNumber: mbTr.track_number,
+						discNumber: mbTr.disc_number,
+						duration_ms: matched.localTrack.duration_ms || mbTr.duration_ms || null,
+						isMissing: !matched.localTrack.file_path
+					};
+				})
+				.filter(Boolean) as Array<{
+					localTrackId?: number;
+					filePath?: string;
+					title: string;
+					artist: string;
+					trackNumber: number;
+					discNumber: number;
+					duration_ms: number | null;
+					isMissing: boolean;
+				}>;
+
+			if (confirmedTracks.length === 0) {
+				alert('Please select at least one track to update.');
+				return;
+			}
+
+			isApplyingTags = true;
+			statusMessage = null;
+
+			try {
+				const payload = {
+					targetMode: taggerMode,
+					albumId: taggerMode === 'albums' ? selectedAlbumId || undefined : undefined,
+					folderPath: taggerMode === 'folders' ? selectedFolderPath || undefined : undefined,
+					albumMetadata: {
+						title: releaseDetail.title,
+						artist: releaseDetail.artist,
+						release_year: releaseDetail.release_year || null,
+						genre: manualGenre || null,
+						cover_url: optUpdateCover ? (releaseDetail.cover_url || null) : null
+					},
+					tracks: confirmedTracks,
+					options: {
+						writeAudioTags: true,
+						renameFiles: optRenameFiles,
+						importToVault: optImportToVault
+					}
+				};
+
+				const res = await fetch('/api/tagger/manual/apply', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload)
+				});
+
+				const json = await res.json();
+				if (!res.ok || json.error || json.hasPermissionErrors) {
+					const errorText = json.error || 'Failed to apply manual tags';
+					statusMessage = {
+						type: 'error',
+						text: errorText,
+						details: json.fileErrors || [],
+						isPermission: json.hasPermissionErrors
+					};
+					return;
+				}
+
+				let successMsg = `Successfully wrote tags to ${json.updatedTracksCount || confirmedTracks.length} audio files`;
+				if (json.renamedFilesCount > 0) {
+					successMsg += ` and renamed ${json.renamedFilesCount} files`;
+				}
+				if (json.importedAlbumId) {
+					successMsg += ` (Imported to Vault: Album #${json.importedAlbumId})`;
+				}
+				statusMessage = {
+					type: 'success',
+					text: `${successMsg}!`
+				};
+
+				// Refresh data
+				if (taggerMode === 'albums' && selectedAlbumId) {
+					await loadAlbumAndMatch(selectedAlbumId);
+				} else if (taggerMode === 'folders' && selectedFolderPath) {
+					await loadFolderAndMatch(selectedFolderPath);
+					await refreshFolders(false);
+				}
+			} catch (err: any) {
+				console.error('Manual apply error:', err);
+				statusMessage = { type: 'error', text: formatErrorMessage(err, 'Failed to write manual tags') };
+			} finally {
+				isApplyingTags = false;
+			}
+			return;
+		}
+
 		if (taggerMode === 'albums') {
 			if (!selectedAlbumId || !selectedReleaseMbid) return;
 
@@ -2021,6 +2286,49 @@
 						</div>
 					</div>
 
+					<!-- Active Manual Release Banner (If Configured) -->
+					{#if isManualRelease && releaseDetail}
+						<div class="rounded-2xl border border-emerald-500/50 bg-emerald-950/40 p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+							<div class="flex items-center gap-3 min-w-0">
+								<div class="h-12 w-12 rounded-xl overflow-hidden bg-neutral-900 border border-emerald-700/60 shrink-0">
+									{#if releaseDetail.cover_url}
+										<img src={releaseDetail.cover_url} alt="" class="h-full w-full object-cover" />
+									{:else}
+										<Music class="h-6 w-6 text-emerald-400 m-auto mt-3" />
+									{/if}
+								</div>
+								<div class="min-w-0">
+									<div class="flex items-center gap-2">
+										<span class="text-xs font-bold text-white truncate">{releaseDetail.title}</span>
+										<span class="rounded bg-emerald-900/80 border border-emerald-500/60 px-1.5 py-0.2 text-[9px] font-bold text-emerald-300">
+											Manual Release Ready
+										</span>
+									</div>
+									<p class="text-[11px] text-neutral-300 truncate">
+										{releaseDetail.artist} {releaseDetail.release_year ? `(${releaseDetail.release_year})` : ''} • {releaseDetail.tracks.length} songs
+									</p>
+								</div>
+							</div>
+
+							<div class="flex items-center gap-2 shrink-0">
+								<button
+									type="button"
+									onclick={openManualMetadataEditor}
+									class="rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-bold text-neutral-200 border border-neutral-700 transition cursor-pointer"
+								>
+									Edit Metadata
+								</button>
+								<button
+									type="button"
+									onclick={() => (taggerStep = 2)}
+									class="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-1.5 text-xs font-black text-white shadow-md hover:brightness-110 active:scale-95 transition cursor-pointer"
+								>
+									<span>Connect Songs (Step 2) ➔</span>
+								</button>
+							</div>
+						</div>
+					{/if}
+
 					<!-- Candidate Releases Selection Grid -->
 					{#if candidateReleases.length > 0}
 						<div class="space-y-2">
@@ -2134,15 +2442,27 @@
 		<div class="rounded-2xl border border-neutral-800 bg-neutral-900/90 px-3 py-2 backdrop-blur-xl shadow-lg flex flex-wrap items-center justify-between gap-3 shrink-0">
 			<!-- Return to Step 1 + Album Details -->
 			<div class="flex items-center gap-3 min-w-0 flex-1">
-				<button
-					type="button"
-					onclick={() => (taggerStep = 1)}
-					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-bold text-neutral-200 border border-neutral-700 transition cursor-pointer shrink-0"
-					title="Go back to Step 1 to pick a different release edition or album"
-				>
-					<ArrowLeftRight class="h-3.5 w-3.5 text-emerald-400" />
-					<span>← Change Release</span>
-				</button>
+				{#if isManualRelease}
+					<button
+						type="button"
+						onclick={openManualMetadataEditor}
+						class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-bold text-emerald-300 border border-emerald-700/60 transition cursor-pointer shrink-0"
+						title="Open manual metadata editor to adjust titles, artist, or add songs"
+					>
+						<Pencil class="h-3.5 w-3.5 text-emerald-400" />
+						<span>← Edit Metadata</span>
+					</button>
+				{:else}
+					<button
+						type="button"
+						onclick={() => (taggerStep = 1)}
+						class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-xs font-bold text-neutral-200 border border-neutral-700 transition cursor-pointer shrink-0"
+						title="Go back to Step 1 to pick a different release edition or album"
+					>
+						<ArrowLeftRight class="h-3.5 w-3.5 text-emerald-400" />
+						<span>← Change Release</span>
+					</button>
+				{/if}
 
 				<!-- Mini Artwork & Album Title -->
 				<div class="flex items-center gap-2 min-w-0 truncate">
@@ -2370,7 +2690,7 @@
 								<div class="w-10 text-center shrink-0">Match</div>
 								<!-- Subcolumn 2 Header -->
 								<div class="flex-1 min-w-0 flex items-center justify-between gap-1.5 truncate">
-									<span class="truncate">MusicBrainz Track</span>
+									<span class="truncate">{isManualRelease ? 'Manual Release Track' : 'MusicBrainz Track'}</span>
 									<span class="w-8 text-right shrink-0">Time</span>
 								</div>
 							</div>
@@ -3009,9 +3329,9 @@
 							<div class="grid grid-cols-12 gap-2 px-3 py-1.5 bg-neutral-900/80 border-b border-neutral-800 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
 								<span class="col-span-1 text-center">#</span>
 								<span class="col-span-1 text-center">Disc</span>
-								<span class="col-span-3">Title *</span>
+								<span class="col-span-4">Title *</span>
 								<span class="col-span-3">Artist</span>
-								<span class="col-span-3">Choose Audio File</span>
+								<span class="col-span-2 text-center">File Link</span>
 								<span class="col-span-1 text-right">Actions</span>
 							</div>
 
@@ -3039,7 +3359,7 @@
 										</div>
 
 										<!-- Title Input -->
-										<div class="col-span-3">
+										<div class="col-span-4">
 											<input
 												type="text"
 												bind:value={tr.title}
@@ -3058,23 +3378,19 @@
 											/>
 										</div>
 
-										<!-- Audio File Dropdown Selector -->
-										<div class="col-span-3 relative">
-											<select
-												value={tr.filePath || ''}
-												onchange={(e) => handleTrackFileSelect(tr, e.currentTarget.value)}
-												class="w-full rounded-lg bg-neutral-900 border {tr.filePath ? 'border-emerald-700/70 text-emerald-300 font-medium' : 'border-amber-700/60 text-amber-400/90'} px-2 py-1 text-xs focus:outline-none focus:border-emerald-500 cursor-pointer truncate"
-												title={tr.filePath || 'No audio file assigned (Missing Song)'}
-											>
-												<option value="">— No File (Missing Track) —</option>
-												{#each manualAvailableFiles as file}
-													{@const isAssignedToOther = manualTracksList.some((other) => other.id !== tr.id && other.filePath === file.filePath)}
-													{@const assignedTrack = isAssignedToOther ? manualTracksList.find((other) => other.id !== tr.id && other.filePath === file.filePath) : null}
-													<option value={file.filePath}>
-														🎵 {file.filename} {isAssignedToOther ? `(Track ${assignedTrack?.trackNumber})` : ''}
-													</option>
-												{/each}
-											</select>
+										<!-- File Link Status / Quick Selector -->
+										<div class="col-span-2 flex items-center justify-center min-w-0">
+											{#if tr.filePath}
+												<span class="truncate px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-mono text-[10px] flex items-center gap-1 w-full min-w-0" title={tr.filePath}>
+													<CheckCircle2 class="h-3 w-3 shrink-0 text-emerald-400" />
+													<span class="truncate">{tr.filename || tr.filePath.split('/').pop()}</span>
+												</span>
+											{:else}
+												<span class="truncate px-1.5 py-0.5 rounded bg-amber-950/40 border border-amber-800/40 text-amber-400/90 font-mono text-[10px] flex items-center justify-center gap-1 w-full">
+													<AlertTriangle class="h-3 w-3 shrink-0 text-amber-400" />
+													<span>Unassigned</span>
+												</span>
+											{/if}
 										</div>
 
 										<!-- Actions (Move Up, Move Down, Delete) -->
@@ -3123,7 +3439,7 @@
 								bind:checked={manualOptWriteAudioTags}
 								class="rounded border-neutral-700 bg-neutral-900 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
 							/>
-							<span>Write audio file tags</span>
+							<span>Write audio tags</span>
 						</label>
 
 						<label class="flex items-center gap-1.5 cursor-pointer">
@@ -3132,7 +3448,7 @@
 								bind:checked={manualOptRenameFiles}
 								class="rounded border-neutral-700 bg-neutral-900 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
 							/>
-							<span>Rename files to clean pattern</span>
+							<span>Rename files</span>
 						</label>
 
 						{#if taggerMode === 'folders'}
@@ -3142,17 +3458,17 @@
 									bind:checked={manualOptImportToVault}
 									class="rounded border-neutral-700 bg-neutral-900 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
 								/>
-								<span>Import into Trax Vault</span>
+								<span>Import into Vault</span>
 							</label>
 						{/if}
 					</div>
 
 					<!-- Actions -->
-					<div class="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+					<div class="flex items-center gap-2 w-full sm:w-auto justify-end">
 						<button
 							type="button"
 							onclick={() => (isManualEditorOpen = false)}
-							class="rounded-xl border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 px-4 py-2 text-xs font-semibold text-neutral-300 transition cursor-pointer"
+							class="rounded-xl border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 px-3 py-2 text-xs font-semibold text-neutral-300 transition cursor-pointer"
 						>
 							Cancel
 						</button>
@@ -3161,15 +3477,25 @@
 							type="button"
 							onclick={saveManualTags}
 							disabled={isSavingManualTags}
-							class="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:brightness-110 active:scale-95 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer"
+							class="rounded-xl border border-neutral-700 bg-neutral-800/90 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-200 hover:text-white transition cursor-pointer"
+							title="Save metadata without visual connector"
 						>
 							{#if isSavingManualTags}
-								<RefreshCw class="h-3.5 w-3.5 animate-spin" />
-								<span>Writing Tags...</span>
+								<RefreshCw class="h-3 w-3 animate-spin inline mr-1" />
+								<span>Saving...</span>
 							{:else}
-								<Check class="h-3.5 w-3.5" />
-								<span>Save & Write Tags ({manualTracksList.length} songs)</span>
+								<span>Save Directly</span>
 							{/if}
+						</button>
+
+						<button
+							type="button"
+							onclick={proceedToConnectorFromManual}
+							class="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:brightness-110 active:scale-95 px-4 sm:px-5 py-2 text-xs font-black text-white shadow-lg shadow-emerald-600/30 transition cursor-pointer"
+							title="Open the full-screen Picard-style 2-column connector to drag & drop and assign files"
+						>
+							<SlidersHorizontal class="h-3.5 w-3.5 text-emerald-200" />
+							<span>Assign Songs in Connector (Step 2) ➔</span>
 						</button>
 					</div>
 				</div>
