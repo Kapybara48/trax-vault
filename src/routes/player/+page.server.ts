@@ -182,14 +182,12 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	const artists: PlayerArtist[] = Array.from(artistsMap.values())
 		.map((a) => {
 			const m = metaMap.get(a.name.toLowerCase());
-			const hasAvatar = m && (m.image_disk_path || m.image_url);
-			const token = encodeArtistId(a.name);
 			return {
 				name: a.name,
 				album_count: a.albums.length,
 				song_count: a.tracks.length,
 				cover_url: a.cover_url,
-				avatar_url: hasAvatar ? `/rest/getCoverArt.view?id=art-${token}` : null,
+				avatar_url: `/api/artists/${encodeURIComponent(a.name)}/avatar`,
 				biography: m?.biography || null,
 				musicbrainz_id: m?.musicbrainz_id || null,
 				lastfm_url: m?.lastfm_url || null,

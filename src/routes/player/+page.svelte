@@ -422,7 +422,7 @@
 				selectedArtist.musicbrainz_id = data.artist.musicBrainzId;
 				selectedArtist.lastfm_url = data.artist.lastFmUrl;
 				const ts = Date.now();
-				selectedArtist.avatar_url = `${data.artist.largeImageUrl}&_t=${ts}`;
+				selectedArtist.avatar_url = `/api/artists/${encodeURIComponent(selectedArtist.name)}/avatar?_t=${ts}`;
 				// Also sync in main artists list
 				const found = artists.find((a) => a.name.toLowerCase() === selectedArtist!.name.toLowerCase());
 				if (found) {
@@ -440,7 +440,7 @@
 
 	// Auto-fetch artist metadata on selection if not yet loaded
 	async function loadArtistMetadataIfMissing(art: PlayerArtist) {
-		if (art.biography && art.avatar_url) return;
+		if (art.biography) return;
 		try {
 			const res = await fetch(`/api/artists/${encodeURIComponent(art.name)}`);
 			if (res.ok) {
@@ -449,9 +449,7 @@
 					selectedArtist.biography = data.artist.biography;
 					selectedArtist.musicbrainz_id = data.artist.musicBrainzId;
 					selectedArtist.lastfm_url = data.artist.lastFmUrl;
-					if (!selectedArtist.avatar_url && data.artist.largeImageUrl) {
-						selectedArtist.avatar_url = data.artist.largeImageUrl;
-					}
+					selectedArtist.avatar_url = `/api/artists/${encodeURIComponent(art.name)}/avatar?_t=${Date.now()}`;
 				}
 			}
 		} catch {}
@@ -1026,7 +1024,19 @@
 							<!-- Artist Avatar -->
 							<div class="relative w-11 h-11 rounded-full overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm flex items-center justify-center">
 								{#if artist.avatar_url || artist.cover_url}
-									<img src={artist.avatar_url || artist.cover_url} alt={artist.name} class="w-full h-full object-cover" />
+									<img
+										src={artist.avatar_url || artist.cover_url}
+										alt={artist.name}
+										class="w-full h-full object-cover"
+										onerror={(e) => {
+											const img = e.currentTarget as HTMLImageElement;
+											if (artist.cover_url && img.src !== artist.cover_url) {
+												img.src = artist.cover_url;
+											} else {
+												img.style.display = 'none';
+											}
+										}}
+									/>
 								{:else}
 									<User class="w-5 h-5 text-neutral-500" />
 								{/if}
@@ -1963,7 +1973,19 @@
 						<!-- Large Artist Circular Avatar -->
 						<div class="relative group w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden bg-neutral-950 shadow-2xl border-2 border-neutral-700/60 shrink-0 flex items-center justify-center">
 							{#if selectedArtist.avatar_url || selectedArtist.cover_url}
-								<img src={selectedArtist.avatar_url || selectedArtist.cover_url} alt={selectedArtist.name} class="w-full h-full object-cover" />
+								<img
+									src={selectedArtist.avatar_url || selectedArtist.cover_url}
+									alt={selectedArtist.name}
+									class="w-full h-full object-cover"
+									onerror={(e) => {
+										const img = e.currentTarget as HTMLImageElement;
+										if (selectedArtist?.cover_url && img.src !== selectedArtist.cover_url) {
+											img.src = selectedArtist.cover_url;
+										} else {
+											img.style.display = 'none';
+										}
+									}}
+								/>
 							{:else}
 								<User class="w-16 h-16 text-neutral-600" />
 							{/if}

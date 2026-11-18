@@ -945,6 +945,17 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added live alert progress banner in `/scan` during background enrichment.
       - Added direct shortcut link in `/settings` under the Subsonic & OpenSubsonic integration card.
 
+67. **Subsonic & Web Artist Avatar Image Serving Fix (v1.7.27)**:
+    - **Cover Art Auth Fix for Web Browsers (`/rest/getCoverArt.view`)**:
+      - In `src/routes/rest/[...endpoint]/+server.ts`, updated `getCoverArt` so unauthenticated requests without Subsonic `params.u` (such as direct web browser `<img src="..." />` tags) do not fail with error code 10 (`Parameter 'u' required`).
+    - **Dedicated Web Avatar Endpoint (`/api/artists/[name]/avatar`)**:
+      - Added `src/routes/api/artists/[name]/avatar/+server.ts` providing native high-res avatar streaming with cache headers directly to the web app.
+      - Updated `src/routes/player/+page.server.ts` and `src/routes/player/+page.svelte` to use `/api/artists/[name]/avatar`.
+    - **On-Demand Image Resolution in `handleSubsonicCoverArt`**:
+      - In `src/lib/server/subsonic/media.ts`, when requested for an artist (`rawId.startsWith('art-')` / `art_`), if metadata is not yet cached, it now automatically triggers `getOrFetchArtistInfo(artistName)` on-demand, downloads the portrait, caches it to disk, and serves it immediately.
+    - **Resilient Frontend Image Fallback**:
+      - Added `onerror` handlers on artist avatars in `/player` falling back to album covers or gracefully hiding missing images.
+
 ---
 
 ## 4. Workflows & Verification

@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { db, getAlbumById, getTrackById, getPlaylistTracks, getArtistMetadata, upsertArtistMetadata } from '$lib/server/db.js';
 import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/server/scanner.js';
 import { decodeArtistId } from './handlers.js';
-import { findLocalArtistImage, cacheArtistImageToDisk, encodeArtistId } from './artist.js';
+import { findLocalArtistImage, cacheArtistImageToDisk, encodeArtistId, getOrFetchArtistInfo } from './artist.js';
 
 const MIME_MAP: Record<string, string> = {
 	'.flac': 'audio/flac',
@@ -264,7 +264,17 @@ export async function handleSubsonicCoverArt(
 	} else if (rawId.startsWith('art-') || rawId.startsWith('art_')) {
 		const artToken = rawId.replace(/^art-/, '');
 		const artistName = decodeArtistId(artToken);
-		const meta = getArtistMetadata(artistName);
+		let meta = getArtistMetadata(artistName);
+
+		// If metadata is not cached yet, fetch it on-demand from MusicBrainz & Wikipedia
+		if (!meta || (!meta.image_disk_path && !meta.image_url)) {
+			try {
+				await getOrFetchArtistInfo(artistName);
+				meta = getArtistMetadata(artistName);
+			} catch (err) {
+				console.warn(`[getCoverArt] Failed to resolve artist info for "${artistName}":`, err);
+			}
+		}
 
 		// 1. Check cached disk path from metadata
 		if (meta?.image_disk_path && fs.existsSync(meta.image_disk_path)) {

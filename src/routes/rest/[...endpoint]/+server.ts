@@ -103,9 +103,11 @@ async function handleSubsonic(endpoint: string, request: Request, url: URL): Pro
 	}
 
 	if (action === 'getCoverArt') {
-		const auth = authenticateSubsonicRequest(params);
-		if (auth.error) {
-			return buildSubsonicError(auth.error.code, auth.error.message, format, jsonpCallback);
+		if (params.u) {
+			const auth = authenticateSubsonicRequest(params);
+			if (auth.error) {
+				return buildSubsonicError(auth.error.code, auth.error.message, format, jsonpCallback);
+			}
 		}
 		return handleSubsonicCoverArt(params, request.headers);
 	}
