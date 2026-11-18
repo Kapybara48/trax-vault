@@ -588,6 +588,17 @@
 							<span class="text-purple-300 font-semibold">Enabled</span>
 						</div>
 
+						<div class="flex items-center justify-between">
+							<span class="text-neutral-400">Artist Metadata:</span>
+							<a
+								href="/scan"
+								class="text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 text-[11px]"
+							>
+								<span>MusicBrainz Enriched</span>
+								<ExternalLink class="h-2.5 w-2.5" />
+							</a>
+						</div>
+
 						{#if !data.authDisabled}
 							<form onsubmit={handleSyncSubsonic} class="mt-3 pt-3 border-t border-neutral-800/60 space-y-2">
 								<div class="flex items-center justify-between">

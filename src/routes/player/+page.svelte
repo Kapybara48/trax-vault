@@ -35,7 +35,9 @@
 		AlertTriangle,
 		Library,
 		Compass,
-		User
+		User,
+		RefreshCw,
+		Sparkles
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -371,6 +373,7 @@
 			selectedPlaylist = null;
 			albumTrackSearch = '';
 			mobilePlayerTab = 'tracks';
+			loadArtistMetadataIfMissing(found);
 		}
 	}
 
@@ -400,6 +403,58 @@
 		const shuffled = [...playable].sort(() => Math.random() - 0.5);
 		const parentAlbum = selectedArtist.albums.find((a) => a.id === shuffled[0].album_id) || selectedArtist.albums[0];
 		player.playTrack(shuffled[0], parentAlbum as any, shuffled);
+	}
+
+	let isRefreshingArtist = $state(false);
+
+	async function refreshCurrentArtist() {
+		if (!selectedArtist || isRefreshingArtist) return;
+		isRefreshingArtist = true;
+		try {
+			const res = await fetch('/api/artists/refresh', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ artist: selectedArtist.name })
+			});
+			const data = await res.json();
+			if (data.success && data.artist) {
+				selectedArtist.biography = data.artist.biography;
+				selectedArtist.musicbrainz_id = data.artist.musicBrainzId;
+				selectedArtist.lastfm_url = data.artist.lastFmUrl;
+				const ts = Date.now();
+				selectedArtist.avatar_url = `${data.artist.largeImageUrl}&_t=${ts}`;
+				// Also sync in main artists list
+				const found = artists.find((a) => a.name.toLowerCase() === selectedArtist!.name.toLowerCase());
+				if (found) {
+					found.biography = data.artist.biography;
+					found.avatar_url = selectedArtist.avatar_url;
+					found.lastfm_url = data.artist.lastFmUrl;
+				}
+			}
+		} catch (err) {
+			console.error('Failed to refresh artist:', err);
+		} finally {
+			isRefreshingArtist = false;
+		}
+	}
+
+	// Auto-fetch artist metadata on selection if not yet loaded
+	async function loadArtistMetadataIfMissing(art: PlayerArtist) {
+		if (art.biography && art.avatar_url) return;
+		try {
+			const res = await fetch(`/api/artists/${encodeURIComponent(art.name)}`);
+			if (res.ok) {
+				const data = await res.json();
+				if (data.success && data.artist && selectedArtist?.name.toLowerCase() === art.name.toLowerCase()) {
+					selectedArtist.biography = data.artist.biography;
+					selectedArtist.musicbrainz_id = data.artist.musicBrainzId;
+					selectedArtist.lastfm_url = data.artist.lastFmUrl;
+					if (!selectedArtist.avatar_url && data.artist.largeImageUrl) {
+						selectedArtist.avatar_url = data.artist.largeImageUrl;
+					}
+				}
+			}
+		} catch {}
 	}
 
 	// Playlist Actions
@@ -970,8 +1025,8 @@
 						>
 							<!-- Artist Avatar -->
 							<div class="relative w-11 h-11 rounded-full overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm flex items-center justify-center">
-								{#if artist.cover_url}
-									<img src={artist.cover_url} alt={artist.name} class="w-full h-full object-cover" />
+								{#if artist.avatar_url || artist.cover_url}
+									<img src={artist.avatar_url || artist.cover_url} alt={artist.name} class="w-full h-full object-cover" />
 								{:else}
 									<User class="w-5 h-5 text-neutral-500" />
 								{/if}
@@ -1907,8 +1962,8 @@
 					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-5">
 						<!-- Large Artist Circular Avatar -->
 						<div class="relative group w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden bg-neutral-950 shadow-2xl border-2 border-neutral-700/60 shrink-0 flex items-center justify-center">
-							{#if selectedArtist.cover_url}
-								<img src={selectedArtist.cover_url} alt={selectedArtist.name} class="w-full h-full object-cover" />
+							{#if selectedArtist.avatar_url || selectedArtist.cover_url}
+								<img src={selectedArtist.avatar_url || selectedArtist.cover_url} alt={selectedArtist.name} class="w-full h-full object-cover" />
 							{:else}
 								<User class="w-16 h-16 text-neutral-600" />
 							{/if}
@@ -1961,6 +2016,18 @@
 									<ListPlus class="w-4 h-4 text-emerald-400" />
 								</button>
 
+								<!-- Refresh Artist Metadata Button -->
+								<button
+									type="button"
+									onclick={refreshCurrentArtist}
+									disabled={isRefreshingArtist}
+									class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-neutral-300 hover:text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+									title="Re-fetch artist biography, avatar, and relations from MusicBrainz"
+								>
+									<RefreshCw class="w-3.5 h-3.5 text-emerald-400 {isRefreshingArtist ? 'animate-spin' : ''}" />
+									<span>{isRefreshingArtist ? 'Updating...' : 'Update Info'}</span>
+								</button>
+
 								<!-- Search in Artist Tracks -->
 								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-36' : 'w-52'}">
 									<Search class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -1972,6 +2039,44 @@
 									/>
 								</div>
 							</div>
+
+							<!-- Biography & External Links -->
+							{#if selectedArtist.biography}
+								<div class="mt-3 p-3 rounded-xl bg-neutral-900/70 border border-neutral-800/80 text-xs text-neutral-300 leading-relaxed text-left">
+									<div class="flex items-center justify-between mb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+										<span class="text-emerald-400">About {selectedArtist.name}</span>
+										<div class="flex items-center gap-2.5">
+											{#if selectedArtist.musicbrainz_id}
+												<a
+													href="https://musicbrainz.org/artist/{selectedArtist.musicbrainz_id}"
+													target="_blank"
+													rel="noreferrer"
+													class="text-neutral-400 hover:text-emerald-400 flex items-center gap-1"
+													title="View on MusicBrainz"
+												>
+													<span>MusicBrainz</span>
+													<ExternalLink class="w-2.5 h-2.5" />
+												</a>
+											{/if}
+											{#if selectedArtist.lastfm_url}
+												<a
+													href={selectedArtist.lastfm_url}
+													target="_blank"
+													rel="noreferrer"
+													class="text-neutral-400 hover:text-emerald-400 flex items-center gap-1"
+													title="View on Last.fm"
+												>
+													<span>Last.fm</span>
+													<ExternalLink class="w-2.5 h-2.5" />
+												</a>
+											{/if}
+										</div>
+									</div>
+									<p class="line-clamp-3 hover:line-clamp-none transition-all cursor-pointer font-sans" title="Click to expand/collapse">
+										{selectedArtist.biography}
+									</p>
+								</div>
+							{/if}
 						</div>
 					</div>
 				</div>

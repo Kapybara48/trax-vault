@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { db, getAlbumsByArtist, getArtistMetadata, upsertArtistMetadata, findSimilarArtistsInLibrary } from '$lib/server/db.js';
+import { db, getAlbumsByArtist, getArtistMetadata, upsertArtistMetadata, findSimilarArtistsInLibrary, getDistinctArtists } from '$lib/server/db.js';
 import {
 	searchMusicBrainzArtist,
 	getMusicBrainzArtistDetail,
@@ -74,7 +74,7 @@ export function findLocalArtistImage(artistName: string): string | null {
 /**
  * Downloads and caches an artist image to the local cache directory
  */
-export async function cacheArtistImageToDisk(artistToken: string, imageUrl: string): Promise<string | null> {
+export async function cacheArtistImageToDisk(artistToken: string, imageUrl: string, overwrite: boolean = false): Promise<string | null> {
 	try {
 		const baseDir = process.env.DATA_DIR || './data';
 		const artistsDir = path.resolve(baseDir, 'artists');
@@ -83,7 +83,7 @@ export async function cacheArtistImageToDisk(artistToken: string, imageUrl: stri
 		}
 
 		const targetPath = path.resolve(artistsDir, `${artistToken}.jpg`);
-		if (fs.existsSync(targetPath)) {
+		if (!overwrite && fs.existsSync(targetPath)) {
 			return targetPath;
 		}
 
@@ -151,18 +151,19 @@ export interface ArtistInfoResult {
  */
 export async function getOrFetchArtistInfo(
 	artistName: string,
-	options: { count?: number; includeNotPresent?: boolean } = {}
+	options: { count?: number; includeNotPresent?: boolean; forceRefresh?: boolean } = {}
 ): Promise<ArtistInfoResult> {
 	const count = options.count ?? 20;
 	const includeNotPresent = options.includeNotPresent ?? true;
+	const forceRefresh = options.forceRefresh ?? false;
 	const artistToken = encodeArtistId(artistName);
 
-	// 1. Check existing SQLite cache
+	// 1. Check existing SQLite cache (skip if forceRefresh)
 	const cached = getArtistMetadata(artistName);
 	const now = Date.now();
 	const isFresh = cached && (now - new Date(cached.updated_at).getTime() < 30 * 24 * 60 * 60 * 1000);
 
-	if (cached && isFresh && cached.biography) {
+	if (!forceRefresh && cached && isFresh && cached.biography) {
 		let similar: SimilarArtist[] = [];
 		if (cached.similar_artists) {
 			try {
@@ -325,7 +326,7 @@ export async function getOrFetchArtistInfo(
 
 	// Trigger asynchronous image caching in background if external URL is available
 	if (imageUrl && !localDiskPath) {
-		cacheArtistImageToDisk(artistToken, imageUrl).then((diskPath) => {
+		cacheArtistImageToDisk(artistToken, imageUrl, forceRefresh).then((diskPath) => {
 			if (diskPath) {
 				upsertArtistMetadata({ name: artistName, image_disk_path: diskPath });
 			}
@@ -344,4 +345,99 @@ export async function getOrFetchArtistInfo(
 		largeImageUrl: imgRef,
 		similarArtists: finalSimilar
 	};
+}
+
+export interface EnrichmentStatus {
+	running: boolean;
+	current: number;
+	total: number;
+	currentArtist: string;
+	successCount: number;
+	errorCount: number;
+	startedAt: number | null;
+	completedAt: number | null;
+}
+
+let enrichmentStatus: EnrichmentStatus = {
+	running: false,
+	current: 0,
+	total: 0,
+	currentArtist: '',
+	successCount: 0,
+	errorCount: 0,
+	startedAt: null,
+	completedAt: null
+};
+
+let abortController: AbortController | null = null;
+
+export function getEnrichmentStatus(): EnrichmentStatus {
+	return { ...enrichmentStatus };
+}
+
+export function cancelBulkArtistEnrichment(): void {
+	if (abortController) {
+		abortController.abort();
+	}
+	enrichmentStatus.running = false;
+	enrichmentStatus.completedAt = Date.now();
+}
+
+export function startBulkArtistEnrichment(options: { forceRefresh?: boolean } = {}): { started: boolean; total: number; message: string } {
+	if (enrichmentStatus.running) {
+		return { started: false, total: enrichmentStatus.total, message: 'Enrichment is already in progress' };
+	}
+
+	const rawArtists = getDistinctArtists();
+	if (rawArtists.length === 0) {
+		return { started: false, total: 0, message: 'No artists found in library' };
+	}
+
+	enrichmentStatus = {
+		running: true,
+		current: 0,
+		total: rawArtists.length,
+		currentArtist: '',
+		successCount: 0,
+		errorCount: 0,
+		startedAt: Date.now(),
+		completedAt: null
+	};
+
+	abortController = new AbortController();
+	const signal = abortController.signal;
+
+	// Run in background without blocking response
+	(async () => {
+		for (let i = 0; i < rawArtists.length; i++) {
+			if (signal.aborted) break;
+			const art = rawArtists[i];
+			enrichmentStatus.current = i + 1;
+			enrichmentStatus.currentArtist = art.name;
+
+			try {
+				await getOrFetchArtistInfo(art.name, {
+					forceRefresh: options.forceRefresh ?? false
+				});
+				enrichmentStatus.successCount++;
+			} catch (err) {
+				console.warn(`[Bulk Enrichment] Failed to enrich "${art.name}":`, err);
+				enrichmentStatus.errorCount++;
+			}
+
+			// Polite throttle between artists
+			if (i < rawArtists.length - 1 && !signal.aborted) {
+				await new Promise((r) => setTimeout(r, 800));
+			}
+		}
+
+		enrichmentStatus.running = false;
+		enrichmentStatus.completedAt = Date.now();
+	})().catch((err) => {
+		console.error('[Bulk Enrichment] Unexpected runner error:', err);
+		enrichmentStatus.running = false;
+		enrichmentStatus.completedAt = Date.now();
+	});
+
+	return { started: true, total: rawArtists.length, message: `Started enrichment for ${rawArtists.length} artists` };
 }

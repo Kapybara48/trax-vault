@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types.js';
 import { db, getAlbums, getUserPlaylists } from '$lib/server/db.js';
+import { encodeArtistId } from '$lib/server/subsonic/artist.js';
 import type { Album, Track, Playlist } from '$lib/types/index.js';
 
 export interface PlayerAlbum extends Album {
@@ -18,6 +19,10 @@ export interface PlayerArtist {
 	album_count: number;
 	song_count: number;
 	cover_url: string | null;
+	avatar_url?: string | null;
+	biography?: string | null;
+	musicbrainz_id?: string | null;
+	lastfm_url?: string | null;
 	albums: PlayerAlbum[];
 	tracks: Track[];
 }
@@ -160,15 +165,38 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		}
 	}
 
+	// Query cached artist metadata
+	const rawMeta = db.prepare('SELECT name, biography, musicbrainz_id, lastfm_url, image_url, image_disk_path FROM artist_metadata').all() as Array<{
+		name: string;
+		biography?: string | null;
+		musicbrainz_id?: string | null;
+		lastfm_url?: string | null;
+		image_url?: string | null;
+		image_disk_path?: string | null;
+	}>;
+	const metaMap = new Map<string, typeof rawMeta[0]>();
+	for (const m of rawMeta) {
+		metaMap.set(m.name.toLowerCase(), m);
+	}
+
 	const artists: PlayerArtist[] = Array.from(artistsMap.values())
-		.map((a) => ({
-			name: a.name,
-			album_count: a.albums.length,
-			song_count: a.tracks.length,
-			cover_url: a.cover_url,
-			albums: a.albums,
-			tracks: a.tracks
-		}))
+		.map((a) => {
+			const m = metaMap.get(a.name.toLowerCase());
+			const hasAvatar = m && (m.image_disk_path || m.image_url);
+			const token = encodeArtistId(a.name);
+			return {
+				name: a.name,
+				album_count: a.albums.length,
+				song_count: a.tracks.length,
+				cover_url: a.cover_url,
+				avatar_url: hasAvatar ? `/rest/getCoverArt.view?id=art-${token}` : null,
+				biography: m?.biography || null,
+				musicbrainz_id: m?.musicbrainz_id || null,
+				lastfm_url: m?.lastfm_url || null,
+				albums: a.albums,
+				tracks: a.tracks
+			};
+		})
 		.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
 	return {

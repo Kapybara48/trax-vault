@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import type { PageData } from './$types.js';
 	import type { Album, ScannedAlbum, ScannedTrack } from '$lib/types/index.js';
 	import {
@@ -30,7 +31,9 @@
 		RotateCcw,
 		Tag,
 		Trash2,
-		X
+		X,
+		RefreshCw,
+		Users
 	} from '@lucide/svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
@@ -54,6 +57,96 @@
 	let mergeTargetScannedKey = $state<string>('');
 	let mergeOverwriteTags = $state(true);
 	let isMerging = $state(false);
+
+	// Bulk Artist Enrichment State
+	let isEnrichModalOpen = $state(false);
+	let isEnrichForceRefresh = $state(false);
+	let enrichStatus = $state<{
+		running: boolean;
+		current: number;
+		total: number;
+		currentArtist: string;
+		successCount: number;
+		errorCount: number;
+		startedAt: number | null;
+		completedAt: number | null;
+	}>({
+		running: false,
+		current: 0,
+		total: 0,
+		currentArtist: '',
+		successCount: 0,
+		errorCount: 0,
+		startedAt: null,
+		completedAt: null
+	});
+	let enrichPollInterval: ReturnType<typeof setInterval> | null = null;
+
+	async function fetchEnrichStatus() {
+		try {
+			const res = await fetch('/api/artists/enrich-all');
+			if (res.ok) {
+				enrichStatus = await res.json();
+				if (!enrichStatus.running && enrichPollInterval) {
+					clearInterval(enrichPollInterval);
+					enrichPollInterval = null;
+				}
+			}
+		} catch {}
+	}
+
+	function openEnrichModal() {
+		isEnrichModalOpen = true;
+		fetchEnrichStatus();
+		if (!enrichPollInterval) {
+			enrichPollInterval = setInterval(fetchEnrichStatus, 1000);
+		}
+	}
+
+	async function startEnrichment() {
+		try {
+			const res = await fetch('/api/artists/enrich-all', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ forceRefresh: isEnrichForceRefresh })
+			});
+			const data = await res.json();
+			if (data.started) {
+				fetchEnrichStatus();
+				if (!enrichPollInterval) {
+					enrichPollInterval = setInterval(fetchEnrichStatus, 1000);
+				}
+			}
+		} catch (err) {
+			console.error('Failed to start enrichment:', err);
+		}
+	}
+
+	async function cancelEnrichment() {
+		try {
+			await fetch('/api/artists/enrich-all', { method: 'DELETE' });
+			fetchEnrichStatus();
+		} catch {}
+	}
+
+	onMount(() => {
+		fetch('/api/artists/enrich-all')
+			.then((r) => r.json())
+			.then((st) => {
+				if (st.running) {
+					enrichStatus = st;
+					enrichPollInterval = setInterval(fetchEnrichStatus, 1000);
+				}
+			})
+			.catch(() => {});
+	});
+
+	onDestroy(() => {
+		if (enrichPollInterval) {
+			clearInterval(enrichPollInterval);
+			enrichPollInterval = null;
+		}
+	});
 
 	function normKey(str: string): string {
 		return (str || '')
@@ -649,8 +742,49 @@
 				<FolderSync class="h-4 w-4 {isScanning ? 'animate-spin text-emerald-400' : ''}" />
 				<span>{isScanning ? 'Scanning Library...' : 'Full Scan / Rescan Library'}</span>
 			</button>
+
+			<button
+				type="button"
+				onclick={openEnrichModal}
+				class="flex items-center gap-2 rounded-xl bg-neutral-800 border border-neutral-700/60 px-4 py-2.5 text-xs font-bold text-neutral-200 transition hover:bg-neutral-700 hover:border-emerald-500/40 cursor-pointer"
+				title="Bulk fetch artist biographies, official portraits, and relationships from MusicBrainz"
+			>
+				<Sparkles class="h-4 w-4 text-emerald-400" />
+				<span>Enrich Artists (MusicBrainz)</span>
+			</button>
 		</div>
 	</div>
+
+	<!-- Live Artist Enrichment Progress Alert -->
+	{#if enrichStatus.running}
+		<div class="mb-6 rounded-2xl border border-teal-500/40 bg-teal-950/30 p-4 sm:p-5 text-xs text-teal-200 flex flex-col sm:flex-row items-start sm:items-center gap-3.5 shadow-xl">
+			<RefreshCw class="h-6 w-6 text-emerald-400 animate-spin shrink-0 mt-0.5 sm:mt-0" />
+			<div class="flex-1 min-w-0 w-full">
+				<div class="flex items-center justify-between font-bold text-white text-sm mb-1">
+					<span>Enriching Artist Metadata ({enrichStatus.current}/{enrichStatus.total})...</span>
+					<span class="text-xs text-emerald-300 font-mono">
+						{Math.round((enrichStatus.current / (enrichStatus.total || 1)) * 100)}%
+					</span>
+				</div>
+				<div class="text-xs text-neutral-300 truncate">
+					Current artist: <span class="font-bold text-white">{enrichStatus.currentArtist}</span>
+				</div>
+				<div class="w-full bg-neutral-900 rounded-full h-1.5 mt-2.5 overflow-hidden border border-neutral-800">
+					<div
+						class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300"
+						style="width: {Math.round((enrichStatus.current / (enrichStatus.total || 1)) * 100)}%"
+					></div>
+				</div>
+			</div>
+			<button
+				type="button"
+				onclick={cancelEnrichment}
+				class="shrink-0 px-3.5 py-1.5 rounded-xl bg-neutral-900 border border-neutral-700 hover:bg-neutral-800 text-xs font-semibold text-neutral-300 cursor-pointer transition"
+			>
+				Cancel
+			</button>
+		</div>
+	{/if}
 
 	<!-- Live Scanning Progress Alert -->
 	{#if isScanning}
@@ -1445,6 +1579,129 @@ volumes:
 					<Layers class="h-3.5 w-3.5" />
 					<span>{isMerging ? 'Merging...' : 'Merge & Upgrade Now'}</span>
 				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Bulk Artist Metadata Enrichment Modal -->
+{#if isEnrichModalOpen}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+		role="dialog"
+		aria-modal="true"
+	>
+		<div class="w-full max-w-lg rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden flex flex-col">
+			<!-- Modal Header -->
+			<div class="flex items-center justify-between border-b border-neutral-800 px-5 py-4 bg-neutral-950/60">
+				<div class="flex items-center gap-2.5">
+					<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-950 border border-emerald-500/40 text-emerald-400">
+						<Sparkles class="h-4 w-4" />
+					</div>
+					<div>
+						<h3 class="text-sm font-bold text-white">Enrich All Artists via MusicBrainz</h3>
+						<p class="text-[11px] text-neutral-400">Fetch biographies, portraits, and relationships for your library</p>
+					</div>
+				</div>
+				<button
+					type="button"
+					onclick={() => (isEnrichModalOpen = false)}
+					class="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+				>
+					<X class="h-4 w-4" />
+				</button>
+			</div>
+
+			<!-- Modal Body -->
+			<div class="p-5 space-y-4 text-xs text-neutral-300">
+				<p class="leading-relaxed">
+					This tool scans every unique artist in your library, searches MusicBrainz for their canonical artist ID and relationships, retrieves verified clean biographies from Wikipedia, and caches official artist portraits to disk.
+				</p>
+
+				{#if enrichStatus.running}
+					<div class="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 space-y-2.5">
+						<div class="flex items-center justify-between font-bold text-white text-xs">
+							<span class="flex items-center gap-2">
+								<RefreshCw class="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+								Enriching ({enrichStatus.current}/{enrichStatus.total})...
+							</span>
+							<span class="text-emerald-300 font-mono">
+								{Math.round((enrichStatus.current / (enrichStatus.total || 1)) * 100)}%
+							</span>
+						</div>
+						<div class="text-[11px] text-neutral-300 truncate">
+							Current artist: <span class="font-bold text-white">{enrichStatus.currentArtist}</span>
+						</div>
+						<div class="w-full bg-neutral-900 rounded-full h-2 overflow-hidden border border-neutral-800">
+							<div
+								class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300"
+								style="width: {Math.round((enrichStatus.current / (enrichStatus.total || 1)) * 100)}%"
+							></div>
+						</div>
+						<div class="flex items-center justify-between text-[10px] text-neutral-400 font-mono pt-1">
+							<span>Success: {enrichStatus.successCount}</span>
+							{#if enrichStatus.errorCount > 0}
+								<span class="text-amber-400">Failed / Not found: {enrichStatus.errorCount}</span>
+							{/if}
+						</div>
+					</div>
+				{:else if enrichStatus.completedAt && !enrichStatus.running}
+					<div class="rounded-xl border border-emerald-500/40 bg-emerald-950/30 p-4 space-y-1">
+						<div class="flex items-center gap-2 font-bold text-emerald-300 text-xs">
+							<CheckCircle2 class="w-4 h-4 text-emerald-400" />
+							<span>Enrichment Complete!</span>
+						</div>
+						<p class="text-[11px] text-neutral-300">
+							Successfully processed {enrichStatus.successCount} of {enrichStatus.total} artists. Subsonic clients and the web player can now display complete biographies and portraits.
+						</p>
+					</div>
+				{/if}
+
+				{#if !enrichStatus.running}
+					<div class="rounded-xl border border-neutral-800 bg-neutral-950/50 p-3.5 space-y-3">
+						<label class="flex items-start gap-2.5 cursor-pointer">
+							<CustomCheckbox
+								checked={isEnrichForceRefresh}
+								onchange={() => (isEnrichForceRefresh = !isEnrichForceRefresh)}
+							/>
+							<div>
+								<div class="font-semibold text-white text-xs">Force Re-enrich All Artists</div>
+								<div class="text-[11px] text-neutral-400">
+									Bypass the 30-day cache and re-download fresh data and portraits for every artist.
+								</div>
+							</div>
+						</label>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Modal Footer -->
+			<div class="flex items-center justify-end gap-2 border-t border-neutral-800 bg-neutral-950/60 px-5 py-3.5">
+				{#if enrichStatus.running}
+					<button
+						type="button"
+						onclick={cancelEnrichment}
+						class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 transition cursor-pointer"
+					>
+						Cancel
+					</button>
+				{:else}
+					<button
+						type="button"
+						onclick={() => (isEnrichModalOpen = false)}
+						class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 transition cursor-pointer"
+					>
+						Close
+					</button>
+					<button
+						type="button"
+						onclick={startEnrichment}
+						class="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 hover:bg-emerald-500 transition cursor-pointer"
+					>
+						<Sparkles class="h-3.5 w-3.5" />
+						<span>{enrichStatus.completedAt ? 'Run Again' : 'Start Enrichment'}</span>
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>

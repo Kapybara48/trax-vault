@@ -931,6 +931,20 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Subsonic XML DTD Compliance (`src/lib/server/subsonic/format.ts`)**:
       - Configured `SUBSONIC_CHILD_ELEMENTS` in `objectToXml` ensuring `biography`, `musicBrainzId`, `lastFmUrl`, `smallImageUrl`, `mediumImageUrl`, and `largeImageUrl` are formatted as XML child elements per Subsonic DTD.
 
+66. **Manual Artist Refresh Button & Bulk MusicBrainz Enrichment Tool (v1.7.26)**:
+    - **Single Artist Force Refresh (`/player` & API)**:
+      - Added `POST /api/artists/refresh` endpoint supporting `{ artist: string }` which triggers `getOrFetchArtistInfo(artist, { forceRefresh: true })`, bypassing the 30-day cache to fetch fresh data and portraits.
+      - Added `GET /api/artists/[name]` returning rich artist details.
+      - In `/player` artist view, added "Update Info" / "Refresh Artist Info" button with animated spinner and live state synchronization.
+      - Added artist avatar, verified biography snippet (expandable), and MusicBrainz / Last.fm direct links in `/player`.
+    - **Bulk Artist Metadata Enrichment Tool (`/scan` & `/settings`)**:
+      - Added background bulk enrichment engine (`startBulkArtistEnrichment`, `getEnrichmentStatus`, `cancelBulkArtistEnrichment`) in `src/lib/server/subsonic/artist.ts`.
+      - Added endpoints `GET / POST / DELETE /api/artists/enrich-all`.
+      - Added "Enrich Artists (MusicBrainz)" action button in `/scan` header.
+      - Added `EnrichArtistsModal` with optional force-refresh toggle, real-time percentage progress bar, current artist indicator, and cancel support.
+      - Added live alert progress banner in `/scan` during background enrichment.
+      - Added direct shortcut link in `/settings` under the Subsonic & OpenSubsonic integration card.
+
 ---
 
 ## 4. Workflows & Verification
