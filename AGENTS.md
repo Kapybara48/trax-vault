@@ -914,6 +914,23 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Instant Yield on Branch**: In `.forgejo/workflows/docker-publish.yml`, eliminated the sleep loop. If a release tag points to the commit, `main` checks if the image exists: if yes, it copies it in ~3s; if not, it yields immediately (`exit 0`), instantly releasing the runner for the tag job.
     - **Tag-First Push Position**: Pushing the tag first (`git push origin vX.Y.Z && git push origin main`) ensures the tag job is positioned at the head of the runner queue.
 
+65. **MusicBrainz-Powered Subsonic & OpenSubsonic Artist Metadata, Avatars & Similar Artists (v1.7.25)**:
+    - **MusicBrainz Artist Metadata & Relationships**:
+      - Added `searchMusicBrainzArtist` and `getMusicBrainzArtistDetail` in `src/lib/server/musicbrainz.ts` resolving canonical MBIDs, disambiguation, country, type, tags/genres, and relationships (`url-rels` and `artist-rels`).
+      - Added `resolveWikimediaAndWikipedia`: resolves Wikimedia Commons direct images (`type: 'image'`) and Wikidata property `P18` official portraits, and extracts verified clean biographies from Wikipedia summary REST API (`type: 'wikipedia'` or via Wikidata sitelink).
+      - Added Last.fm profile linking and musical relationship mapping (band members, subgroups, spinoffs, and collaborations).
+    - **SQLite Database Caching (`artist_metadata` Table)**:
+      - Added `artist_metadata` SQLite table with idempotent schema migration storing `id`, `name`, `musicbrainz_id`, `disambiguation`, `biography`, `image_url`, `image_disk_path`, `lastfm_url`, `similar_artists`, and `updated_at`.
+      - Added queries `getArtistMetadata`, `upsertArtistMetadata`, and `findSimilarArtistsInLibrary`.
+      - Implemented 30-day cache lifetime delivering ~1ms subsequent response times for Subsonic clients.
+    - **Artist Avatars & Image Discovery (`getCoverArt.view`)**:
+      - In `src/lib/server/subsonic/media.ts`, updated `rawId.startsWith('art-')` / `art_` resolution: checks metadata disk cache, local companion images in music directory (`artist.jpg`, `artist.png`, etc.), downloads and caches remote Wikimedia/Deezer avatars to `./data/artists/${token}.jpg`, and falls back to album cover art.
+    - **Subsonic API Endpoints (`getArtists.view`, `getArtist.view`, `getArtistInfo.view`, `getArtistInfo2.view`)**:
+      - Updated `getArtists` and `getArtist` in `src/lib/server/subsonic/handlers.ts` to include `artistImageUrl` and `coverArt`.
+      - Updated `getArtistInfo` and `getArtistInfo2` to return full clean biographies, canonical MBIDs, Last.fm URLs, image URLs, and rich `similarArtist` arrays.
+    - **Subsonic XML DTD Compliance (`src/lib/server/subsonic/format.ts`)**:
+      - Configured `SUBSONIC_CHILD_ELEMENTS` in `objectToXml` ensuring `biography`, `musicBrainzId`, `lastFmUrl`, `smallImageUrl`, `mediumImageUrl`, and `largeImageUrl` are formatted as XML child elements per Subsonic DTD.
+
 ---
 
 ## 4. Workflows & Verification

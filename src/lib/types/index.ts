@@ -301,3 +301,26 @@ export interface LrcLibCandidate {
 	isExactMatch?: boolean;
 }
 
+export interface SimilarArtist {
+	id?: string;
+	name: string;
+	musicbrainz_id?: string | null;
+	albumCount?: number;
+	coverArt?: string;
+	artistImageUrl?: string;
+	role?: string;
+}
+
+export interface ArtistMetadata {
+	id: string;
+	name: string;
+	musicbrainz_id?: string | null;
+	disambiguation?: string | null;
+	biography?: string | null;
+	image_url?: string | null;
+	image_disk_path?: string | null;
+	lastfm_url?: string | null;
+	similar_artists?: string | null; // JSON array of SimilarArtist
+	updated_at: string;
+}
+

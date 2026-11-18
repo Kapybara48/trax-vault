@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { db, getAlbumById, getTrackById, getPlaylistTracks } from '$lib/server/db.js';
+import { db, getAlbumById, getTrackById, getPlaylistTracks, getArtistMetadata, upsertArtistMetadata } from '$lib/server/db.js';
 import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/server/scanner.js';
 import { decodeArtistId } from './handlers.js';
+import { findLocalArtistImage, cacheArtistImageToDisk, encodeArtistId } from './artist.js';
 
 const MIME_MAP: Record<string, string> = {
 	'.flac': 'audio/flac',
@@ -263,9 +264,47 @@ export async function handleSubsonicCoverArt(
 	} else if (rawId.startsWith('art-') || rawId.startsWith('art_')) {
 		const artToken = rawId.replace(/^art-/, '');
 		const artistName = decodeArtistId(artToken);
-		const album = db.prepare('SELECT id, cover_url FROM albums WHERE artist = ? AND cover_url IS NOT NULL LIMIT 1').get(artistName) as any;
-		if (album) {
-			imageDiskPath = parseCoverUrlToDiskPath(album.cover_url);
+		const meta = getArtistMetadata(artistName);
+
+		// 1. Check cached disk path from metadata
+		if (meta?.image_disk_path && fs.existsSync(meta.image_disk_path)) {
+			imageDiskPath = meta.image_disk_path;
+		}
+
+		// 2. Check local companion file in artist folders
+		if (!imageDiskPath) {
+			const localFound = findLocalArtistImage(artistName);
+			if (localFound) {
+				imageDiskPath = localFound;
+				upsertArtistMetadata({ name: artistName, image_disk_path: localFound });
+			}
+		}
+
+		// 3. Check data/artists/<token>.jpg
+		if (!imageDiskPath) {
+			const baseDir = process.env.DATA_DIR || './data';
+			const diskCacheFile = path.resolve(baseDir, 'artists', `${encodeArtistId(artistName)}.jpg`);
+			if (fs.existsSync(diskCacheFile)) {
+				imageDiskPath = diskCacheFile;
+				upsertArtistMetadata({ name: artistName, image_disk_path: diskCacheFile });
+			}
+		}
+
+		// 4. If remote image URL is present in metadata, download and cache
+		if (!imageDiskPath && meta?.image_url) {
+			const downloaded = await cacheArtistImageToDisk(encodeArtistId(artistName), meta.image_url);
+			if (downloaded && fs.existsSync(downloaded)) {
+				imageDiskPath = downloaded;
+				upsertArtistMetadata({ name: artistName, image_disk_path: downloaded });
+			}
+		}
+
+		// 5. Fallback: first album cover
+		if (!imageDiskPath) {
+			const album = db.prepare('SELECT id, cover_url FROM albums WHERE artist = ? AND cover_url IS NOT NULL LIMIT 1').get(artistName) as any;
+			if (album) {
+				imageDiskPath = parseCoverUrlToDiskPath(album.cover_url);
+			}
 		}
 	} else {
 		// Pure numeric ID fallback: try album first, then track

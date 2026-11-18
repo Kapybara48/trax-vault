@@ -303,3 +303,221 @@ export async function getMusicBrainzRelease(releaseId: string): Promise<MusicBra
 		return null;
 	}
 }
+
+export interface MusicBrainzArtistSearchItem {
+	id: string;
+	name: string;
+	type?: string;
+	country?: string;
+	disambiguation?: string;
+	score?: number;
+}
+
+export interface MusicBrainzArtistDetail {
+	id: string;
+	name: string;
+	type?: string;
+	country?: string;
+	disambiguation?: string;
+	imageUrl?: string;
+	wikidataId?: string;
+	wikipediaUrl?: string;
+	lastfmUrl?: string;
+	artistRelations: Array<{ type: string; name: string; mbid?: string }>;
+	tags: string[];
+}
+
+export async function searchMusicBrainzArtist(name: string): Promise<MusicBrainzArtistSearchItem | null> {
+	try {
+		const url = `https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(name)}&fmt=json`;
+		const res = await rateLimitedFetch(url);
+		if (!res.ok) return null;
+		const data = await res.json();
+		const artists = data.artists || [];
+		if (artists.length === 0) return null;
+
+		// Exact match preferred
+		const exact = artists.find((a: any) => a.name.toLowerCase() === name.toLowerCase());
+		const chosen = exact || artists[0];
+
+		return {
+			id: chosen.id,
+			name: chosen.name,
+			type: chosen.type,
+			country: chosen.country,
+			disambiguation: chosen.disambiguation,
+			score: chosen.score ? parseInt(chosen.score, 10) : undefined
+		};
+	} catch (err) {
+		console.warn(`[MusicBrainz] Error searching artist "${name}":`, err);
+		return null;
+	}
+}
+
+export async function getMusicBrainzArtistDetail(mbid: string): Promise<MusicBrainzArtistDetail | null> {
+	try {
+		const url = `https://musicbrainz.org/ws/2/artist/${mbid}?inc=url-rels+artist-rels+genres+tags&fmt=json`;
+		const res = await rateLimitedFetch(url);
+		if (!res.ok) return null;
+		const data = await res.json();
+
+		let imageUrl: string | undefined;
+		let wikidataId: string | undefined;
+		let wikipediaUrl: string | undefined;
+		let lastfmUrl: string | undefined;
+		const artistRelations: Array<{ type: string; name: string; mbid?: string }> = [];
+
+		if (Array.isArray(data.relations)) {
+			for (const rel of data.relations) {
+				const relType = (rel.type || '').toLowerCase();
+				const targetType = (rel['target-type'] || '').toLowerCase();
+				const resource = rel.url?.resource;
+
+				if (targetType === 'url' && resource) {
+					if (relType === 'image') {
+						imageUrl = resource;
+					} else if (relType === 'wikidata') {
+						const match = resource.match(/Q\d+/);
+						if (match) wikidataId = match[0];
+					} else if (relType === 'wikipedia') {
+						wikipediaUrl = resource;
+					} else if (relType === 'last.fm') {
+						lastfmUrl = resource;
+					}
+				} else if (targetType === 'artist' && rel.artist) {
+					artistRelations.push({
+						type: rel.type || 'related',
+						name: rel.artist.name,
+						mbid: rel.artist.id
+					});
+				}
+			}
+		}
+
+		const tags: string[] = [];
+		if (Array.isArray(data.tags)) {
+			tags.push(...data.tags.map((t: any) => t.name).filter(Boolean));
+		}
+		if (Array.isArray(data.genres)) {
+			tags.push(...data.genres.map((g: any) => g.name).filter(Boolean));
+		}
+
+		return {
+			id: data.id,
+			name: data.name,
+			type: data.type,
+			country: data.country,
+			disambiguation: data.disambiguation,
+			imageUrl,
+			wikidataId,
+			wikipediaUrl,
+			lastfmUrl,
+			artistRelations,
+			tags: Array.from(new Set(tags))
+		};
+	} catch (err) {
+		console.warn(`[MusicBrainz] Error fetching artist detail for ${mbid}:`, err);
+		return null;
+	}
+}
+
+/**
+ * Resolves Wikimedia high-resolution image and Wikipedia clean biography
+ */
+export async function resolveWikimediaAndWikipedia(
+	artistName: string,
+	wikidataId?: string,
+	wikipediaUrl?: string,
+	directImageUrl?: string
+): Promise<{ biography?: string; imageUrl?: string }> {
+	let resolvedImageUrl: string | undefined;
+	let wikiTitle: string | undefined;
+
+	// 1. If direct Wikimedia Commons file URL is present in MusicBrainz
+	if (directImageUrl && directImageUrl.includes('commons.wikimedia.org/wiki/File:')) {
+		const filename = directImageUrl.split('File:').pop();
+		if (filename) {
+			resolvedImageUrl = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(decodeURIComponent(filename))}?width=1200`;
+		}
+	}
+
+	// 2. If Wikidata ID is known, resolve sitelinks (Wikipedia title) and claims (P18 official image)
+	if (wikidataId) {
+		try {
+			const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks|claims&sitefilter=enwiki&format=json`;
+			const wdCtrl = new AbortController();
+			const wdTimer = setTimeout(() => wdCtrl.abort(), 6000);
+			try {
+				const wdRes = await fetch(wdUrl, {
+					signal: wdCtrl.signal,
+					headers: { 'User-Agent': USER_AGENT }
+				});
+				if (wdRes.ok) {
+					const wdData = await wdRes.json();
+					const entity = wdData.entities?.[wikidataId];
+
+					// Check Wikipedia title
+					if (entity?.sitelinks?.enwiki?.title) {
+						wikiTitle = entity.sitelinks.enwiki.title;
+					}
+
+					// Check image claim (P18) if not already resolved
+					if (!resolvedImageUrl && entity?.claims?.P18?.[0]?.mainsnak?.datavalue?.value) {
+						const p18File = entity.claims.P18[0].mainsnak.datavalue.value;
+						resolvedImageUrl = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(p18File)}?width=1200`;
+					}
+				}
+			} finally {
+				clearTimeout(wdTimer);
+			}
+		} catch (err) {
+			console.warn(`[Wikidata] Error resolving ${wikidataId}:`, err);
+		}
+	}
+
+	// 3. Fallback Wikipedia title from URL if not obtained from Wikidata
+	if (!wikiTitle && wikipediaUrl) {
+		const parts = wikipediaUrl.split('/wiki/');
+		if (parts.length > 1) {
+			wikiTitle = decodeURIComponent(parts[1].replace(/#.*$/, ''));
+		}
+	}
+
+	// Default fallback to artist name
+	if (!wikiTitle) {
+		wikiTitle = artistName;
+	}
+
+	let biography: string | undefined;
+
+	// 4. Fetch Wikipedia clean summary extract
+	try {
+		const wpUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`;
+		const wpCtrl = new AbortController();
+		const wpTimer = setTimeout(() => wpCtrl.abort(), 6000);
+		try {
+			const wpRes = await fetch(wpUrl, {
+				signal: wpCtrl.signal,
+				headers: { 'User-Agent': USER_AGENT }
+			});
+			if (wpRes.ok) {
+				const wpData = await wpRes.json();
+				if (wpData.extract) {
+					biography = wpData.extract;
+				}
+				if (!resolvedImageUrl && wpData.thumbnail?.source) {
+					resolvedImageUrl = wpData.thumbnail.source;
+				}
+			}
+		} finally {
+			clearTimeout(wpTimer);
+		}
+	} catch (err) {
+		console.warn(`[Wikipedia] Error fetching biography for "${wikiTitle}":`, err);
+	}
+
+	return {
+		biography,
+		imageUrl: resolvedImageUrl
+	};
+}

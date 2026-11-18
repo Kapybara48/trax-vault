@@ -5,6 +5,17 @@ const SUBSONIC_API_VERSION = '1.16.1';
 const SERVER_VERSION = APP_VERSION;
 const SERVER_TYPE = 'traxvault';
 
+const SUBSONIC_CHILD_ELEMENTS = new Set([
+	'biography',
+	'musicBrainzId',
+	'lastFmUrl',
+	'smallImageUrl',
+	'mediumImageUrl',
+	'largeImageUrl',
+	'notes',
+	'lyrics'
+]);
+
 function escapeXmlAttr(str: any): string {
 	if (str === null || str === undefined) return '';
 	return String(str)
@@ -47,6 +58,12 @@ function objectToXml(tagName: string, obj: any, indent: string = '  '): string {
 
 		if (key === 'value' || key === 'content' || key === '_text') {
 			textContent = String(val);
+		} else if (SUBSONIC_CHILD_ELEMENTS.has(key)) {
+			if (val === '') {
+				children.push(`${indent}  <${key}/>\n`);
+			} else {
+				children.push(`${indent}  <${key}>${escapeXmlText(val)}</${key}>\n`);
+			}
 		} else if (typeof val === 'object') {
 			if (Array.isArray(val)) {
 				// e.g. "song": [...]

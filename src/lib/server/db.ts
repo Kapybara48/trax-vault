@@ -20,7 +20,8 @@ import type {
 	SearchFilters,
 	Playlist,
 	InternetRadioStation,
-	ScannedTrack
+	ScannedTrack,
+	ArtistMetadata
 } from '$lib/types/index.js';
 import { parseSearchQuery } from '$lib/search.js';
 import { stripLrcMetadataHeaders, normalizeString, computeStringSimilarity } from '$lib/utils.js';
@@ -296,7 +297,22 @@ db.exec(`
 		home_page_url TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS artist_metadata (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		musicbrainz_id TEXT,
+		disambiguation TEXT,
+		biography TEXT,
+		image_url TEXT,
+		image_disk_path TEXT,
+		lastfm_url TEXT,
+		similar_artists TEXT,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
 `);
+
+db.exec(`CREATE INDEX IF NOT EXISTS idx_artist_metadata_name ON artist_metadata(name COLLATE NOCASE);`);
 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_manually_checked ON tracks(manually_checked);`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tracks_is_missing ON tracks(album_id, is_missing);`);
@@ -1842,6 +1858,91 @@ export function getAlbumsByArtist(artist: string): Album[] {
 		WHERE a.artist = ?
 		ORDER BY a.release_year DESC, a.title COLLATE NOCASE ASC
 	`).all(artist) as Album[];
+}
+
+export function getArtistMetadata(artistName: string): ArtistMetadata | null {
+	return db.prepare(`
+		SELECT * FROM artist_metadata
+		WHERE name = ? COLLATE NOCASE
+	`).get(artistName) as ArtistMetadata | null;
+}
+
+export function upsertArtistMetadata(metadata: Partial<ArtistMetadata> & { name: string }): void {
+	const existing = getArtistMetadata(metadata.name);
+	const now = new Date().toISOString();
+	if (existing) {
+		db.prepare(`
+			UPDATE artist_metadata
+			SET musicbrainz_id = COALESCE(?, musicbrainz_id),
+			    disambiguation = COALESCE(?, disambiguation),
+			    biography = COALESCE(?, biography),
+			    image_url = COALESCE(?, image_url),
+			    image_disk_path = COALESCE(?, image_disk_path),
+			    lastfm_url = COALESCE(?, lastfm_url),
+			    similar_artists = COALESCE(?, similar_artists),
+			    updated_at = ?
+			WHERE id = ?
+		`).run(
+			metadata.musicbrainz_id ?? null,
+			metadata.disambiguation ?? null,
+			metadata.biography ?? null,
+			metadata.image_url ?? null,
+			metadata.image_disk_path ?? null,
+			metadata.lastfm_url ?? null,
+			metadata.similar_artists ?? null,
+			now,
+			existing.id
+		);
+	} else {
+		const id = metadata.id || `art_${Buffer.from(metadata.name.trim().toLowerCase()).toString('hex')}`;
+		db.prepare(`
+			INSERT INTO artist_metadata (
+				id, name, musicbrainz_id, disambiguation, biography,
+				image_url, image_disk_path, lastfm_url, similar_artists, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`).run(
+			id,
+			metadata.name.trim(),
+			metadata.musicbrainz_id ?? null,
+			metadata.disambiguation ?? null,
+			metadata.biography ?? null,
+			metadata.image_url ?? null,
+			metadata.image_disk_path ?? null,
+			metadata.lastfm_url ?? null,
+			metadata.similar_artists ?? null,
+			now
+		);
+	}
+}
+
+export function findSimilarArtistsInLibrary(artistName: string, limit: number = 20): Array<{ name: string; album_count: number }> {
+	const artistGenres = db.prepare(`
+		SELECT DISTINCT genre FROM albums
+		WHERE artist = ? AND genre IS NOT NULL AND TRIM(genre) != ''
+	`).all(artistName) as Array<{ genre: string }>;
+
+	if (artistGenres.length === 0) {
+		return db.prepare(`
+			SELECT artist as name, COUNT(id) as album_count
+			FROM albums
+			WHERE artist IS NOT NULL AND TRIM(artist) != '' AND artist != ?
+			GROUP BY artist
+			ORDER BY album_count DESC, artist COLLATE NOCASE ASC
+			LIMIT ?
+		`).all(artistName, limit) as any;
+	}
+
+	const genres = artistGenres.map((g) => g.genre);
+	const placeholders = genres.map(() => '?').join(',');
+
+	return db.prepare(`
+		SELECT artist as name, COUNT(id) as album_count
+		FROM albums
+		WHERE artist IS NOT NULL AND TRIM(artist) != '' AND artist != ? AND genre IN (${placeholders})
+		GROUP BY artist
+		ORDER BY album_count DESC, artist COLLATE NOCASE ASC
+		LIMIT ?
+	`).all(artistName, ...genres, limit) as any;
 }
 
 export function getRandomTracks(limit: number, genre?: string): Track[] {

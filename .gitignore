@@ -15,10 +15,12 @@ data/*.bak*
 data/*.key
 data/*.json
 data/covers/*
+data/artists/*
 data/picard-config/*
 data/picard-config/.*
 !data/.gitkeep
 !data/covers/.gitkeep
+!data/artists/.gitkeep
 !data/picard-config/.gitkeep
 
 # Music Library Folder

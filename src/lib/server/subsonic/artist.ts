@@ -1,0 +1,347 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import { db, getAlbumsByArtist, getArtistMetadata, upsertArtistMetadata, findSimilarArtistsInLibrary } from '$lib/server/db.js';
+import {
+	searchMusicBrainzArtist,
+	getMusicBrainzArtistDetail,
+	resolveWikimediaAndWikipedia
+} from '$lib/server/musicbrainz.js';
+import type { ArtistMetadata, SimilarArtist } from '$lib/types/index.js';
+
+export function encodeArtistId(name: string): string {
+	return 'art_' + Buffer.from(name, 'utf8').toString('hex');
+}
+
+export function decodeArtistId(id: string): string {
+	const cleanId = id.replace(/^art-/, '');
+	if (cleanId.startsWith('art_')) {
+		try {
+			return Buffer.from(cleanId.substring(4), 'hex').toString('utf8');
+		} catch {
+			return cleanId;
+		}
+	}
+	// Fallback: check if an album exists with this ID and use its artist
+	const numericId = parseInt(cleanId, 10);
+	if (!isNaN(numericId)) {
+		const row = db.prepare('SELECT artist FROM albums WHERE id = ?').get(numericId) as { artist: string } | undefined;
+		if (row?.artist) return row.artist;
+	}
+	return cleanId;
+}
+
+const ARTIST_IMAGE_NAMES = [
+	'artist.jpg',
+	'artist.jpeg',
+	'artist.png',
+	'artist.webp',
+	'band.jpg',
+	'band.png',
+	'artist-thumb.jpg',
+	'folder.jpg'
+];
+
+/**
+ * Scans directories of an artist's tracks/albums to discover local artist artwork
+ */
+export function findLocalArtistImage(artistName: string): string | null {
+	try {
+		const albums = getAlbumsByArtist(artistName);
+		for (const alb of albums) {
+			const track = db.prepare('SELECT file_path FROM tracks WHERE album_id = ? AND file_path IS NOT NULL LIMIT 1').get(alb.id) as { file_path?: string } | undefined;
+			if (!track?.file_path) continue;
+
+			// Check album folder and parent artist folder
+			const albumFolder = path.dirname(track.file_path);
+			const artistFolder = path.dirname(albumFolder);
+
+			for (const dir of [artistFolder, albumFolder]) {
+				if (!fs.existsSync(dir)) continue;
+				for (const imgName of ARTIST_IMAGE_NAMES) {
+					const candidate = path.join(dir, imgName);
+					if (fs.existsSync(candidate)) {
+						return candidate;
+					}
+				}
+			}
+		}
+	} catch (err) {
+		console.warn(`[Artist Engine] Error scanning local artist image for "${artistName}":`, err);
+	}
+	return null;
+}
+
+/**
+ * Downloads and caches an artist image to the local cache directory
+ */
+export async function cacheArtistImageToDisk(artistToken: string, imageUrl: string): Promise<string | null> {
+	try {
+		const baseDir = process.env.DATA_DIR || './data';
+		const artistsDir = path.resolve(baseDir, 'artists');
+		if (!fs.existsSync(artistsDir)) {
+			fs.mkdirSync(artistsDir, { recursive: true });
+		}
+
+		const targetPath = path.resolve(artistsDir, `${artistToken}.jpg`);
+		if (fs.existsSync(targetPath)) {
+			return targetPath;
+		}
+
+		const ctrl = new AbortController();
+		const timeout = setTimeout(() => ctrl.abort(), 8000);
+		try {
+			const res = await fetch(imageUrl, {
+				signal: ctrl.signal,
+				headers: { 'User-Agent': 'TraxVault/1.7.25' }
+			});
+			if (!res.ok) return null;
+			const buffer = await res.arrayBuffer();
+			fs.writeFileSync(targetPath, Buffer.from(buffer));
+			return targetPath;
+		} finally {
+			clearTimeout(timeout);
+		}
+	} catch (err) {
+		console.warn(`[Artist Engine] Failed to cache artist image for token ${artistToken}:`, err);
+		return null;
+	}
+}
+
+/**
+ * Fetches artist image from Deezer as a secondary fallback
+ */
+async function fetchDeezerArtistImage(artistName: string): Promise<string | null> {
+	try {
+		const ctrl = new AbortController();
+		const timeout = setTimeout(() => ctrl.abort(), 4000);
+		try {
+			const res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}`, {
+				signal: ctrl.signal
+			});
+			if (!res.ok) return null;
+			const data = await res.json();
+			const first = data.data?.[0];
+			if (first) {
+				return first.picture_xl || first.picture_big || first.picture_medium || null;
+			}
+		} finally {
+			clearTimeout(timeout);
+		}
+	} catch {
+		// Non-critical fallback
+	}
+	return null;
+}
+
+export interface ArtistInfoResult {
+	id: string;
+	name: string;
+	biography: string;
+	musicBrainzId: string;
+	lastFmUrl: string;
+	smallImageUrl: string;
+	mediumImageUrl: string;
+	largeImageUrl: string;
+	similarArtists: SimilarArtist[];
+}
+
+/**
+ * Master function resolving rich artist data: checks SQLite cache, local files, MusicBrainz,
+ * Wikidata/Wikimedia Commons, Wikipedia, and Deezer fallback.
+ */
+export async function getOrFetchArtistInfo(
+	artistName: string,
+	options: { count?: number; includeNotPresent?: boolean } = {}
+): Promise<ArtistInfoResult> {
+	const count = options.count ?? 20;
+	const includeNotPresent = options.includeNotPresent ?? true;
+	const artistToken = encodeArtistId(artistName);
+
+	// 1. Check existing SQLite cache
+	const cached = getArtistMetadata(artistName);
+	const now = Date.now();
+	const isFresh = cached && (now - new Date(cached.updated_at).getTime() < 30 * 24 * 60 * 60 * 1000);
+
+	if (cached && isFresh && cached.biography) {
+		let similar: SimilarArtist[] = [];
+		if (cached.similar_artists) {
+			try {
+				similar = JSON.parse(cached.similar_artists);
+			} catch {}
+		}
+		if (!includeNotPresent) {
+			similar = similar.filter((s) => Boolean(s.id));
+		}
+		similar = similar.slice(0, count);
+
+		const imgRef = `/rest/getCoverArt.view?id=art-${artistToken}`;
+		return {
+			id: artistToken,
+			name: cached.name,
+			biography: cached.biography,
+			musicBrainzId: cached.musicbrainz_id || '',
+			lastFmUrl: cached.lastfm_url || `https://www.last.fm/music/${encodeURIComponent(cached.name)}`,
+			smallImageUrl: imgRef,
+			mediumImageUrl: imgRef,
+			largeImageUrl: imgRef,
+			similarArtists: similar
+		};
+	}
+
+	// 2. Discover local companion image if present
+	let localDiskPath = cached?.image_disk_path;
+	if (!localDiskPath || !fs.existsSync(localDiskPath)) {
+		localDiskPath = findLocalArtistImage(artistName) || undefined;
+	}
+
+	// 3. Query MusicBrainz for MBID and relations
+	let mbid = cached?.musicbrainz_id || '';
+	let disambiguation = cached?.disambiguation || '';
+	let lastFmUrl = cached?.lastfm_url || `https://www.last.fm/music/${encodeURIComponent(artistName)}`;
+	let imageUrl = cached?.image_url || '';
+	let biography = cached?.biography || '';
+	const mbArtistRelations: Array<{ type: string; name: string; mbid?: string }> = [];
+
+	try {
+		let detail = null;
+		if (mbid) {
+			detail = await getMusicBrainzArtistDetail(mbid);
+		} else {
+			const search = await searchMusicBrainzArtist(artistName);
+			if (search) {
+				mbid = search.id;
+				disambiguation = search.disambiguation || '';
+				detail = await getMusicBrainzArtistDetail(search.id);
+			}
+		}
+
+		if (detail) {
+			if (detail.disambiguation) disambiguation = detail.disambiguation;
+			if (detail.lastfmUrl) lastFmUrl = detail.lastfmUrl;
+			if (detail.artistRelations) mbArtistRelations.push(...detail.artistRelations);
+
+			// Resolve Wikipedia biography and Wikimedia image
+			const wikiRes = await resolveWikimediaAndWikipedia(
+				artistName,
+				detail.wikidataId,
+				detail.wikipediaUrl,
+				detail.imageUrl
+			);
+
+			if (wikiRes.biography) {
+				biography = wikiRes.biography;
+			}
+			if (wikiRes.imageUrl) {
+				imageUrl = wikiRes.imageUrl;
+			}
+		}
+	} catch (err) {
+		console.warn(`[Artist Engine] MusicBrainz lookup failed for "${artistName}":`, err);
+	}
+
+	// 4. Secondary image fallback if no Wikimedia/local image found
+	if (!imageUrl && !localDiskPath) {
+		const deezerImg = await fetchDeezerArtistImage(artistName);
+		if (deezerImg) {
+			imageUrl = deezerImg;
+		}
+	}
+
+	// 5. Default biography fallback if Wikipedia was unavailable
+	if (!biography) {
+		biography = disambiguation
+			? `${artistName} (${disambiguation}).`
+			: `${artistName} is an artist in your music library.`;
+	}
+
+	// 6. Build Similar Artists list
+	// A: Start with artists in library sharing the same genre
+	const librarySimilar = findSimilarArtistsInLibrary(artistName, count);
+	const similarMap = new Map<string, SimilarArtist>();
+
+	for (const libArt of librarySimilar) {
+		const token = encodeArtistId(libArt.name);
+		similarMap.set(libArt.name.toLowerCase(), {
+			id: token,
+			name: libArt.name,
+			albumCount: libArt.album_count,
+			coverArt: token,
+			artistImageUrl: `/rest/getCoverArt.view?id=art-${token}`
+		});
+	}
+
+	// B: Merge with MusicBrainz artist relations (band members, spinoffs, related)
+	for (const rel of mbArtistRelations) {
+		const key = rel.name.toLowerCase();
+		if (key === artistName.toLowerCase()) continue;
+
+		if (similarMap.has(key)) {
+			const existing = similarMap.get(key)!;
+			existing.role = rel.type;
+			if (rel.mbid) existing.musicbrainz_id = rel.mbid;
+		} else {
+			// Check if artist is in user library
+			const libCheck = db.prepare('SELECT COUNT(id) as c FROM albums WHERE artist = ?').get(rel.name) as { c: number } | undefined;
+			if (libCheck && libCheck.c > 0) {
+				const token = encodeArtistId(rel.name);
+				similarMap.set(key, {
+					id: token,
+					name: rel.name,
+					albumCount: libCheck.c,
+					coverArt: token,
+					artistImageUrl: `/rest/getCoverArt.view?id=art-${token}`,
+					musicbrainz_id: rel.mbid,
+					role: rel.type
+				});
+			} else {
+				similarMap.set(key, {
+					name: rel.name,
+					musicbrainz_id: rel.mbid,
+					role: rel.type
+				});
+			}
+		}
+	}
+
+	const allSimilar = Array.from(similarMap.values());
+	let finalSimilar = allSimilar;
+	if (!includeNotPresent) {
+		finalSimilar = finalSimilar.filter((s) => Boolean(s.id));
+	}
+	finalSimilar = finalSimilar.slice(0, count);
+
+	// 7. Persist to SQLite (persists complete similar artists list)
+	upsertArtistMetadata({
+		id: artistToken,
+		name: artistName,
+		musicbrainz_id: mbid || null,
+		disambiguation: disambiguation || null,
+		biography,
+		image_url: imageUrl || null,
+		image_disk_path: localDiskPath || null,
+		lastfm_url: lastFmUrl || null,
+		similar_artists: JSON.stringify(allSimilar)
+	});
+
+	// Trigger asynchronous image caching in background if external URL is available
+	if (imageUrl && !localDiskPath) {
+		cacheArtistImageToDisk(artistToken, imageUrl).then((diskPath) => {
+			if (diskPath) {
+				upsertArtistMetadata({ name: artistName, image_disk_path: diskPath });
+			}
+		}).catch(() => {});
+	}
+
+	const imgRef = `/rest/getCoverArt.view?id=art-${artistToken}`;
+	return {
+		id: artistToken,
+		name: artistName,
+		biography,
+		musicBrainzId: mbid,
+		lastFmUrl,
+		smallImageUrl: imgRef,
+		mediumImageUrl: imgRef,
+		largeImageUrl: imgRef,
+		similarArtists: finalSimilar
+	};
+}

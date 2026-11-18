@@ -43,6 +43,13 @@ import {
 import { parseLrcEnhanced } from '$lib/utils.js';
 import type { Album, Track } from '$lib/types/index.js';
 import type { User } from '$lib/server/auth.js';
+import {
+	getOrFetchArtistInfo,
+	encodeArtistId,
+	decodeArtistId
+} from './artist.js';
+
+export { encodeArtistId, decodeArtistId };
 import { SubsonicErrorCode } from './types.js';
 
 export function formatIsoDate(dateStr?: string | null): string {
@@ -54,27 +61,7 @@ export function formatIsoDate(dateStr?: string | null): string {
 	return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
-export function encodeArtistId(name: string): string {
-	return 'art_' + Buffer.from(name, 'utf8').toString('hex');
-}
 
-export function decodeArtistId(id: string): string {
-	const cleanId = id.replace(/^art-/, '');
-	if (cleanId.startsWith('art_')) {
-		try {
-			return Buffer.from(cleanId.substring(4), 'hex').toString('utf8');
-		} catch {
-			return cleanId;
-		}
-	}
-	// Fallback: check if an album exists with this ID and use its artist
-	const numericId = parseInt(cleanId, 10);
-	if (!isNaN(numericId)) {
-		const row = db.prepare('SELECT artist FROM albums WHERE id = ?').get(numericId) as { artist: string } | undefined;
-		if (row?.artist) return row.artist;
-	}
-	return cleanId;
-}
 
 function getContentType(format?: string, filePath?: string): string {
 	const ext = filePath ? path.extname(filePath).toLowerCase() : '';
@@ -509,11 +496,13 @@ export const subsonicHandlers: Record<
 			}
 
 			const isStarred = isItemStarred(user.id, 'artist', art.name as any);
+			const token = encodeArtistId(art.name);
 			const artObj: Record<string, any> = {
-				id: encodeArtistId(art.name),
+				id: token,
 				name: art.name,
 				albumCount: art.album_count || 1,
-				coverArt: encodeArtistId(art.name),
+				coverArt: token,
+				artistImageUrl: `/rest/getCoverArt.view?id=${token}`,
 				roles: ['artist']
 			};
 			if (isStarred) artObj.starred = new Date().toISOString();
@@ -545,11 +534,13 @@ export const subsonicHandlers: Record<
 		const albums = getAlbumsByArtist(artistName);
 
 		const isArtistStarred = isItemStarred(user.id, 'artist', artistName as any);
+		const token = encodeArtistId(artistName);
 		const artistObj: Record<string, any> = {
-			id: encodeArtistId(artistName),
+			id: token,
 			name: artistName,
 			albumCount: albums.length,
-			coverArt: encodeArtistId(artistName),
+			coverArt: token,
+			artistImageUrl: `/rest/getCoverArt.view?id=${token}`,
 			roles: ['artist'],
 			album: albums.map((a) => {
 				const isAlbumStarred = isItemStarred(user.id, 'album', a.id);
@@ -565,34 +556,61 @@ export const subsonicHandlers: Record<
 	},
 
 	getArtistInfo: async (params) => {
-		const rawId = params.id;
-		const artistName = rawId ? decodeArtistId(rawId) : '';
+		const rawId = (params.id || '').toString();
+		const artistName = rawId ? decodeArtistId(rawId) : (params.name || '').toString();
+		if (!artistName) {
+			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'id' or 'name' is required" } };
+		}
+		const count = parseInt(params.count, 10) || 20;
+		const includeNotPresent = params.includeNotPresent === 'true' || params.includeNotPresent === true || params.includeNotPresent === '1';
+
+		const info = await getOrFetchArtistInfo(artistName, { count, includeNotPresent });
+
 		return {
 			data: {
 				artistInfo: {
-					biography: `Artist: ${artistName}`,
-					musicBrainzId: '',
-					lastFmUrl: '',
-					smallImageUrl: '',
-					mediumImageUrl: '',
-					largeImageUrl: ''
+					biography: info.biography,
+					musicBrainzId: info.musicBrainzId,
+					lastFmUrl: info.lastFmUrl,
+					smallImageUrl: info.smallImageUrl,
+					mediumImageUrl: info.mediumImageUrl,
+					largeImageUrl: info.largeImageUrl,
+					similarArtist: info.similarArtists.map((s) => ({
+						id: s.id || encodeArtistId(s.name),
+						name: s.name
+					}))
 				}
 			}
 		};
 	},
 
 	getArtistInfo2: async (params) => {
-		const rawId = params.id;
-		const artistName = rawId ? decodeArtistId(rawId) : '';
+		const rawId = (params.id || '').toString();
+		const artistName = rawId ? decodeArtistId(rawId) : (params.name || '').toString();
+		if (!artistName) {
+			return { error: { code: SubsonicErrorCode.REQUIRED_PARAM_MISSING, message: "Parameter 'id' or 'name' is required" } };
+		}
+		const count = parseInt(params.count, 10) || 20;
+		const includeNotPresent = params.includeNotPresent === 'true' || params.includeNotPresent === true || params.includeNotPresent === '1';
+
+		const info = await getOrFetchArtistInfo(artistName, { count, includeNotPresent });
+
 		return {
 			data: {
 				artistInfo2: {
-					biography: `Artist: ${artistName}`,
-					musicBrainzId: '',
-					lastFmUrl: '',
-					smallImageUrl: '',
-					mediumImageUrl: '',
-					largeImageUrl: ''
+					biography: info.biography,
+					musicBrainzId: info.musicBrainzId,
+					lastFmUrl: info.lastFmUrl,
+					smallImageUrl: info.smallImageUrl,
+					mediumImageUrl: info.mediumImageUrl,
+					largeImageUrl: info.largeImageUrl,
+					similarArtist: info.similarArtists.map((s) => ({
+						id: s.id || encodeArtistId(s.name),
+						name: s.name,
+						albumCount: s.albumCount || 0,
+						coverArt: s.coverArt || (s.id ? s.id : encodeArtistId(s.name)),
+						artistImageUrl: s.artistImageUrl || `/rest/getCoverArt.view?id=${encodeArtistId(s.name)}`
+					}))
 				}
 			}
 		};
