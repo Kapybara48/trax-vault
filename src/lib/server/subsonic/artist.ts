@@ -108,27 +108,52 @@ export async function cacheArtistImageToDisk(artistToken: string, imageUrl: stri
 }
 
 /**
- * Fetches artist image from Deezer as a secondary fallback
+ * Fetches high-resolution official studio artist portrait from Deezer (1000x1000 square)
  */
-async function fetchDeezerArtistImage(artistName: string): Promise<string | null> {
+export async function fetchDeezerArtistImage(artistName: string): Promise<string | null> {
 	try {
 		const ctrl = new AbortController();
-		const timeout = setTimeout(() => ctrl.abort(), 4000);
+		const timeout = setTimeout(() => ctrl.abort(), 5000);
 		try {
-			const res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}`, {
-				signal: ctrl.signal
+			let res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}`, {
+				signal: ctrl.signal,
+				headers: { 'User-Agent': 'TraxVault/1.7.28' }
 			});
 			if (!res.ok) return null;
-			const data = await res.json();
-			const first = data.data?.[0];
-			if (first) {
-				return first.picture_xl || first.picture_big || first.picture_medium || null;
+			let data = await res.json();
+			let list = data.data || [];
+
+			// If no results and name has collaboration delimiters (feat, ft, &, with, ,)
+			if (list.length === 0 && (artistName.includes('feat.') || artistName.includes('ft.') || artistName.includes('&') || artistName.includes(',') || artistName.toLowerCase().includes(' with '))) {
+				const primary = artistName.split(/ feat\.? | ft\.? | & |, | with /i)[0].trim();
+				if (primary && primary.toLowerCase() !== artistName.toLowerCase()) {
+					res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(primary)}`, {
+						signal: ctrl.signal,
+						headers: { 'User-Agent': 'TraxVault/1.7.28' }
+					});
+					if (res.ok) {
+						data = await res.json();
+						list = data.data || [];
+					}
+				}
+			}
+
+			if (list.length === 0) return null;
+
+			// Find exact case-insensitive match first, sorted by fan count (popularity)
+			const exact = list.filter((a: any) => a.name?.toLowerCase() === artistName.toLowerCase());
+			const best = exact.length > 0
+				? exact.sort((a: any, b: any) => (b.nb_fan || 0) - (a.nb_fan || 0))[0]
+				: list.sort((a: any, b: any) => (b.nb_fan || 0) - (a.nb_fan || 0))[0];
+
+			if (best) {
+				return best.picture_xl || best.picture_big || best.picture_medium || null;
 			}
 		} finally {
 			clearTimeout(timeout);
 		}
-	} catch {
-		// Non-critical fallback
+	} catch (err) {
+		console.warn(`[Artist Engine] Deezer lookup failed for "${artistName}":`, err);
 	}
 	return null;
 }
@@ -158,12 +183,21 @@ export async function getOrFetchArtistInfo(
 	const forceRefresh = options.forceRefresh ?? false;
 	const artistToken = encodeArtistId(artistName);
 
-	// 1. Check existing SQLite cache (skip if forceRefresh)
+	// 1. Check existing SQLite cache (skip if forceRefresh or if image is old low-quality wiki image)
 	const cached = getArtistMetadata(artistName);
 	const now = Date.now();
 	const isFresh = cached && (now - new Date(cached.updated_at).getTime() < 30 * 24 * 60 * 60 * 1000);
 
-	if (!forceRefresh && cached && isFresh && cached.biography) {
+	// Detect if cached image was from low-quality Wikimedia / Wikipedia source
+	const hasLowQualityWikiImage = Boolean(
+		cached?.image_url && (
+			cached.image_url.includes('upload.wikimedia.org') ||
+			cached.image_url.includes('wikipedia.org') ||
+			cached.image_url.includes('wikimedia')
+		)
+	);
+
+	if (!forceRefresh && cached && isFresh && cached.biography && !hasLowQualityWikiImage && (cached.image_disk_path || cached.image_url)) {
 		let similar: SimilarArtist[] = [];
 		if (cached.similar_artists) {
 			try {
@@ -189,17 +223,23 @@ export async function getOrFetchArtistInfo(
 		};
 	}
 
-	// 2. Discover local companion image if present
-	let localDiskPath = cached?.image_disk_path;
-	if (!localDiskPath || !fs.existsSync(localDiskPath)) {
-		localDiskPath = findLocalArtistImage(artistName) || undefined;
+	// 2. Discover local companion image if present in music library (user's personal files)
+	const localUserDiskPath = findLocalArtistImage(artistName);
+	let localDiskPath: string | undefined = localUserDiskPath || undefined;
+
+	// 3. Official high-resolution studio portrait from Deezer (1000x1000 square)
+	let imageUrl = '';
+	if (!localDiskPath) {
+		const deezerImg = await fetchDeezerArtistImage(artistName);
+		if (deezerImg) {
+			imageUrl = deezerImg;
+		}
 	}
 
-	// 3. Query MusicBrainz for MBID and relations
+	// 4. Query MusicBrainz for MBID and relations
 	let mbid = cached?.musicbrainz_id || '';
 	let disambiguation = cached?.disambiguation || '';
 	let lastFmUrl = cached?.lastfm_url || `https://www.last.fm/music/${encodeURIComponent(artistName)}`;
-	let imageUrl = cached?.image_url || '';
 	let biography = cached?.biography || '';
 	const mbArtistRelations: Array<{ type: string; name: string; mbid?: string }> = [];
 
@@ -221,7 +261,7 @@ export async function getOrFetchArtistInfo(
 			if (detail.lastfmUrl) lastFmUrl = detail.lastfmUrl;
 			if (detail.artistRelations) mbArtistRelations.push(...detail.artistRelations);
 
-			// Resolve Wikipedia biography and Wikimedia image
+			// Resolve Wikipedia biography and fallback image
 			const wikiRes = await resolveWikimediaAndWikipedia(
 				artistName,
 				detail.wikidataId,
@@ -232,20 +272,13 @@ export async function getOrFetchArtistInfo(
 			if (wikiRes.biography) {
 				biography = wikiRes.biography;
 			}
-			if (wikiRes.imageUrl) {
+			// Only fall back to Wikimedia / Wikipedia image if Deezer did not provide an image
+			if (!imageUrl && wikiRes.imageUrl) {
 				imageUrl = wikiRes.imageUrl;
 			}
 		}
 	} catch (err) {
 		console.warn(`[Artist Engine] MusicBrainz lookup failed for "${artistName}":`, err);
-	}
-
-	// 4. Secondary image fallback if no Wikimedia/local image found
-	if (!imageUrl && !localDiskPath) {
-		const deezerImg = await fetchDeezerArtistImage(artistName);
-		if (deezerImg) {
-			imageUrl = deezerImg;
-		}
 	}
 
 	// 5. Default biography fallback if Wikipedia was unavailable
@@ -324,13 +357,18 @@ export async function getOrFetchArtistInfo(
 		similar_artists: JSON.stringify(allSimilar)
 	});
 
-	// Trigger asynchronous image caching in background if external URL is available
+	// Cache high-resolution image to disk
 	if (imageUrl && !localDiskPath) {
-		cacheArtistImageToDisk(artistToken, imageUrl, forceRefresh).then((diskPath) => {
+		const shouldOverwrite = forceRefresh || hasLowQualityWikiImage;
+		try {
+			const diskPath = await cacheArtistImageToDisk(artistToken, imageUrl, shouldOverwrite);
 			if (diskPath) {
+				localDiskPath = diskPath;
 				upsertArtistMetadata({ name: artistName, image_disk_path: diskPath });
 			}
-		}).catch(() => {});
+		} catch (err) {
+			console.warn(`[Artist Engine] Failed caching image for "${artistName}":`, err);
+		}
 	}
 
 	const imgRef = `/rest/getCoverArt.view?id=art-${artistToken}`;

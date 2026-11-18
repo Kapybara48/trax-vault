@@ -956,6 +956,26 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Resilient Frontend Image Fallback**:
       - Added `onerror` handlers on artist avatars in `/player` falling back to album covers or gracefully hiding missing images.
 
+68. **High-Resolution Official Studio Artist Portraits via Deezer (v1.7.28)**:
+    - **Problem Solved**:
+      - Replaced grainy, amateur, fan-taken concert crowd photos and awkward wide-angle 16:9 composites from Wikipedia/Wikimedia Commons.
+    - **Deezer Studio Portrait Engine**:
+      - Updated `fetchDeezerArtistImage(artistName)` in `src/lib/server/subsonic/artist.ts` to query Deezer's catalog, handle collaboration delimiters (`feat.`, `ft.`, `&`, `with`, `,`), and rank exact matches by fan popularity (`nb_fan`).
+      - Retrieves official square 1000x1000 studio promotional portraits (`picture_xl`) specifically framed and lit for circular and square music app player avatars.
+    - **Resolution Hierarchy**:
+      - Priority 1: User's local companion files on disk (`artist.jpg`, `band.jpg`, etc.) in the artist music directory.
+      - Priority 2: Official Deezer 1000x1000 studio promotional headshot (`picture_xl`).
+      - Priority 3: MusicBrainz / Wikimedia Commons (`type: 'image'`) & Wikidata P18 (fallback if artist is unlisted on Deezer).
+      - Priority 4: Wikipedia article lead image (fallback).
+      - Priority 5: Library album cover.
+    - **Automatic Transparent Upgrading**:
+      - In `handleSubsonicCoverArt` (`src/lib/server/subsonic/media.ts`) and `getOrFetchArtistInfo` (`src/lib/server/subsonic/artist.ts`), detects whether existing cached images originated from low-quality Wikimedia/Wikipedia URLs (`upload.wikimedia.org` / `wikipedia.org`).
+      - Automatically triggers a refresh on-demand, replaces the low-resolution cache file on disk, updates SQLite `image_url` and `image_disk_path`, and immediately serves the 1000x1000 studio photo without requiring manual database wipes.
+    - **Synchronous Disk Caching**:
+      - Awaits `cacheArtistImageToDisk` on lookup with overwrite support, ensuring disk assets exist immediately before responding.
+    - **UI & Modal Refinements**:
+      - Updated `/scan` header and bulk enrichment modal titles and descriptions to highlight high-resolution portraits from Deezer & MusicBrainz.
+
 ---
 
 ## 4. Workflows & Verification

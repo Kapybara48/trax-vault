@@ -266,10 +266,18 @@ export async function handleSubsonicCoverArt(
 		const artistName = decodeArtistId(artToken);
 		let meta = getArtistMetadata(artistName);
 
-		// If metadata is not cached yet, fetch it on-demand from MusicBrainz & Wikipedia
-		if (!meta || (!meta.image_disk_path && !meta.image_url)) {
+		// If metadata is not cached yet or is an old low-quality Wikipedia image, fetch high-resolution Deezer portrait
+		const isOldWiki = Boolean(
+			meta?.image_url && (
+				meta.image_url.includes('upload.wikimedia.org') ||
+				meta.image_url.includes('wikipedia.org') ||
+				meta.image_url.includes('wikimedia')
+			)
+		);
+
+		if (!meta || (!meta.image_disk_path && !meta.image_url) || isOldWiki) {
 			try {
-				await getOrFetchArtistInfo(artistName);
+				await getOrFetchArtistInfo(artistName, { forceRefresh: isOldWiki });
 				meta = getArtistMetadata(artistName);
 			} catch (err) {
 				console.warn(`[getCoverArt] Failed to resolve artist info for "${artistName}":`, err);

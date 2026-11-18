@@ -747,10 +747,10 @@
 				type="button"
 				onclick={openEnrichModal}
 				class="flex items-center gap-2 rounded-xl bg-neutral-800 border border-neutral-700/60 px-4 py-2.5 text-xs font-bold text-neutral-200 transition hover:bg-neutral-700 hover:border-emerald-500/40 cursor-pointer"
-				title="Bulk fetch artist biographies, official portraits, and relationships from MusicBrainz"
+				title="Bulk fetch artist biographies, relationships, and 1000x1000 studio portraits via Deezer & MusicBrainz"
 			>
 				<Sparkles class="h-4 w-4 text-emerald-400" />
-				<span>Enrich Artists (MusicBrainz)</span>
+				<span>Enrich Artists</span>
 			</button>
 		</div>
 	</div>
@@ -1599,8 +1599,8 @@ volumes:
 						<Sparkles class="h-4 w-4" />
 					</div>
 					<div>
-						<h3 class="text-sm font-bold text-white">Enrich All Artists via MusicBrainz</h3>
-						<p class="text-[11px] text-neutral-400">Fetch biographies, portraits, and relationships for your library</p>
+						<h3 class="text-sm font-bold text-white">Enrich All Artists via MusicBrainz & Deezer</h3>
+						<p class="text-[11px] text-neutral-400">Fetch biographies, 1000x1000 studio portraits, and relationships</p>
 					</div>
 				</div>
 				<button
@@ -1615,7 +1615,7 @@ volumes:
 			<!-- Modal Body -->
 			<div class="p-5 space-y-4 text-xs text-neutral-300">
 				<p class="leading-relaxed">
-					This tool scans every unique artist in your library, searches MusicBrainz for their canonical artist ID and relationships, retrieves verified clean biographies from Wikipedia, and caches official artist portraits to disk.
+					This tool scans every unique artist in your library, retrieves high-resolution 1000x1000 official studio portraits from Deezer, queries MusicBrainz for canonical IDs and artist relationships, and extracts clean biographies from Wikipedia.
 				</p>
 
 				{#if enrichStatus.running}
