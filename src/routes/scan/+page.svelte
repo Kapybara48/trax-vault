@@ -61,6 +61,7 @@
 	// Bulk Artist Enrichment State
 	let isEnrichModalOpen = $state(false);
 	let isEnrichForceRefresh = $state(false);
+	let isEnrichSaveToFolder = $state(false);
 	let enrichStatus = $state<{
 		running: boolean;
 		current: number;
@@ -108,7 +109,10 @@
 			const res = await fetch('/api/artists/enrich-all', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ forceRefresh: isEnrichForceRefresh })
+				body: JSON.stringify({
+					forceRefresh: isEnrichForceRefresh,
+					saveToFolder: isEnrichSaveToFolder
+				})
 			});
 			const data = await res.json();
 			if (data.started) {
@@ -1668,6 +1672,19 @@ volumes:
 								<div class="font-semibold text-white text-xs">Force Re-enrich All Artists</div>
 								<div class="text-[11px] text-neutral-400">
 									Bypass the 30-day cache and re-download fresh data and portraits for every artist.
+								</div>
+							</div>
+						</label>
+
+						<label class="flex items-start gap-2.5 cursor-pointer pt-2 border-t border-neutral-800/80">
+							<CustomCheckbox
+								checked={isEnrichSaveToFolder}
+								onchange={() => (isEnrichSaveToFolder = !isEnrichSaveToFolder)}
+							/>
+							<div>
+								<div class="font-semibold text-white text-xs">Save Companion artist.jpg to Music Folders</div>
+								<div class="text-[11px] text-neutral-400">
+									Writes an <code>artist.jpg</code> companion file directly into each artist's library folder on disk for Jellyfin, Plex, and Kodi compatibility.
 								</div>
 							</div>
 						</label>

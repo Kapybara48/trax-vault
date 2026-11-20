@@ -37,7 +37,10 @@
 		Compass,
 		User,
 		RefreshCw,
-		Sparkles
+		Sparkles,
+		FolderDown,
+		Camera,
+		Upload
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -435,6 +438,71 @@
 			console.error('Failed to refresh artist:', err);
 		} finally {
 			isRefreshingArtist = false;
+		}
+	}
+
+	let isSavingCompanion = $state(false);
+	let isUploadingArtistAvatar = $state(false);
+	let artistAvatarFileInputRef = $state<HTMLInputElement | null>(null);
+
+	async function saveCompanionArtistImage() {
+		if (!selectedArtist || isSavingCompanion) return;
+		isSavingCompanion = true;
+		try {
+			const res = await fetch(`/api/artists/${encodeURIComponent(selectedArtist.name)}/save-companion`, {
+				method: 'POST'
+			});
+			const data = await res.json();
+			if (data.success) {
+				await alertAction(`Companion "artist.jpg" was successfully saved to your music folder:\n\n${data.path}\n\nOther media servers like Jellyfin, Plex, and Kodi will now detect this artist portrait!`, 'Artist Image Saved');
+			} else {
+				await alertAction(data.error || 'Failed to save companion artist image', 'Save Failed');
+			}
+		} catch (err: any) {
+			console.error('Error saving companion artist image:', err);
+			await alertAction(err.message || 'An unexpected error occurred while saving companion image', 'Save Failed');
+		} finally {
+			isSavingCompanion = false;
+		}
+	}
+
+	function triggerArtistAvatarUpload() {
+		artistAvatarFileInputRef?.click();
+	}
+
+	async function handleArtistAvatarFileSelected(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file || !selectedArtist || isUploadingArtistAvatar) return;
+
+		isUploadingArtistAvatar = true;
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+			formData.append('saveToFolder', 'true');
+
+			const res = await fetch(`/api/artists/${encodeURIComponent(selectedArtist.name)}/avatar`, {
+				method: 'POST',
+				body: formData
+			});
+			const data = await res.json();
+			if (data.success && data.avatarUrl) {
+				selectedArtist.avatar_url = data.avatarUrl;
+				const found = artists.find((a) => a.name.toLowerCase() === selectedArtist!.name.toLowerCase());
+				if (found) {
+					found.avatar_url = data.avatarUrl;
+				}
+				const companionMsg = data.companionSaved ? '\n\nCompanion artist.jpg was also written to your artist directory.' : '';
+				await alertAction(`Artist portrait updated successfully!${companionMsg}`, 'Avatar Updated');
+			} else {
+				await alertAction(data.error || 'Failed to upload artist portrait', 'Upload Failed');
+			}
+		} catch (err: any) {
+			console.error('Failed to upload artist avatar:', err);
+			await alertAction(err.message || 'Error uploading artist avatar', 'Upload Failed');
+		} finally {
+			isUploadingArtistAvatar = false;
+			if (input) input.value = '';
 		}
 	}
 
@@ -1989,7 +2057,32 @@
 							{:else}
 								<User class="w-16 h-16 text-neutral-600" />
 							{/if}
+
+							<!-- Hover Overlay to Upload Custom Artist Portrait -->
+							<button
+								type="button"
+								onclick={triggerArtistAvatarUpload}
+								class="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white gap-1 cursor-pointer"
+								title="Upload custom portrait for {selectedArtist.name}"
+							>
+								{#if isUploadingArtistAvatar}
+									<RefreshCw class="w-6 h-6 text-emerald-400 animate-spin" />
+									<span class="text-[9px] font-bold uppercase tracking-wider">Uploading...</span>
+								{:else}
+									<Camera class="w-6 h-6 text-emerald-400" />
+									<span class="text-[9px] font-bold uppercase tracking-wider">Change Photo</span>
+								{/if}
+							</button>
 						</div>
+
+						<!-- Hidden file input for uploading custom artist avatar -->
+						<input
+							type="file"
+							accept="image/*"
+							bind:this={artistAvatarFileInputRef}
+							onchange={handleArtistAvatarFileSelected}
+							class="hidden"
+						/>
 
 						<!-- Artist Meta -->
 						<div class="flex-1 min-w-0 text-center sm:text-left space-y-2">
@@ -2044,10 +2137,22 @@
 									onclick={refreshCurrentArtist}
 									disabled={isRefreshingArtist}
 									class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-neutral-300 hover:text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50"
-									title="Re-fetch artist biography, avatar, and relations from MusicBrainz"
+									title="Re-fetch artist biography, avatar, and relations from Deezer & MusicBrainz"
 								>
 									<RefreshCw class="w-3.5 h-3.5 text-emerald-400 {isRefreshingArtist ? 'animate-spin' : ''}" />
 									<span>{isRefreshingArtist ? 'Updating...' : 'Update Info'}</span>
+								</button>
+
+								<!-- Save Companion artist.jpg Button -->
+								<button
+									type="button"
+									onclick={saveCompanionArtistImage}
+									disabled={isSavingCompanion}
+									class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-neutral-300 hover:text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+									title="Save companion artist.jpg directly into artist music directory on disk"
+								>
+									<FolderDown class="w-3.5 h-3.5 text-emerald-400 {isSavingCompanion ? 'animate-bounce' : ''}" />
+									<span>{isSavingCompanion ? 'Saving...' : 'Save artist.jpg'}</span>
 								</button>
 
 								<!-- Search in Artist Tracks -->

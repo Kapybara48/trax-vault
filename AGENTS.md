@@ -976,6 +976,19 @@ This document preserves persistent context, architectural conventions, recent ch
     - **UI & Modal Refinements**:
       - Updated `/scan` header and bulk enrichment modal titles and descriptions to highlight high-resolution portraits from Deezer & MusicBrainz.
 
+69. **Companion `artist.jpg` Writing, Custom Avatar Upload, & Wake Jumpscare Protection (v1.7.29)**:
+    - **Companion `artist.jpg` Library Writing**:
+      - Added `findLocalArtistFolder(artistName)` and `saveArtistCompanionImageToFolder(artistName)` in `src/lib/server/subsonic/artist.ts`.
+      - Added API endpoint `POST /api/artists/[name]/save-companion` to write companion `artist.jpg` directly into the artist's library folder on disk for interoperability with external servers (Jellyfin, Plex, Kodi).
+      - Added "Save artist.jpg" button in the `/player` artist view action bar.
+      - Added "Save Companion artist.jpg to Music Folders" option in `/scan` bulk artist enrichment modal.
+    - **Custom Artist Avatar Upload**:
+      - Added `POST /api/artists/[name]/avatar` supporting multipart image file uploads.
+      - Added interactive hover camera overlay on the large circular artist avatar in `/player` to upload and update artist photos in 1 click.
+    - **Auto-Play Jumpscare Prevention on Laptop Wake**:
+      - Added a system suspend/sleep detection heartbeat and Page Lifecycle `freeze` listener in `src/lib/services/player.svelte.ts`.
+      - Automatically pauses playback if the system was suspended (wall-clock time jump > 3s), eliminating accidental audio blasts when reopening laptop lids in quiet environments.
+
 ---
 
 ## 4. Workflows & Verification

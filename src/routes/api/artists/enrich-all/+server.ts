@@ -15,8 +15,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const body = await request.json().catch(() => ({}));
 		const forceRefresh = Boolean(body.forceRefresh);
+		const saveToFolder = Boolean(body.saveToFolder);
 
-		const result = startBulkArtistEnrichment({ forceRefresh });
+		const result = startBulkArtistEnrichment({ forceRefresh, saveToFolder });
 		return json(result);
 	} catch (err: any) {
 		console.error('[API] Failed to start bulk enrichment:', err);

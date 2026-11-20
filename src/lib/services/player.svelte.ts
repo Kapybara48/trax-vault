@@ -49,6 +49,28 @@ class GlobalPlayer {
 					this.repeatMode = savedRepeat;
 				}
 			} catch {}
+
+			// Suspend / Sleep Detection Heartbeat (prevents auto-play audio jumpscares on laptop wake)
+			let lastHeartbeat = Date.now();
+			setInterval(() => {
+				const now = Date.now();
+				const elapsed = now - lastHeartbeat;
+				lastHeartbeat = now;
+
+				// If more than 3000ms elapsed between 500ms intervals, system was suspended/slept
+				if (elapsed > 3000 && this.isPlaying) {
+					console.log('[Player] System resumed from sleep/suspend. Pausing playback to prevent auto-play jumpscares.');
+					this.pause();
+				}
+			}, 500);
+
+			if (typeof document !== 'undefined') {
+				document.addEventListener('freeze', () => {
+					if (this.isPlaying) {
+						this.pause();
+					}
+				});
+			}
 		}
 
 		el.volume = this.getEffectiveGain();

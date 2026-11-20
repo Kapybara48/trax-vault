@@ -6,6 +6,7 @@ import {
 	getMusicBrainzArtistDetail,
 	resolveWikimediaAndWikipedia
 } from '$lib/server/musicbrainz.js';
+import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/server/scanner.js';
 import type { ArtistMetadata, SimilarArtist } from '$lib/types/index.js';
 
 export function encodeArtistId(name: string): string {
@@ -51,8 +52,11 @@ export function findLocalArtistImage(artistName: string): string | null {
 			const track = db.prepare('SELECT file_path FROM tracks WHERE album_id = ? AND file_path IS NOT NULL LIMIT 1').get(alb.id) as { file_path?: string } | undefined;
 			if (!track?.file_path) continue;
 
+			const resolved = resolveTrackFilePath(track);
+			if (!resolved) continue;
+
 			// Check album folder and parent artist folder
-			const albumFolder = path.dirname(track.file_path);
+			const albumFolder = path.dirname(resolved);
 			const artistFolder = path.dirname(albumFolder);
 
 			for (const dir of [artistFolder, albumFolder]) {
@@ -69,6 +73,99 @@ export function findLocalArtistImage(artistName: string): string | null {
 		console.warn(`[Artist Engine] Error scanning local artist image for "${artistName}":`, err);
 	}
 	return null;
+}
+
+/**
+ * Resolves the primary root artist folder in the music library
+ */
+export function findLocalArtistFolder(artistName: string): string | null {
+	try {
+		const albums = getAlbumsByArtist(artistName);
+		const musicDir = getMusicDirectory();
+		for (const alb of albums) {
+			const track = db.prepare('SELECT file_path FROM tracks WHERE album_id = ? AND file_path IS NOT NULL LIMIT 1').get(alb.id) as { file_path?: string } | undefined;
+			if (!track?.file_path) continue;
+
+			const resolved = resolveTrackFilePath(track);
+			if (!resolved) continue;
+
+			const albumFolder = path.dirname(resolved);
+			const artistFolder = path.dirname(albumFolder);
+
+			// If the artist folder is inside musicDir and not musicDir itself
+			if (artistFolder !== musicDir && isPathWithin(artistFolder, musicDir) && fs.existsSync(artistFolder)) {
+				return artistFolder;
+			}
+			// Fallback: album folder if inside musicDir
+			if (albumFolder !== musicDir && isPathWithin(albumFolder, musicDir) && fs.existsSync(albumFolder)) {
+				return albumFolder;
+			}
+		}
+	} catch (err) {
+		console.warn(`[Artist Engine] Error finding local artist folder for "${artistName}":`, err);
+	}
+	return null;
+}
+
+/**
+ * Saves artist image as companion artist.jpg directly into the artist's library folder on disk
+ */
+export async function saveArtistCompanionImageToFolder(
+	artistName: string,
+	options: { buffer?: Buffer; imageUrl?: string } = {}
+): Promise<{ success: boolean; path?: string; error?: string }> {
+	const folder = findLocalArtistFolder(artistName);
+	if (!folder) {
+		return { success: false, error: `Could not locate music folder for artist "${artistName}"` };
+	}
+
+	try {
+		fs.accessSync(folder, fs.constants.W_OK);
+	} catch {
+		return { success: false, error: `Artist folder "${folder}" is read-only or permission is denied` };
+	}
+
+	let buf = options.buffer;
+	if (!buf && options.imageUrl) {
+		try {
+			const res = await fetch(options.imageUrl);
+			if (res.ok) {
+				buf = Buffer.from(await res.arrayBuffer());
+			}
+		} catch (err: any) {
+			return { success: false, error: `Failed to download image: ${err.message}` };
+		}
+	}
+
+	if (!buf) {
+		// Read from cached disk image if available
+		const token = encodeArtistId(artistName);
+		const baseDir = process.env.DATA_DIR || './data';
+		const cachedFile = path.resolve(baseDir, 'artists', `${token}.jpg`);
+		if (fs.existsSync(cachedFile)) {
+			buf = fs.readFileSync(cachedFile);
+		} else {
+			const meta = getArtistMetadata(artistName);
+			if (meta?.image_url) {
+				try {
+					const res = await fetch(meta.image_url);
+					if (res.ok) buf = Buffer.from(await res.arrayBuffer());
+				} catch {}
+			}
+		}
+	}
+
+	if (!buf || buf.length === 0) {
+		return { success: false, error: 'No image data available to save' };
+	}
+
+	const targetPath = path.join(folder, 'artist.jpg');
+	fs.writeFileSync(targetPath, buf);
+
+	// Update SQLite to point to local companion image
+	upsertArtistMetadata({ name: artistName, image_disk_path: targetPath });
+
+	return { success: true, path: targetPath };
 }
 
 /**
@@ -421,7 +518,7 @@ export function cancelBulkArtistEnrichment(): void {
 	enrichmentStatus.completedAt = Date.now();
 }
 
-export function startBulkArtistEnrichment(options: { forceRefresh?: boolean } = {}): { started: boolean; total: number; message: string } {
+export function startBulkArtistEnrichment(options: { forceRefresh?: boolean; saveToFolder?: boolean } = {}): { started: boolean; total: number; message: string } {
 	if (enrichmentStatus.running) {
 		return { started: false, total: enrichmentStatus.total, message: 'Enrichment is already in progress' };
 	}
@@ -457,6 +554,11 @@ export function startBulkArtistEnrichment(options: { forceRefresh?: boolean } = 
 				await getOrFetchArtistInfo(art.name, {
 					forceRefresh: options.forceRefresh ?? false
 				});
+
+				if (options.saveToFolder) {
+					await saveArtistCompanionImageToFolder(art.name);
+				}
+
 				enrichmentStatus.successCount++;
 			} catch (err) {
 				console.warn(`[Bulk Enrichment] Failed to enrich "${art.name}":`, err);
