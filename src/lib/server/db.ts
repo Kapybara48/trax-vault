@@ -1863,7 +1863,7 @@ export function getAlbumsByArtist(artist: string): Album[] {
 export function getArtistMetadata(artistName: string): ArtistMetadata | null {
 	return db.prepare(`
 		SELECT * FROM artist_metadata
-		WHERE name = ? COLLATE NOCASE
+		WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
 	`).get(artistName) as ArtistMetadata | null;
 }
 
@@ -1871,32 +1871,40 @@ export function upsertArtistMetadata(metadata: Partial<ArtistMetadata> & { name:
 	const existing = getArtistMetadata(metadata.name);
 	const now = new Date().toISOString();
 	if (existing) {
+		const nextMbId = metadata.musicbrainz_id !== undefined ? metadata.musicbrainz_id : existing.musicbrainz_id;
+		const nextDisambig = metadata.disambiguation !== undefined ? metadata.disambiguation : existing.disambiguation;
+		const nextBio = metadata.biography !== undefined ? metadata.biography : existing.biography;
+		const nextImgUrl = metadata.image_url !== undefined ? metadata.image_url : existing.image_url;
+		const nextImgDisk = metadata.image_disk_path !== undefined ? metadata.image_disk_path : existing.image_disk_path;
+		const nextLastFm = metadata.lastfm_url !== undefined ? metadata.lastfm_url : existing.lastfm_url;
+		const nextSimilar = metadata.similar_artists !== undefined ? metadata.similar_artists : existing.similar_artists;
+
 		db.prepare(`
 			UPDATE artist_metadata
-			SET musicbrainz_id = COALESCE(?, musicbrainz_id),
-			    disambiguation = COALESCE(?, disambiguation),
-			    biography = COALESCE(?, biography),
-			    image_url = COALESCE(?, image_url),
-			    image_disk_path = COALESCE(?, image_disk_path),
-			    lastfm_url = COALESCE(?, lastfm_url),
-			    similar_artists = COALESCE(?, similar_artists),
+			SET musicbrainz_id = ?,
+			    disambiguation = ?,
+			    biography = ?,
+			    image_url = ?,
+			    image_disk_path = ?,
+			    lastfm_url = ?,
+			    similar_artists = ?,
 			    updated_at = ?
 			WHERE id = ?
 		`).run(
-			metadata.musicbrainz_id ?? null,
-			metadata.disambiguation ?? null,
-			metadata.biography ?? null,
-			metadata.image_url ?? null,
-			metadata.image_disk_path ?? null,
-			metadata.lastfm_url ?? null,
-			metadata.similar_artists ?? null,
+			nextMbId ?? null,
+			nextDisambig ?? null,
+			nextBio ?? null,
+			nextImgUrl ?? null,
+			nextImgDisk ?? null,
+			nextLastFm ?? null,
+			nextSimilar ?? null,
 			now,
 			existing.id
 		);
 	} else {
-		const id = metadata.id || `art_${Buffer.from(metadata.name.trim().toLowerCase()).toString('hex')}`;
+		const id = metadata.id || `art_${Buffer.from(metadata.name.trim(), 'utf8').toString('hex')}`;
 		db.prepare(`
-			INSERT INTO artist_metadata (
+			INSERT OR REPLACE INTO artist_metadata (
 				id, name, musicbrainz_id, disambiguation, biography,
 				image_url, image_disk_path, lastfm_url, similar_artists, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

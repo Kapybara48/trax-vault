@@ -550,10 +550,18 @@
 			if (res.ok) {
 				const data = await res.json();
 				if (data.success && data.artist && selectedArtist?.name.toLowerCase() === art.name.toLowerCase()) {
+					const freshAvatar = `/api/artists/${encodeURIComponent(art.name)}/avatar?_t=${Date.now()}`;
 					selectedArtist.biography = data.artist.biography;
 					selectedArtist.musicbrainz_id = data.artist.musicBrainzId;
 					selectedArtist.lastfm_url = data.artist.lastFmUrl;
-					selectedArtist.avatar_url = `/api/artists/${encodeURIComponent(art.name)}/avatar?_t=${Date.now()}`;
+					selectedArtist.avatar_url = freshAvatar;
+					const found = artists.find((a) => a.name.toLowerCase() === art.name.toLowerCase());
+					if (found) {
+						found.biography = data.artist.biography;
+						found.musicbrainz_id = data.artist.musicBrainzId;
+						found.lastfm_url = data.artist.lastFmUrl;
+						found.avatar_url = freshAvatar;
+					}
 				}
 			}
 		} catch {}
@@ -1131,6 +1139,8 @@
 									<img
 										src={artist.avatar_url || artist.cover_url}
 										alt={artist.name}
+										loading="lazy"
+										decoding="async"
 										class="w-full h-full object-cover"
 										onerror={(e) => {
 											const img = e.currentTarget as HTMLImageElement;

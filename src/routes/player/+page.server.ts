@@ -167,13 +167,14 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	}
 
 	// Query cached artist metadata
-	const rawMeta = db.prepare('SELECT name, biography, musicbrainz_id, lastfm_url, image_url, image_disk_path FROM artist_metadata').all() as Array<{
+	const rawMeta = db.prepare('SELECT name, biography, musicbrainz_id, lastfm_url, image_url, image_disk_path, updated_at FROM artist_metadata').all() as Array<{
 		name: string;
 		biography?: string | null;
 		musicbrainz_id?: string | null;
 		lastfm_url?: string | null;
 		image_url?: string | null;
 		image_disk_path?: string | null;
+		updated_at?: string | null;
 	}>;
 	const metaMap = new Map<string, typeof rawMeta[0]>();
 	for (const m of rawMeta) {
@@ -184,12 +185,13 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		.map((a) => {
 			const m = metaMap.get(a.name.toLowerCase());
 			const isGeneric = isGenericArtist(a.name);
+			const cacheBust = m?.updated_at ? `v2_${new Date(m.updated_at).getTime()}` : 'v2';
 			return {
 				name: a.name,
 				album_count: a.albums.length,
 				song_count: a.tracks.length,
 				cover_url: a.cover_url,
-				avatar_url: isGeneric ? null : `/api/artists/${encodeURIComponent(a.name)}/avatar`,
+				avatar_url: isGeneric ? null : `/api/artists/${encodeURIComponent(a.name)}/avatar?v=${cacheBust}`,
 				biography: m?.biography || null,
 				musicbrainz_id: m?.musicbrainz_id || null,
 				lastfm_url: m?.lastfm_url || null,

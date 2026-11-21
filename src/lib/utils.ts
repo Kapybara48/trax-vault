@@ -11,14 +11,20 @@ export function formatDuration(ms: number | null): string {
 export const GENERIC_ARTIST_NAMES = new Set([
 	'various artists',
 	'various artist',
+	'various_artists',
+	'variousartists',
 	'various',
 	'va',
 	'v.a.',
 	'unknown artist',
+	'unknown_artist',
+	'unknownartist',
 	'unknown',
 	'soundtrack',
 	'soundtracks',
 	'original soundtrack',
+	'original_soundtrack',
+	'originalsoundtrack',
 	'ost',
 	'original score',
 	'film score',
@@ -28,23 +34,32 @@ export const GENERIC_ARTIST_NAMES = new Set([
 	'anime ost',
 	'tv soundtrack',
 	'composer',
-	'compilation'
+	'various composers',
+	'compilation',
+	'top hits'
 ]);
 
-export function isGenericArtist(name: string): boolean {
-	if (!name) return true;
-	const clean = name.trim().toLowerCase();
-	return GENERIC_ARTIST_NAMES.has(clean);
-}
-
 export function normalizeArtistName(str: string): string {
-	return str
+	return String(str || '')
 		.normalize('NFD')
 		.replace(/[\u0300-\u036f]/g, '')
 		.toLowerCase()
-		.replace(/[^\w\s]/g, '')
-		.replace(/\s+/g, ' ')
+		.replace(/ß/g, 'ss')
+		.replace(/ø/g, 'o')
+		.replace(/æ/g, 'ae')
+		.replace(/\$/g, 's')
+		.replace(/([a-z])!([a-z])/g, '$1i$2')
+		.replace(/[^\p{L}\p{N}]+/gu, '')
 		.trim();
+}
+
+export function isGenericArtist(name: string): boolean {
+	if (!name) return true;
+	const clean = name.trim().toLowerCase().replace(/[_\-\[\]()<>]+/g, ' ').replace(/\s+/g, ' ').trim();
+	if (!clean) return true;
+	if (GENERIC_ARTIST_NAMES.has(clean)) return true;
+	const norm = normalizeArtistName(name);
+	return GENERIC_ARTIST_NAMES.has(norm);
 }
 
 export const FORMAT_OPTIONS: { value: AudioFormat; label: string; isLossless: boolean }[] = [
