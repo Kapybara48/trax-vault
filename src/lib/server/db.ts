@@ -429,8 +429,92 @@ try {
 	console.warn('LRC header cleanup notice:', err);
 }
 
+export const DEFAULT_FIXER_RULES: Required<FixerRules> = {
+	flag_bad_quality: true,
+	flag_needs_upgrade: true,
+	flag_acceptable_quality: false,
+	flag_good_quality: false,
+	flag_lossy: false,
+	flag_mp3: false,
+	flag_mp3_320: false,
+	flag_mp3_v0: false,
+	flag_mp3_192: false,
+	flag_mp3_128: false,
+	flag_aac_256: false,
+	flag_ogg: false,
+	flag_other_format: false,
+	flag_wav_aiff: false,
+	min_bitrate_kbps: 0,
+	flag_censored: true,
+	flag_clean: false,
+	flag_unknown_censorship: false,
+	flag_missing_lyrics: true,
+	flag_unsynced_lyrics: true,
+	flag_plain_lyrics: false,
+	flag_censored_lyrics: true,
+	flag_missing_tracks: true,
+	ignore_manually_checked: false
+};
+
+export function normalizeFixerRules(raw?: Partial<FixerRules> | null): Required<FixerRules> {
+	return {
+		flag_bad_quality: raw?.flag_bad_quality ?? DEFAULT_FIXER_RULES.flag_bad_quality,
+		flag_needs_upgrade: raw?.flag_needs_upgrade ?? DEFAULT_FIXER_RULES.flag_needs_upgrade,
+		flag_acceptable_quality: raw?.flag_acceptable_quality ?? DEFAULT_FIXER_RULES.flag_acceptable_quality,
+		flag_good_quality: raw?.flag_good_quality ?? DEFAULT_FIXER_RULES.flag_good_quality,
+		flag_lossy: raw?.flag_lossy ?? DEFAULT_FIXER_RULES.flag_lossy,
+		flag_mp3: raw?.flag_mp3 ?? DEFAULT_FIXER_RULES.flag_mp3,
+		flag_mp3_320: raw?.flag_mp3_320 ?? DEFAULT_FIXER_RULES.flag_mp3_320,
+		flag_mp3_v0: raw?.flag_mp3_v0 ?? DEFAULT_FIXER_RULES.flag_mp3_v0,
+		flag_mp3_192: raw?.flag_mp3_192 ?? DEFAULT_FIXER_RULES.flag_mp3_192,
+		flag_mp3_128: raw?.flag_mp3_128 ?? DEFAULT_FIXER_RULES.flag_mp3_128,
+		flag_aac_256: raw?.flag_aac_256 ?? DEFAULT_FIXER_RULES.flag_aac_256,
+		flag_ogg: raw?.flag_ogg ?? DEFAULT_FIXER_RULES.flag_ogg,
+		flag_other_format: raw?.flag_other_format ?? DEFAULT_FIXER_RULES.flag_other_format,
+		flag_wav_aiff: raw?.flag_wav_aiff ?? DEFAULT_FIXER_RULES.flag_wav_aiff,
+		min_bitrate_kbps: Math.max(0, Number(raw?.min_bitrate_kbps) || 0),
+		flag_censored: raw?.flag_censored ?? DEFAULT_FIXER_RULES.flag_censored,
+		flag_clean: raw?.flag_clean ?? DEFAULT_FIXER_RULES.flag_clean,
+		flag_unknown_censorship: raw?.flag_unknown_censorship ?? DEFAULT_FIXER_RULES.flag_unknown_censorship,
+		flag_missing_lyrics: raw?.flag_missing_lyrics ?? DEFAULT_FIXER_RULES.flag_missing_lyrics,
+		flag_unsynced_lyrics: raw?.flag_unsynced_lyrics ?? DEFAULT_FIXER_RULES.flag_unsynced_lyrics,
+		flag_plain_lyrics: raw?.flag_plain_lyrics ?? DEFAULT_FIXER_RULES.flag_plain_lyrics,
+		flag_censored_lyrics: raw?.flag_censored_lyrics ?? DEFAULT_FIXER_RULES.flag_censored_lyrics,
+		flag_missing_tracks: raw?.flag_missing_tracks ?? DEFAULT_FIXER_RULES.flag_missing_tracks,
+		ignore_manually_checked: raw?.ignore_manually_checked ?? DEFAULT_FIXER_RULES.ignore_manually_checked
+	};
+}
+
+let cachedGlobalFixerRules: Required<FixerRules> | null = null;
+
+export function getGlobalFixerRules(): Required<FixerRules> {
+	if (cachedGlobalFixerRules) {
+		return { ...cachedGlobalFixerRules };
+	}
+	try {
+		const row = db.prepare("SELECT value FROM system_metadata WHERE key = 'global_fixer_rules'").get() as { value: string } | undefined;
+		if (row?.value) {
+			cachedGlobalFixerRules = normalizeFixerRules(JSON.parse(row.value));
+			return { ...cachedGlobalFixerRules };
+		}
+
+		// One-time migration from any existing album custom fixer_rules if present
+		const albRow = db.prepare('SELECT fixer_rules FROM albums WHERE fixer_rules IS NOT NULL LIMIT 1').get() as { fixer_rules?: string } | undefined;
+		if (albRow?.fixer_rules) {
+			cachedGlobalFixerRules = normalizeFixerRules(JSON.parse(albRow.fixer_rules));
+			db.prepare("INSERT OR REPLACE INTO system_metadata (key, value) VALUES ('global_fixer_rules', ?)").run(
+				JSON.stringify(cachedGlobalFixerRules)
+			);
+			return { ...cachedGlobalFixerRules };
+		}
+	} catch {}
+
+	cachedGlobalFixerRules = { ...DEFAULT_FIXER_RULES };
+	return { ...cachedGlobalFixerRules };
+}
+
 /**
- * Helper to determine if a track needs attention according to album or global fixer rules
+ * Helper to determine if a track needs attention according to global fixer rules
  */
 export function computeNeedsAttention(
 	quality: QualityRating,
@@ -438,96 +522,171 @@ export function computeNeedsAttention(
 	lyrics: LyricsStatus,
 	format: AudioFormat = 'FLAC',
 	rules?: FixerRules | null,
-	isMissing: number = 0
+	isMissing: number = 0,
+	bitrateKbps?: number | null,
+	manuallyChecked: number = 0
 ): number {
-	// Missing tracks from the album release always need attention
-	if (isMissing === 1) return 1;
+	const r = rules ? normalizeFixerRules(rules) : getGlobalFixerRules();
 
-	// Quality checks
-	const badQuality = rules?.flag_bad_quality ?? true;
-	const needsUpgrade = rules?.flag_needs_upgrade ?? true;
-	if (badQuality && quality === 'bad') return 1;
-	if (needsUpgrade && quality === 'needs_upgrade') return 1;
+	// If user configured manually checked tracks to always count as good
+	if (r.ignore_manually_checked && manuallyChecked === 1 && isMissing !== 1) {
+		return 0;
+	}
 
-	// Format checks (e.g. if user decides .mp3 is too bad or wants lossless only)
-	if (rules?.flag_lossy) {
+	// Completeness check: Missing tracks from the album release
+	if (r.flag_missing_tracks && isMissing === 1) return 1;
+
+	// Quality rating checks
+	if (r.flag_bad_quality && quality === 'bad') return 1;
+	if (r.flag_needs_upgrade && quality === 'needs_upgrade') return 1;
+	if (r.flag_acceptable_quality && quality === 'acceptable') return 1;
+	if (r.flag_good_quality && quality === 'good') return 1;
+
+	// Audio format checks
+	if (r.flag_lossy) {
 		const isLossy = ['MP3_320', 'MP3_V0', 'MP3_192', 'MP3_128', 'AAC_256', 'OGG', 'OTHER'].includes(format);
 		if (isLossy) return 1;
 	}
-	if (rules?.flag_mp3) {
-		if (format.startsWith('MP3')) return 1;
+	if (r.flag_mp3 && format.startsWith('MP3')) return 1;
+	if (r.flag_mp3_320 && format === 'MP3_320') return 1;
+	if (r.flag_mp3_v0 && format === 'MP3_V0') return 1;
+	if (r.flag_mp3_192 && format === 'MP3_192') return 1;
+	if (r.flag_mp3_128 && format === 'MP3_128') return 1;
+	if (r.flag_aac_256 && format === 'AAC_256') return 1;
+	if (r.flag_ogg && format === 'OGG') return 1;
+	if (r.flag_other_format && format === 'OTHER') return 1;
+	if (r.flag_wav_aiff && (format === 'WAV' || format === 'AIFF')) return 1;
+
+	// Minimum bitrate threshold check
+	if (r.min_bitrate_kbps > 0 && bitrateKbps && bitrateKbps > 0 && bitrateKbps < r.min_bitrate_kbps) {
+		return 1;
 	}
 
 	// Censorship checks
-	const flagCensored = rules?.flag_censored ?? true;
-	if (flagCensored && censorship === 'censored') return 1;
-	const flagClean = rules?.flag_clean ?? false;
-	if (flagClean && censorship === 'clean_original') return 1;
+	if (r.flag_censored && censorship === 'censored') return 1;
+	if (r.flag_clean && censorship === 'clean_original') return 1;
+	if (r.flag_unknown_censorship && censorship === 'unknown') return 1;
 
 	// Lyrics checks
-	const flagMissing = rules?.flag_missing_lyrics ?? true;
-	if (flagMissing && lyrics === 'missing') return 1;
-	const flagUnsynced = rules?.flag_unsynced_lyrics ?? true;
-	if (flagUnsynced && lyrics === 'unsynced_lrc') return 1;
-	const flagPlain = rules?.flag_plain_lyrics ?? false;
-	if (flagPlain && lyrics === 'plain_txt') return 1;
-	const flagCensoredLyrics = rules?.flag_censored_lyrics ?? true;
-	if (flagCensoredLyrics && lyrics === 'censored_lrc') return 1;
+	if (r.flag_missing_lyrics && lyrics === 'missing') return 1;
+	if (r.flag_unsynced_lyrics && lyrics === 'unsynced_lrc') return 1;
+	if (r.flag_plain_lyrics && lyrics === 'plain_txt') return 1;
+	if (r.flag_censored_lyrics && lyrics === 'censored_lrc') return 1;
 
 	return 0;
 }
 
-export function getAlbumFixerRules(albumId: number): FixerRules | null {
-	const row = db.prepare('SELECT fixer_rules FROM albums WHERE id = ?').get(albumId) as { fixer_rules?: string } | undefined;
-	if (row?.fixer_rules) {
-		try {
-			return JSON.parse(row.fixer_rules);
-		} catch {
-			return null;
+export function updateGlobalFixerRules(rules: Partial<FixerRules>): Required<FixerRules> {
+	const normalized = normalizeFixerRules(rules);
+	const rulesJson = JSON.stringify(normalized);
+	cachedGlobalFixerRules = normalized;
+
+	const allTracks = db.prepare('SELECT id, quality_rating, censorship, lyrics, format, is_missing, bitrate_kbps, manually_checked FROM tracks').all() as Track[];
+	const updateTrackStmt = db.prepare("UPDATE tracks SET needs_attention = ?, updated_at = datetime('now') WHERE id = ?");
+	const updateAlbumsStmt = db.prepare("UPDATE albums SET fixer_rules = ? WHERE fixer_rules IS NOT NULL");
+
+	const tx = db.transaction(() => {
+		db.prepare("INSERT OR REPLACE INTO system_metadata (key, value) VALUES ('global_fixer_rules', ?)").run(rulesJson);
+		updateAlbumsStmt.run(rulesJson);
+		for (const t of allTracks) {
+			const na = computeNeedsAttention(
+				t.quality_rating,
+				t.censorship,
+				t.lyrics,
+				t.format,
+				normalized,
+				t.is_missing ?? 0,
+				t.bitrate_kbps,
+				t.manually_checked ?? 0
+			);
+			updateTrackStmt.run(na, t.id);
 		}
-	}
-	return null;
+	});
+	tx();
+
+	return { ...normalized };
+}
+
+export function getAlbumFixerRules(_albumId?: number): Required<FixerRules> {
+	return getGlobalFixerRules();
 }
 
 export function updateAlbumFixerRules(
 	albumId: number,
 	rules: FixerRules,
-	applyToAll: boolean = false
+	_applyToAll: boolean = true
 ): { album: Album; tracks: Track[] } | null {
 	const existing = getAlbumById(albumId);
 	if (!existing) {
 		return null;
 	}
+	updateGlobalFixerRules(rules);
+	return getAlbumById(albumId);
+}
 
-	const rulesJson = JSON.stringify(rules);
+/**
+ * Builds dynamic SQL condition matching tracks with audio quality / format / bitrate issues
+ * according to the user's active Global Fixer Rules.
+ */
+function buildAudioIssueSqlCondition(rules: Required<FixerRules>, prefix: string = ''): string {
+	const p = prefix ? `${prefix}.` : '';
+	const parts: string[] = [];
 
-	if (applyToAll) {
-		const updateAlbumStmt = db.prepare("UPDATE albums SET fixer_rules = ?, updated_at = datetime('now')");
-		const allTracks = db.prepare('SELECT * FROM tracks').all() as Track[];
-		const updateTrackStmt = db.prepare("UPDATE tracks SET needs_attention = ?, updated_at = datetime('now') WHERE id = ?");
-		const tx = db.transaction(() => {
-			updateAlbumStmt.run(rulesJson);
-			for (const t of allTracks) {
-				const na = computeNeedsAttention(t.quality_rating, t.censorship, t.lyrics, t.format, rules);
-				updateTrackStmt.run(na, t.id);
-			}
-		});
-		tx();
-	} else {
-		const updateAlbumStmt = db.prepare("UPDATE albums SET fixer_rules = ?, updated_at = datetime('now') WHERE id = ?");
-		const tracks = db.prepare('SELECT * FROM tracks WHERE album_id = ?').all(albumId) as Track[];
-		const updateTrackStmt = db.prepare("UPDATE tracks SET needs_attention = ?, updated_at = datetime('now') WHERE id = ?");
-		const tx = db.transaction(() => {
-			updateAlbumStmt.run(rulesJson, albumId);
-			for (const t of tracks) {
-				const na = computeNeedsAttention(t.quality_rating, t.censorship, t.lyrics, t.format, rules);
-				updateTrackStmt.run(na, t.id);
-			}
-		});
-		tx();
+	const badQualities: string[] = [];
+	if (rules.flag_bad_quality) badQualities.push("'bad'");
+	if (rules.flag_needs_upgrade) badQualities.push("'needs_upgrade'");
+	if (rules.flag_acceptable_quality) badQualities.push("'acceptable'");
+	if (rules.flag_good_quality) badQualities.push("'good'");
+	if (badQualities.length > 0) {
+		parts.push(`${p}quality_rating IN (${badQualities.join(', ')})`);
 	}
 
-	return getAlbumById(albumId);
+	const badFormats = new Set<string>();
+	if (rules.flag_lossy) {
+		['MP3_320', 'MP3_V0', 'MP3_192', 'MP3_128', 'AAC_256', 'OGG', 'OTHER'].forEach((f) => badFormats.add(`'${f}'`));
+	}
+	if (rules.flag_mp3) {
+		['MP3_320', 'MP3_V0', 'MP3_192', 'MP3_128'].forEach((f) => badFormats.add(`'${f}'`));
+	}
+	if (rules.flag_mp3_320) badFormats.add("'MP3_320'");
+	if (rules.flag_mp3_v0) badFormats.add("'MP3_V0'");
+	if (rules.flag_mp3_192) badFormats.add("'MP3_192'");
+	if (rules.flag_mp3_128) badFormats.add("'MP3_128'");
+	if (rules.flag_aac_256) badFormats.add("'AAC_256'");
+	if (rules.flag_ogg) badFormats.add("'OGG'");
+	if (rules.flag_other_format) badFormats.add("'OTHER'");
+	if (rules.flag_wav_aiff) {
+		badFormats.add("'WAV'");
+		badFormats.add("'AIFF'");
+	}
+	if (badFormats.size > 0) {
+		parts.push(`${p}format IN (${Array.from(badFormats).join(', ')})`);
+	}
+
+	if (rules.min_bitrate_kbps > 0) {
+		parts.push(`(${p}bitrate_kbps > 0 AND ${p}bitrate_kbps < ${Math.floor(rules.min_bitrate_kbps)})`);
+	}
+
+	if (parts.length === 0) return '0 = 1';
+	const combined = `(${parts.join(' OR ')})`;
+	if (rules.ignore_manually_checked) {
+		return `(${p}manually_checked = 0 AND ${combined})`;
+	}
+	return combined;
+}
+
+function buildCensorshipIssueSqlCondition(rules: Required<FixerRules>, prefix: string = ''): string {
+	const p = prefix ? `${prefix}.` : '';
+	const statuses: string[] = [];
+	if (rules.flag_censored) statuses.push("'censored'");
+	if (rules.flag_clean) statuses.push("'clean_original'");
+	if (rules.flag_unknown_censorship) statuses.push("'unknown'");
+	if (statuses.length === 0) return '0 = 1';
+	const cond = `${p}censorship IN (${statuses.join(', ')})`;
+	if (rules.ignore_manually_checked) {
+		return `(${p}manually_checked = 0 AND ${cond})`;
+	}
+	return cond;
 }
 
 export function getStats(): CollectionStats {
@@ -562,10 +721,14 @@ export function getStats(): CollectionStats {
 		FROM tracks
 	`).get() as { flac_count: number; mp3_count: number; other_count: number };
 
+	const globalRules = getGlobalFixerRules();
+	const audioIssueCond = buildAudioIssueSqlCondition(globalRules);
+	const censorshipIssueCond = buildCensorshipIssueSqlCondition(globalRules);
+
 	const issueCounts = db.prepare(`
 		SELECT
-			SUM(CASE WHEN quality_rating IN ('bad', 'needs_upgrade') THEN 1 ELSE 0 END) as bad_quality,
-			SUM(CASE WHEN censorship = 'censored' THEN 1 ELSE 0 END) as censored,
+			SUM(CASE WHEN ${audioIssueCond} THEN 1 ELSE 0 END) as bad_quality,
+			SUM(CASE WHEN ${censorshipIssueCond} THEN 1 ELSE 0 END) as censored,
 			SUM(CASE WHEN lyrics = 'missing' THEN 1 ELSE 0 END) as missing_lyrics,
 			SUM(CASE WHEN is_missing = 1 THEN 1 ELSE 0 END) as missing_tracks,
 			SUM(CASE WHEN lyrics = 'synced_lrc' THEN 1 ELSE 0 END) as synced_lyrics,
@@ -624,12 +787,16 @@ export function getAlbums(searchQuery?: string, filter?: string, options?: Searc
 	const effectiveChecked = options?.manuallyChecked !== undefined ? options.manuallyChecked : parsed.manuallyChecked;
 	const effectiveText = options?.search !== undefined ? options.search : parsed.search;
 
+	const globalRules = getGlobalFixerRules();
+	const albumAudioIssueCond = buildAudioIssueSqlCondition(globalRules, 't');
+	const albumCensorshipIssueCond = buildCensorshipIssueSqlCondition(globalRules, 't');
+
 	let sql = `
 		SELECT 
 			a.*,
 			COUNT(t.id) as track_count,
-			SUM(CASE WHEN t.quality_rating IN ('bad', 'needs_upgrade') THEN 1 ELSE 0 END) as bad_quality_count,
-			SUM(CASE WHEN t.censorship = 'censored' THEN 1 ELSE 0 END) as censored_count,
+			SUM(CASE WHEN ${albumAudioIssueCond} THEN 1 ELSE 0 END) as bad_quality_count,
+			SUM(CASE WHEN ${albumCensorshipIssueCond} THEN 1 ELSE 0 END) as censored_count,
 			SUM(CASE WHEN t.lyrics = 'missing' THEN 1 ELSE 0 END) as missing_lyrics_count,
 			SUM(CASE WHEN t.is_missing = 1 THEN 1 ELSE 0 END) as missing_tracks_count,
 			SUM(CASE WHEN t.manually_checked = 1 THEN 1 ELSE 0 END) as checked_count
@@ -964,12 +1131,22 @@ export function createAlbum(
 
 		const albumId = Number(result.lastInsertRowid);
 
+		const globalRules = getGlobalFixerRules();
 		for (const t of tracksData) {
 			const format = t.format || 'FLAC';
 			const quality = t.quality_rating || 'good';
 			const censorship = t.censorship || 'unknown';
 			const lyrics = t.lyrics || 'missing';
-			const needsAtt = computeNeedsAttention(quality, censorship, lyrics);
+			const needsAtt = computeNeedsAttention(
+				quality,
+				censorship,
+				lyrics,
+				format,
+				globalRules,
+				0,
+				t.bitrate_kbps ?? null,
+				t.manually_checked || 0
+			);
 
 			insertTrack.run(
 				albumId,
@@ -1096,8 +1273,19 @@ export function updateTrack(
 	const newCensorship = data.censorship ?? current.censorship;
 	const newLyrics = data.lyrics ?? current.lyrics;
 	const newIsMissing = data.is_missing ?? (current.is_missing ?? 0);
-	const rules = getAlbumFixerRules(current.album_id);
-	const autoNeedsAtt = computeNeedsAttention(newQuality, newCensorship, newLyrics, newFormat, rules, newIsMissing);
+	const newBitrate = data.bitrate_kbps !== undefined ? data.bitrate_kbps : current.bitrate_kbps;
+	const newChecked = data.manually_checked ?? (current.manually_checked ?? 0);
+	const rules = getGlobalFixerRules();
+	const autoNeedsAtt = computeNeedsAttention(
+		newQuality,
+		newCensorship,
+		newLyrics,
+		newFormat,
+		rules,
+		newIsMissing,
+		newBitrate,
+		newChecked
+	);
 	const needsAttention = data.needs_attention !== undefined ? data.needs_attention : autoNeedsAtt;
 
 	db.prepare(`
@@ -1190,7 +1378,17 @@ export function batchUpdateAlbumTracks(
 			const quality = updates.quality_rating ?? track.quality_rating;
 			const censorship = updates.censorship ?? track.censorship;
 			const lyrics = updates.lyrics ?? track.lyrics;
-			const needsAtt = computeNeedsAttention(quality, censorship, lyrics, format, rules);
+			const nextChecked = hasChecked ? checkedVal : (track.manually_checked ?? 0);
+			const needsAtt = computeNeedsAttention(
+				quality,
+				censorship,
+				lyrics,
+				format,
+				rules,
+				track.is_missing ?? 0,
+				track.bitrate_kbps,
+				nextChecked
+			);
 
 			updateStmt.run(format, quality, censorship, lyrics, needsAtt, hasChecked, checkedVal, track.id);
 		}
@@ -1285,8 +1483,18 @@ export function updateAlbumAndTracksFromMusicBrainz(
 			const title = t.title.trim();
 			const artist = t.artist?.trim() ?? existing.artist;
 			const newFilePath = t.file_path !== undefined ? t.file_path : existing.file_path;
+			const isMissing = newFilePath ? 0 : (existing.is_missing ?? 0);
 			const manuallyChecked = existing.manually_checked ?? 0;
-			const needsAtt = computeNeedsAttention(existing.quality_rating, existing.censorship, existing.lyrics, existing.format, rules, manuallyChecked);
+			const needsAtt = computeNeedsAttention(
+				existing.quality_rating,
+				existing.censorship,
+				existing.lyrics,
+				existing.format,
+				rules,
+				isMissing,
+				existing.bitrate_kbps,
+				manuallyChecked
+			);
 
 			updateTrackStmt.run(title, artist, trackNumber, discNumber, newFilePath, newFilePath, needsAtt, t.id, albumId);
 		}
@@ -1379,8 +1587,17 @@ export function addTrackToAlbum(
 	const censorship = trackData.censorship || 'unknown';
 	const lyrics = trackData.lyrics || 'missing';
 	const isMissing = trackData.is_missing ?? 0;
-	const rules = getAlbumFixerRules(albumId);
-	const needsAtt = computeNeedsAttention(quality, censorship, lyrics, format, rules, isMissing);
+	const rules = getGlobalFixerRules();
+	const needsAtt = computeNeedsAttention(
+		quality,
+		censorship,
+		lyrics,
+		format,
+		rules,
+		isMissing,
+		trackData.bitrate_kbps ?? null,
+		trackData.manually_checked ?? 0
+	);
 
 	const result = db.prepare(`
 		INSERT INTO tracks (album_id, disc_number, track_number, title, artist, duration_ms, format, bitrate_kbps, sample_rate, bits_per_sample, quality_rating, censorship, lyrics, needs_attention, manually_checked, is_missing, notes, file_path, lyrics_text)
@@ -1446,13 +1663,16 @@ export function saveTrackLyrics(
 	const current = db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Track | undefined;
 	if (!current) throw new Error(`Track with id ${trackId} not found`);
 
-	const rules = getAlbumFixerRules(current.album_id);
+	const rules = getGlobalFixerRules();
 	const needsAttention = computeNeedsAttention(
 		current.quality_rating,
 		current.censorship,
 		status,
 		current.format,
-		rules
+		rules,
+		current.is_missing ?? 0,
+		current.bitrate_kbps,
+		current.manually_checked ?? 0
 	);
 
 	db.prepare(`
@@ -1496,11 +1716,12 @@ export function getIssuesTracks(params?: {
 
 	const conditions: string[] = [];
 	const queryParams: (string | number)[] = [];
+	const globalRules = getGlobalFixerRules();
 
 	if (params?.issueType === 'bad_quality') {
-		conditions.push("t.quality_rating IN ('bad', 'needs_upgrade')");
+		conditions.push(buildAudioIssueSqlCondition(globalRules, 't'));
 	} else if (params?.issueType === 'censored') {
-		conditions.push("t.censorship = 'censored'");
+		conditions.push(buildCensorshipIssueSqlCondition(globalRules, 't'));
 	} else if (params?.issueType === 'missing_lyrics') {
 		conditions.push("t.lyrics = 'missing'");
 	} else if (params?.issueType === 'missing_tracks') {
@@ -1509,6 +1730,8 @@ export function getIssuesTracks(params?: {
 		conditions.push("t.lyrics = 'unsynced_lrc'");
 	} else if (params?.issueType === 'censored_lyrics') {
 		conditions.push("t.lyrics = 'censored_lrc'");
+	} else if (params?.issueType === 'plain_lyrics') {
+		conditions.push("t.lyrics = 'plain_txt'");
 	} else if (params?.issueType === 'all_issues') {
 		conditions.push('t.needs_attention = 1');
 	} else if (params?.issueType === 'good') {

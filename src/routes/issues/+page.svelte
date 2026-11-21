@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
-	import type { Track, AudioFormat, LyricsStatus, CensorshipStatus, QualityRating } from '$lib/types/index.js';
+	import type { Track, AudioFormat, LyricsStatus, CensorshipStatus, QualityRating, FixerRules } from '$lib/types/index.js';
 	import {
 		formatDuration,
 		FORMAT_OPTIONS,
@@ -29,17 +29,21 @@
 		ChevronUp,
 		Info,
 		ShieldCheck,
-		Music2
+		Music2,
+		RefreshCw
 	} from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { alertAction } from '$lib/services/dialog.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
 	let tracks = $state<Track[]>([...data.tracks]);
 
-	// Global rules details accordion toggle
-	let showRulesDetails = $state(false);
+	// Interactive Global Fixer Rules Studio state
+	let showRulesStudio = $state(false);
+	let isSavingRules = $state(false);
+	let rules = $state<Required<FixerRules>>({ ...data.fixerRules });
 
 	// Local interactive search & filters
 	let localSearch = $state(data.searchQuery || '');
@@ -51,7 +55,144 @@
 
 	$effect(() => {
 		tracks = [...data.tracks];
+		rules = { ...data.fixerRules };
 	});
+
+	function applyRulesPreset(preset: 'balanced' | 'audiophile' | 'high_bitrate' | 'relaxed') {
+		if (preset === 'balanced') {
+			rules = {
+				flag_bad_quality: true,
+				flag_needs_upgrade: true,
+				flag_acceptable_quality: false,
+				flag_good_quality: false,
+				flag_lossy: false,
+				flag_mp3: false,
+				flag_mp3_320: false,
+				flag_mp3_v0: false,
+				flag_mp3_192: false,
+				flag_mp3_128: false,
+				flag_aac_256: false,
+				flag_ogg: false,
+				flag_other_format: false,
+				flag_wav_aiff: false,
+				min_bitrate_kbps: 0,
+				flag_censored: true,
+				flag_clean: false,
+				flag_unknown_censorship: false,
+				flag_missing_lyrics: true,
+				flag_unsynced_lyrics: true,
+				flag_plain_lyrics: false,
+				flag_censored_lyrics: true,
+				flag_missing_tracks: true,
+				ignore_manually_checked: false
+			};
+		} else if (preset === 'audiophile') {
+			rules = {
+				flag_bad_quality: true,
+				flag_needs_upgrade: true,
+				flag_acceptable_quality: true,
+				flag_good_quality: false,
+				flag_lossy: true,
+				flag_mp3: true,
+				flag_mp3_320: true,
+				flag_mp3_v0: true,
+				flag_mp3_192: true,
+				flag_mp3_128: true,
+				flag_aac_256: true,
+				flag_ogg: true,
+				flag_other_format: true,
+				flag_wav_aiff: false,
+				min_bitrate_kbps: 0,
+				flag_censored: true,
+				flag_clean: false,
+				flag_unknown_censorship: false,
+				flag_missing_lyrics: true,
+				flag_unsynced_lyrics: true,
+				flag_plain_lyrics: true,
+				flag_censored_lyrics: true,
+				flag_missing_tracks: true,
+				ignore_manually_checked: false
+			};
+		} else if (preset === 'high_bitrate') {
+			rules = {
+				flag_bad_quality: true,
+				flag_needs_upgrade: true,
+				flag_acceptable_quality: true,
+				flag_good_quality: false,
+				flag_lossy: false,
+				flag_mp3: false,
+				flag_mp3_320: false,
+				flag_mp3_v0: false,
+				flag_mp3_192: true,
+				flag_mp3_128: true,
+				flag_aac_256: false,
+				flag_ogg: false,
+				flag_other_format: true,
+				flag_wav_aiff: false,
+				min_bitrate_kbps: 256,
+				flag_censored: true,
+				flag_clean: false,
+				flag_unknown_censorship: false,
+				flag_missing_lyrics: true,
+				flag_unsynced_lyrics: true,
+				flag_plain_lyrics: false,
+				flag_censored_lyrics: true,
+				flag_missing_tracks: true,
+				ignore_manually_checked: false
+			};
+		} else if (preset === 'relaxed') {
+			rules = {
+				flag_bad_quality: true,
+				flag_needs_upgrade: true,
+				flag_acceptable_quality: false,
+				flag_good_quality: false,
+				flag_lossy: false,
+				flag_mp3: false,
+				flag_mp3_320: false,
+				flag_mp3_v0: false,
+				flag_mp3_192: false,
+				flag_mp3_128: false,
+				flag_aac_256: false,
+				flag_ogg: false,
+				flag_other_format: false,
+				flag_wav_aiff: false,
+				min_bitrate_kbps: 0,
+				flag_censored: true,
+				flag_clean: false,
+				flag_unknown_censorship: false,
+				flag_missing_lyrics: false,
+				flag_unsynced_lyrics: false,
+				flag_plain_lyrics: false,
+				flag_censored_lyrics: true,
+				flag_missing_tracks: true,
+				ignore_manually_checked: true
+			};
+		}
+	}
+
+	async function saveGlobalFixerRules() {
+		if (isSavingRules) return;
+		isSavingRules = true;
+		try {
+			const res = await fetch('/api/fixer-rules', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ rules })
+			});
+			const resData = await res.json();
+			if (res.ok && resData.success) {
+				rules = { ...resData.rules };
+				await invalidateAll();
+			} else {
+				await alertAction(resData.error || 'Failed to save global fixer rules', 'Error');
+			}
+		} catch (err: any) {
+			console.error('Failed to save global fixer rules:', err);
+			await alertAction(err.message || 'Error saving global fixer rules', 'Error');
+		} finally {
+			isSavingRules = false;
+		}
+	}
 
 	// Client-side computed filtered list
 	const filteredTracks = $derived.by(() => {
@@ -165,41 +306,54 @@
 
 		<button
 			type="button"
-			onclick={() => (showRulesDetails = !showRulesDetails)}
-			class="self-start md:self-auto flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3.5 py-2 text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-800/90 transition shadow-sm cursor-pointer"
+			onclick={() => (showRulesStudio = !showRulesStudio)}
+			class="self-start md:self-auto flex items-center gap-2 rounded-xl border {showRulesStudio
+				? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+				: 'border-neutral-800 bg-neutral-900/80 text-neutral-300 hover:text-white hover:bg-neutral-800/90'} px-4 py-2 text-xs font-bold transition shadow-sm cursor-pointer"
 		>
 			<Sliders class="h-3.5 w-3.5 text-emerald-400" />
-			<span>{showRulesDetails ? 'Hide Global Rules' : 'Global Quality Rules & Standards'}</span>
-			{#if showRulesDetails}
-				<ChevronUp class="h-3.5 w-3.5 text-neutral-400" />
+			<span>{showRulesStudio ? 'Close Fixer Rules Studio' : 'Configure Global Fixer Rules'}</span>
+			{#if showRulesStudio}
+				<ChevronUp class="h-3.5 w-3.5 text-emerald-400" />
 			{:else}
 				<ChevronDown class="h-3.5 w-3.5 text-neutral-400" />
 			{/if}
 		</button>
 	</div>
 
-	<!-- Global Rules & Standards Banner -->
+	<!-- Global Rules & Standards Banner + Interactive Control Studio -->
 	<div class="mb-6 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 sm:p-5 backdrop-blur-md shadow-xl">
-		<div class="flex items-center justify-between gap-2 mb-3.5">
+		<div class="flex flex-wrap items-center justify-between gap-3 mb-3.5">
 			<div class="flex items-center gap-2.5">
-				<div class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+				<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
 					<ShieldCheck class="h-4 w-4" />
 				</div>
 				<div>
 					<h2 class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
 						Vault Global Quality Standards
 						<span class="rounded bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 text-[10px] font-mono text-emerald-300 font-bold">
-							Active
+							Global Rules
 						</span>
 					</h2>
 					<p class="text-[11px] text-neutral-400 mt-0.5">
-						Criteria songs must meet to be considered healthy. Tracks failing any rule are flagged for attention.
+						You have full control over what counts as <strong class="text-rose-300">Bad (Flagged)</strong> vs <strong class="text-emerald-300">Still Good (Healthy)</strong> across your entire library.
 					</p>
 				</div>
 			</div>
+
+			<button
+				type="button"
+				onclick={() => (showRulesStudio = !showRulesStudio)}
+				class="px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 {showRulesStudio
+					? 'bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700'
+					: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'}"
+			>
+				<Sliders class="h-3.5 w-3.5 text-emerald-400" />
+				<span>{showRulesStudio ? 'Hide Controls' : 'Customize What Counts as Bad vs. Good'}</span>
+			</button>
 		</div>
 
-		<!-- 4 Pillars Grid -->
+		<!-- 4 Pillars Live Summary Grid -->
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
 			<!-- 1. Audio Fidelity -->
 			<div class="rounded-xl border border-neutral-800/80 bg-neutral-950/50 p-3 flex flex-col justify-between">
@@ -210,16 +364,32 @@
 							Audio Fidelity
 						</span>
 						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
-							Lossless
+							{rules.flag_lossy ? 'Lossless Only' : rules.min_bitrate_kbps > 0 ? `≥ ${rules.min_bitrate_kbps} kbps` : 'Custom'}
 						</span>
 					</div>
 					<p class="text-[11px] text-neutral-400 leading-relaxed">
-						FLAC or ALAC (16/24-bit) preferred. MP3 320/V0 accepted.
+						{#if rules.flag_lossy}
+							Only FLAC, ALAC, WAV, AIFF lossless files count as good.
+						{:else if rules.flag_mp3}
+							Lossless & AAC/OGG allowed; all MP3 files flagged as bad.
+						{:else}
+							Lossless & high-bitrate formats accepted as good.
+						{/if}
 					</p>
 				</div>
-				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
-					<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-					<span>Flags &lt;192 kbps or bad quality</span>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-400 flex items-center gap-1.5">
+					<span class="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0"></span>
+					<span class="truncate">
+						Flags: {[
+							rules.flag_bad_quality && 'Bad',
+							rules.flag_needs_upgrade && 'Needs Upgrade',
+							rules.flag_acceptable_quality && 'Acceptable',
+							rules.flag_good_quality && 'Good',
+							rules.flag_lossy && 'All Lossy',
+							!rules.flag_lossy && rules.flag_mp3 && 'All MP3',
+							rules.min_bitrate_kbps > 0 && `<${rules.min_bitrate_kbps}k`
+						].filter(Boolean).join(', ') || 'None'}
+					</span>
 				</div>
 			</div>
 
@@ -232,16 +402,23 @@
 							Lyrics & Karaoke
 						</span>
 						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
-							Synced .LRC
+							{rules.flag_plain_lyrics ? 'Synced LRC Only' : 'LRC & Text'}
 						</span>
 					</div>
 					<p class="text-[11px] text-neutral-400 leading-relaxed">
-						Synchronized timestamps or verified ♪ Instrumental status.
+						Synced LRC & ♪ Instrumental are always good. {!rules.flag_plain_lyrics ? 'Plain .txt lyrics are also accepted.' : 'Plain .txt lyrics are flagged.'}
 					</p>
 				</div>
-				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
-					<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-					<span>Flags missing or unsynced LRC</span>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-400 flex items-center gap-1.5">
+					<span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+					<span class="truncate">
+						Flags: {[
+							rules.flag_missing_lyrics && 'Missing',
+							rules.flag_unsynced_lyrics && 'Unsynced LRC',
+							rules.flag_censored_lyrics && 'Censored LRC',
+							rules.flag_plain_lyrics && 'Plain .txt'
+						].filter(Boolean).join(', ') || 'None'}
+					</span>
 				</div>
 			</div>
 
@@ -254,82 +431,622 @@
 							Authenticity
 						</span>
 						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
-							Explicit
+							{rules.flag_clean ? 'Strict Explicit' : 'Uncensored'}
 						</span>
 					</div>
 					<p class="text-[11px] text-neutral-400 leading-relaxed">
-						Original uncensored audio recording and lyric text.
+						Explicit & Instrumental tracks are good. {!rules.flag_clean ? 'Clean original tracks are also good.' : 'Clean tracks are flagged.'}
 					</p>
 				</div>
-				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
-					<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-					<span>Flags radio edits & censored LRC</span>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-400 flex items-center gap-1.5">
+					<span class="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0"></span>
+					<span class="truncate">
+						Flags: {[
+							rules.flag_censored && 'Censored Radio Edits',
+							rules.flag_clean && 'Clean Original',
+							rules.flag_unknown_censorship && 'Unverified'
+						].filter(Boolean).join(', ') || 'None'}
+					</span>
 				</div>
 			</div>
 
-			<!-- 4. Release Completeness -->
+			<!-- 4. Completeness & Verification -->
 			<div class="rounded-xl border border-neutral-800/80 bg-neutral-950/50 p-3 flex flex-col justify-between">
 				<div>
 					<div class="flex items-center justify-between text-xs font-bold text-white mb-1.5">
 						<span class="flex items-center gap-1.5">
 							<CheckCircle2 class="h-3.5 w-3.5 text-emerald-400" />
-							Completeness
+							Verification
 						</span>
 						<span class="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/30">
-							100% Tracklist
+							{rules.ignore_manually_checked ? 'Manual ✓ Overrides' : 'Strict Rules'}
 						</span>
 					</div>
 					<p class="text-[11px] text-neutral-400 leading-relaxed">
-						All tracks from the official MusicBrainz release present.
+						{rules.ignore_manually_checked
+							? 'Manually checked (✓) tracks automatically count as Good.'
+							: 'All tracks must pass active rules even if manually checked.'}
 					</p>
 				</div>
-				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-500 flex items-center gap-1">
-					<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-					<span>Flags missing album tracks</span>
+				<div class="mt-2.5 pt-2 border-t border-neutral-800/60 text-[10px] text-neutral-400 flex items-center gap-1.5">
+					<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+					<span class="truncate">
+						Missing album tracks: {rules.flag_missing_tracks ? 'Flagged as Bad' : 'Ignored'}
+					</span>
 				</div>
 			</div>
 		</div>
 
-		<!-- Expandable Detailed Rules Breakdown -->
-		{#if showRulesDetails}
-			<div class="mt-4 pt-4 border-t border-neutral-800/80 text-xs text-neutral-300 animate-in fade-in duration-200">
-				<h3 class="font-bold text-white text-xs uppercase tracking-wider mb-2 flex items-center gap-2">
-					<Info class="h-3.5 w-3.5 text-emerald-400" />
-					Detailed Rules Specification & Overrides
-				</h3>
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-neutral-400 leading-relaxed">
-					<div class="rounded-lg bg-neutral-950/40 p-3 border border-neutral-800/60 space-y-1.5">
-						<div class="font-semibold text-neutral-200">Default Global Detection Flags:</div>
-						<div class="flex items-center gap-2 text-neutral-300">
-							<span class="text-emerald-400 font-bold font-mono">✓</span>
-							<span><strong class="text-neutral-200">Bad Quality</strong>: Bitrates &lt; 128 kbps or corrupted audio stream.</span>
+		<!-- Interactive Global Fixer Rules Control Studio -->
+		{#if showRulesStudio}
+			<div class="mt-5 pt-5 border-t border-neutral-800 text-xs text-neutral-200 space-y-5 animate-in fade-in duration-150">
+				<!-- Presets Bar -->
+				<div class="flex flex-wrap items-center justify-between gap-3 bg-neutral-950/70 p-3.5 rounded-xl border border-neutral-800">
+					<div class="space-y-0.5">
+						<div class="text-xs font-bold text-white flex items-center gap-1.5">
+							<Sparkles class="w-3.5 h-3.5 text-emerald-400" />
+							<span>Quick Rule Presets</span>
 						</div>
-						<div class="flex items-center gap-2 text-neutral-300">
-							<span class="text-emerald-400 font-bold font-mono">✓</span>
-							<span><strong class="text-neutral-200">Needs Upgrade</strong>: Lossy bitrates between 128 kbps and 192 kbps.</span>
+						<p class="text-[11px] text-neutral-400">
+							Load a starting profile or click any item below to toggle whether it counts as <span class="text-emerald-300 font-semibold">✓ Still Good</span> or <span class="text-rose-300 font-semibold">⚠ Flagged as Bad</span>.
+						</p>
+					</div>
+					<div class="flex flex-wrap items-center gap-2">
+						<button
+							type="button"
+							onclick={() => applyRulesPreset('balanced')}
+							class="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[11px] font-semibold text-neutral-200 transition cursor-pointer"
+						>
+							Balanced Default
+						</button>
+						<button
+							type="button"
+							onclick={() => applyRulesPreset('high_bitrate')}
+							class="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[11px] font-semibold text-cyan-300 transition cursor-pointer"
+						>
+							High-Bitrate (≥ 256k)
+						</button>
+						<button
+							type="button"
+							onclick={() => applyRulesPreset('audiophile')}
+							class="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[11px] font-semibold text-emerald-300 transition cursor-pointer"
+						>
+							Strict Lossless Only
+						</button>
+						<button
+							type="button"
+							onclick={() => applyRulesPreset('relaxed')}
+							class="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[11px] font-semibold text-amber-300 transition cursor-pointer"
+						>
+							Relaxed (Ignore Lyrics)
+						</button>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+					<!-- Card 1: Audio Quality Ratings & Minimum Bitrate -->
+					<div class="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 space-y-3.5">
+						<div>
+							<h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+								<Disc3 class="w-3.5 h-3.5" />
+								1. Audio Quality Ratings & Bitrate Floor
+							</h3>
+							<p class="text-[11px] text-neutral-400 mt-0.5">
+								Click any quality rating to decide if it is <strong class="text-emerald-300">Still Good</strong> or <strong class="text-rose-300">Bad (Needs Attention)</strong>.
+							</p>
 						</div>
-						<div class="flex items-center gap-2 text-neutral-300">
-							<span class="text-emerald-400 font-bold font-mono">✓</span>
-							<span><strong class="text-neutral-200">Missing Lyrics</strong>: No companion .lrc/.txt file or embedded tag found.</span>
+
+						<div class="space-y-2">
+							<!-- Perfect (Always Good) -->
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Perfect Quality</div>
+									<div class="text-[10px] text-neutral-400">24-bit / Hi-Res Lossless studio masters</div>
+								</div>
+								<span class="px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold">
+									✓ Always Good
+								</span>
+							</div>
+
+							<!-- Good Quality -->
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Good Quality</div>
+									<div class="text-[10px] text-neutral-400">16-bit CD Lossless, MP3 320 kbps, MP3 V0, AAC 256k</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_good_quality = !rules.flag_good_quality)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_good_quality
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_good_quality ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<!-- Acceptable Quality -->
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Acceptable Quality</div>
+									<div class="text-[10px] text-neutral-400">Listen-able medium bitrates (128 kbps – 220 kbps)</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_acceptable_quality = !rules.flag_acceptable_quality)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_acceptable_quality
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_acceptable_quality ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<!-- Needs Upgrade -->
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Needs Upgrade</div>
+									<div class="text-[10px] text-neutral-400">Tracks marked as needing a higher-fidelity replacement</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_needs_upgrade = !rules.flag_needs_upgrade)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_needs_upgrade
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_needs_upgrade ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<!-- Bad Quality -->
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Bad Quality</div>
+									<div class="text-[10px] text-neutral-400">Low bitrates (&lt; 128 kbps), transcodes, or audible distortion</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_bad_quality = !rules.flag_bad_quality)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_bad_quality
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_bad_quality ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
 						</div>
-						<div class="flex items-center gap-2 text-neutral-300">
-							<span class="text-emerald-400 font-bold font-mono">✓</span>
-							<span><strong class="text-neutral-200">Unsynced LRC</strong>: Lyrics without precise line timestamps.</span>
-						</div>
-						<div class="flex items-center gap-2 text-neutral-300">
-							<span class="text-emerald-400 font-bold font-mono">✓</span>
-							<span><strong class="text-neutral-200">Censored Audio / Lyrics</strong>: Bleeped or muted explicit tracks.</span>
+
+						<!-- Minimum Bitrate Floor -->
+						<div class="pt-2 border-t border-neutral-800/80 space-y-2">
+							<div class="flex items-center justify-between">
+								<label for="fixer-min-bitrate-input" class="text-xs font-bold text-neutral-200">
+									Minimum Acceptable Bitrate (kbps)
+								</label>
+								<span class="text-[11px] font-mono text-emerald-400">
+									{rules.min_bitrate_kbps > 0 ? `Flags < ${rules.min_bitrate_kbps} kbps` : 'Off (No minimum)'}
+								</span>
+							</div>
+							<div class="flex flex-wrap items-center gap-1.5">
+								{#each [0, 128, 192, 256, 320, 500, 800] as br}
+									<button
+										type="button"
+										onclick={() => (rules.min_bitrate_kbps = br)}
+										class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold border transition cursor-pointer {rules.min_bitrate_kbps === br
+											? 'bg-emerald-500 text-neutral-950 border-emerald-400 font-bold'
+											: 'bg-neutral-900 border-neutral-700 text-neutral-300 hover:bg-neutral-800'}"
+									>
+										{br === 0 ? 'Off' : `${br}k`}
+									</button>
+								{/each}
+								<input
+									id="fixer-min-bitrate-input"
+									type="number"
+									min="0"
+									max="5000"
+									step="16"
+									bind:value={rules.min_bitrate_kbps}
+									placeholder="Custom kbps"
+									class="w-24 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-xs font-mono text-white focus:border-emerald-500 focus:outline-none ml-auto"
+								/>
+							</div>
 						</div>
 					</div>
 
-					<div class="rounded-lg bg-neutral-950/40 p-3 border border-neutral-800/60 space-y-1.5">
-						<div class="font-semibold text-neutral-200">Per-Album Rule Customization:</div>
-						<p>
-							Any album can override these standards in its <strong class="text-neutral-200">Album Details &gt; Fixer Rules</strong> menu. For example, you can enforce strict lossless-only mode (<code class="text-emerald-400">flag_lossy: true</code>), allow clean radio edits for specific records, or permit plain text lyrics.
-						</p>
-						<p class="pt-1">
-							Once you've inspected a track and confirmed it meets your standards, click <strong class="text-neutral-200">Manual Check</strong> (<code class="text-emerald-400">✓</code>) to permanently clear it from attention.
-						</p>
+					<!-- Card 2: Audio Formats (Per-Format Good vs Bad Control) -->
+					<div class="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 space-y-3.5">
+						<div>
+							<h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+								<Music2 class="w-3.5 h-3.5" />
+								2. Audio File Formats (Good vs. Bad)
+							</h3>
+							<p class="text-[11px] text-neutral-400 mt-0.5">
+								Choose exactly which audio codecs and bitrates are accepted in your library.
+							</p>
+						</div>
+
+						<!-- Master Format Switches -->
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+							<button
+								type="button"
+								onclick={() => (rules.flag_lossy = !rules.flag_lossy)}
+								class="p-2.5 rounded-lg border text-left transition cursor-pointer flex items-center justify-between {rules.flag_lossy
+									? 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+									: 'bg-neutral-900/70 border-neutral-800 text-neutral-300 hover:border-neutral-700'}"
+							>
+								<div>
+									<div class="text-xs font-bold">Lossless Only Mode</div>
+									<div class="text-[10px] text-neutral-400">Flag ALL lossy files as bad</div>
+								</div>
+								<span class="text-[10px] font-bold px-2 py-0.5 rounded {rules.flag_lossy ? 'bg-rose-500 text-white' : 'bg-neutral-800 text-neutral-400'}">
+									{rules.flag_lossy ? 'ON' : 'OFF'}
+								</span>
+							</button>
+
+							<button
+								type="button"
+								onclick={() => (rules.flag_mp3 = !rules.flag_mp3)}
+								class="p-2.5 rounded-lg border text-left transition cursor-pointer flex items-center justify-between {rules.flag_mp3 || rules.flag_lossy
+									? 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+									: 'bg-neutral-900/70 border-neutral-800 text-neutral-300 hover:border-neutral-700'}"
+							>
+								<div>
+									<div class="text-xs font-bold">Flag All MP3s</div>
+									<div class="text-[10px] text-neutral-400">Flag every MP3 (even 320k/V0)</div>
+								</div>
+								<span class="text-[10px] font-bold px-2 py-0.5 rounded {rules.flag_mp3 || rules.flag_lossy ? 'bg-rose-500 text-white' : 'bg-neutral-800 text-neutral-400'}">
+									{rules.flag_mp3 || rules.flag_lossy ? 'ON' : 'OFF'}
+								</span>
+							</button>
+						</div>
+
+						<!-- Granular Format Grid -->
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">FLAC / ALAC</span>
+								<span class="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
+									✓ Always Good
+								</span>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">WAV / AIFF</span>
+								<button
+									type="button"
+									onclick={() => (rules.flag_wav_aiff = !rules.flag_wav_aiff)}
+									class="px-2 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer {rules.flag_wav_aiff
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_wav_aiff ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">MP3 320 kbps</span>
+								<button
+									type="button"
+									disabled={rules.flag_lossy || rules.flag_mp3}
+									onclick={() => (rules.flag_mp3_320 = !rules.flag_mp3_320)}
+									class="px-2 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer disabled:opacity-60 {rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_320
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_320 ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">MP3 V0 (VBR)</span>
+								<button
+									type="button"
+									disabled={rules.flag_lossy || rules.flag_mp3}
+									onclick={() => (rules.flag_mp3_v0 = !rules.flag_mp3_v0)}
+									class="px-2 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer disabled:opacity-60 {rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_v0
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_v0 ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">MP3 192 kbps</span>
+								<button
+									type="button"
+									disabled={rules.flag_lossy || rules.flag_mp3}
+									onclick={() => (rules.flag_mp3_192 = !rules.flag_mp3_192)}
+									class="px-2 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer disabled:opacity-60 {rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_192
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_192 ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">MP3 128 kbps</span>
+								<button
+									type="button"
+									disabled={rules.flag_lossy || rules.flag_mp3}
+									onclick={() => (rules.flag_mp3_128 = !rules.flag_mp3_128)}
+									class="px-2 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer disabled:opacity-60 {rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_128
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_lossy || rules.flag_mp3 || rules.flag_mp3_128 ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">AAC 256 kbps</span>
+								<button
+									type="button"
+									disabled={rules.flag_lossy}
+									onclick={() => (rules.flag_aac_256 = !rules.flag_aac_256)}
+									class="px-2 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer disabled:opacity-60 {rules.flag_lossy || rules.flag_aac_256
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_lossy || rules.flag_aac_256 ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80">
+								<span class="text-xs font-semibold text-white">OGG / Opus</span>
+								<button
+									type="button"
+									disabled={rules.flag_lossy}
+									onclick={() => (rules.flag_ogg = !rules.flag_ogg)}
+									class="px-2 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer disabled:opacity-60 {rules.flag_lossy || rules.flag_ogg
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_lossy || rules.flag_ogg ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2 rounded-lg bg-neutral-900/50 border border-neutral-800/80 sm:col-span-2">
+								<span class="text-xs font-semibold text-white">Other / Non-Standard Lossy Formats</span>
+								<button
+									type="button"
+									disabled={rules.flag_lossy}
+									onclick={() => (rules.flag_other_format = !rules.flag_other_format)}
+									class="px-2.5 py-0.5 rounded border text-[10px] font-bold transition cursor-pointer disabled:opacity-60 {rules.flag_lossy || rules.flag_other_format
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'}"
+								>
+									{rules.flag_lossy || rules.flag_other_format ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+						</div>
+					</div>
+
+					<!-- Card 3: Lyrics & Karaoke Standards -->
+					<div class="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 space-y-3.5">
+						<div>
+							<h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+								<FileText class="w-3.5 h-3.5" />
+								3. Lyrics & Karaoke Standards
+							</h3>
+							<p class="text-[11px] text-neutral-400 mt-0.5">
+								Control which lyrics states are healthy vs. flagged for attention.
+							</p>
+						</div>
+
+						<div class="space-y-2">
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Synced LRC & ♪ Instrumental</div>
+									<div class="text-[10px] text-neutral-400">Time-synchronized .lrc files or verified instrumentals</div>
+								</div>
+								<span class="px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold">
+									✓ Always Good
+								</span>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Plain Text Lyrics (.txt)</div>
+									<div class="text-[10px] text-neutral-400">Readable lyrics without karaoke timestamps</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_plain_lyrics = !rules.flag_plain_lyrics)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_plain_lyrics
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_plain_lyrics ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Unsynced LRC</div>
+									<div class="text-[10px] text-neutral-400">.lrc files missing timestamps or out of sync</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_unsynced_lyrics = !rules.flag_unsynced_lyrics)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_unsynced_lyrics
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_unsynced_lyrics ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Censored LRC</div>
+									<div class="text-[10px] text-neutral-400">Synced lyrics containing bleeps/asterisks (e.g. f***)</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_censored_lyrics = !rules.flag_censored_lyrics)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_censored_lyrics
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_censored_lyrics ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Missing Lyrics</div>
+									<div class="text-[10px] text-neutral-400">No companion .lrc / .txt file or embedded lyrics</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_missing_lyrics = !rules.flag_missing_lyrics)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_missing_lyrics
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_missing_lyrics ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+						</div>
+					</div>
+
+					<!-- Card 4: Censorship, Completeness & Manual Checks -->
+					<div class="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 space-y-3.5">
+						<div>
+							<h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+								<ShieldAlert class="w-3.5 h-3.5" />
+								4. Censorship, Completeness & Verification
+							</h3>
+							<p class="text-[11px] text-neutral-400 mt-0.5">
+								Control explicit/clean audio rules, missing album songs, and manual check overrides.
+							</p>
+						</div>
+
+						<div class="space-y-2">
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Explicit & Instrumental Audio</div>
+									<div class="text-[10px] text-neutral-400">Original uncensored recordings</div>
+								</div>
+								<span class="px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold">
+									✓ Always Good
+								</span>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Clean Original Audio</div>
+									<div class="text-[10px] text-neutral-400">Songs naturally recorded without profanity</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_clean = !rules.flag_clean)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_clean
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_clean ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Unverified / Unknown Censorship</div>
+									<div class="text-[10px] text-neutral-400">Tracks whose censorship status hasn't been tagged yet</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_unknown_censorship = !rules.flag_unknown_censorship)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_unknown_censorship
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_unknown_censorship ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Censored / Radio Edit Audio</div>
+									<div class="text-[10px] text-neutral-400">Bleeped or muted radio edits needing explicit replacement</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_censored = !rules.flag_censored)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_censored
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_censored ? '⚠ Counts as Bad' : '✓ Still Good'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-white">Missing Album Songs</div>
+									<div class="text-[10px] text-neutral-400">Missing tracks from a tagged MusicBrainz release</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.flag_missing_tracks = !rules.flag_missing_tracks)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.flag_missing_tracks
+										? 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900/80'
+										: 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'}"
+								>
+									{rules.flag_missing_tracks ? '⚠ Counts as Bad' : '✓ Ignored'}
+								</button>
+							</div>
+
+							<div class="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/60 border border-neutral-800/80">
+								<div>
+									<div class="text-xs font-bold text-emerald-300">Manually Checked (✓) Override</div>
+									<div class="text-[10px] text-neutral-400">When ON, any song you manually check (✓) is treated as Good</div>
+								</div>
+								<button
+									type="button"
+									onclick={() => (rules.ignore_manually_checked = !rules.ignore_manually_checked)}
+									class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer {rules.ignore_manually_checked
+										? 'bg-emerald-500 text-neutral-950 border-emerald-400'
+										: 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700'}"
+								>
+									{rules.ignore_manually_checked ? '✓ Override ON' : 'Override OFF'}
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Save & Apply Global Rules Action Bar -->
+				<div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-neutral-800">
+					<p class="text-[11px] text-neutral-400">
+						Saving will apply these rules globally and immediately recompute <code class="text-emerald-400">Needs Attention</code> across all <strong class="text-white">{data.stats.total_tracks}</strong> songs in your Vault.
+					</p>
+					<div class="flex items-center gap-2.5 ml-auto">
+						<button
+							type="button"
+							onclick={() => {
+								rules = { ...data.fixerRules };
+								showRulesStudio = false;
+							}}
+							class="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-neutral-300 transition cursor-pointer"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onclick={saveGlobalFixerRules}
+							disabled={isSavingRules}
+							class="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+						>
+							{#if isSavingRules}
+								<RefreshCw class="w-3.5 h-3.5 animate-spin" />
+								<span>Recomputing Vault...</span>
+							{:else}
+								<CheckCircle2 class="w-4 h-4" />
+								<span>Save & Recompute Entire Vault</span>
+							{/if}
+						</button>
 					</div>
 				</div>
 			</div>

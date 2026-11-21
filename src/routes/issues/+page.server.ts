@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types.js';
-import { getIssuesTracks, getStats } from '$lib/server/db.js';
+import { getIssuesTracks, getStats, getGlobalFixerRules } from '$lib/server/db.js';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const issueType = url.searchParams.get('type') || 'all_issues';
@@ -14,11 +14,13 @@ export const load: PageServerLoad = async ({ url }) => {
 	});
 
 	const stats = getStats();
+	const fixerRules = getGlobalFixerRules();
 
 	return {
 		tracks,
 		total,
 		stats,
+		fixerRules,
 		activeType: issueType,
 		searchQuery: search || '',
 		formatFilter: format || ''

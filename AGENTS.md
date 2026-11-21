@@ -1045,6 +1045,22 @@ This document preserves persistent context, architectural conventions, recent ch
         1. **Match by ID / URL or Search**: Paste an ID/URL (with quick `"Find on Deezer ↗"` and `"Find on MusicBrainz ↗"` shortcuts) or pick from visual search results.
         2. **Manual Metadata Editor**: Manually edit artist **Biography**, **Disambiguation / Subtitle**, **MusicBrainz Artist ID (MBID)**, **Last.fm Profile URL**, **Portrait Image URL** (or upload a file), and optionally save companion `artist.jpg` to the artist's music folder.
 
+74. **Global Fixer Rules Studio in `/issues` & Removal of Album-Specific Fixer Rules (v1.7.34)**:
+    - **Removed Album-Specific Fixer Rules UI**:
+      - Removed the `"Fixer Rules"` button and modal from [`src/routes/album/[id]/+page.svelte`](file:///home/kapy/Projects/trax-vault/src/routes/album/%5Bid%5D/+page.svelte).
+    - **Unified Global Fixer Rules Engine (`src/lib/server/db.ts` & `src/lib/types/index.ts`)**:
+      - Centralized Fixer Rules globally in SQLite `system_metadata` (`key = 'global_fixer_rules'`) via `getGlobalFixerRules()` and `updateGlobalFixerRules()`, with automatic one-time migration from any existing album rules.
+      - Expanded `FixerRules` and `computeNeedsAttention()` to give full granular control over what counts as **Bad (`needs_attention = 1`)** vs **Still Good (`needs_attention = 0`)**:
+        - **Audio Quality Ratings**: Individual toggles for `Good` (`flag_good_quality`), `Acceptable` (`flag_acceptable_quality`), `Needs Upgrade` (`flag_needs_upgrade`), and `Bad` (`flag_bad_quality`).
+        - **Audio Formats & Minimum Bitrate**: Master toggles (`flag_lossy`, `flag_mp3`), per-format toggles (`flag_wav_aiff`, `flag_mp3_320`, `flag_mp3_v0`, `flag_mp3_192`, `flag_mp3_128`, `flag_aac_256`, `flag_ogg`, `flag_other_format`), and a configurable **Minimum Acceptable Bitrate (`min_bitrate_kbps`)** floor.
+        - **Lyrics & Karaoke**: Individual toggles for `Plain Text (.txt)` (`flag_plain_lyrics`), `Unsynced LRC` (`flag_unsynced_lyrics`), `Censored LRC` (`flag_censored_lyrics`), and `Missing Lyrics` (`flag_missing_lyrics`).
+        - **Censorship, Completeness & Manual Check Override**: Individual toggles for `Clean Original` (`flag_clean`), `Unverified / Unknown` (`flag_unknown_censorship`), `Censored / Radio Edit` (`flag_censored`), `Missing Album Songs` (`flag_missing_tracks`), and `Manually Checked (✓) Override` (`ignore_manually_checked`).
+      - Dynamic SQL builders (`buildAudioIssueSqlCondition` and `buildCensorshipIssueSqlCondition`) ensure `getStats()`, `getAlbums()`, and `getIssuesTracks()` dynamically count and filter issues according to the user's active Global Fixer Rules.
+      - Fixed a parameter ordering bug in `updateAlbumAndTracksFromMusicBrainz()` where `manually_checked` was previously passed as `isMissing` to `computeNeedsAttention()`.
+    - **Interactive Global Fixer Rules Control Studio (`/issues` & `/api/fixer-rules`)**:
+      - Added `GET / PUT / POST /api/fixer-rules` endpoint (`src/routes/api/fixer-rules/+server.ts`) that saves global rules and recomputes `needs_attention` across all tracks in a single SQLite transaction.
+      - Built the interactive **Global Fixer Rules Control Studio** in [`src/routes/issues/+page.svelte`](file:///home/kapy/Projects/trax-vault/src/routes/issues/+page.svelte) with 1-click presets (`Balanced Default`, `High-Bitrate ≥ 256k`, `Strict Lossless Only`, `Relaxed`) and visual **`✓ Still Good`** vs **`⚠ Counts as Bad`** toggle pills for every quality rating, format, bitrate threshold, lyrics status, and censorship status.
+
 ---
 
 ## 4. Workflows & Verification

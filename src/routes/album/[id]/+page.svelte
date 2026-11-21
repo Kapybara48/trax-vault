@@ -51,42 +51,10 @@
 	let showBatchLyricsModal = $state(false);
 	let showMergeModal = $state(false);
 
-	// Track Fixer Rules state
-	let showFixerRulesModal = $state(false);
-	let fixerApplyToAll = $state(false);
-	let isSavingFixerRules = $state(false);
-
-	let ruleFlagLossy = $state(data.album.parsed_fixer_rules?.flag_lossy ?? false);
-	let ruleFlagMp3 = $state(data.album.parsed_fixer_rules?.flag_mp3 ?? false);
-	let ruleFlagBadQuality = $state(data.album.parsed_fixer_rules?.flag_bad_quality ?? true);
-	let ruleFlagNeedsUpgrade = $state(data.album.parsed_fixer_rules?.flag_needs_upgrade ?? true);
-	let ruleFlagCensored = $state(data.album.parsed_fixer_rules?.flag_censored ?? true);
-	let ruleFlagClean = $state(data.album.parsed_fixer_rules?.flag_clean ?? false);
-	let ruleFlagMissingLyrics = $state(data.album.parsed_fixer_rules?.flag_missing_lyrics ?? true);
-	let ruleFlagUnsyncedLyrics = $state(data.album.parsed_fixer_rules?.flag_unsynced_lyrics ?? true);
-	let ruleFlagPlainLyrics = $state(data.album.parsed_fixer_rules?.flag_plain_lyrics ?? false);
-	let ruleFlagCensoredLyrics = $state(data.album.parsed_fixer_rules?.flag_censored_lyrics ?? true);
-
-	const hasCustomFixerRules = $derived(
-		ruleFlagLossy || ruleFlagMp3 || !ruleFlagBadQuality || !ruleFlagNeedsUpgrade ||
-		!ruleFlagCensored || ruleFlagClean || !ruleFlagMissingLyrics || !ruleFlagUnsyncedLyrics || ruleFlagPlainLyrics ||
-		!ruleFlagCensoredLyrics
-	);
-
 	// Keep state updated if data changes
 	$effect(() => {
 		tracks = [...data.tracks];
 		album = { ...data.album };
-		ruleFlagLossy = data.album.parsed_fixer_rules?.flag_lossy ?? false;
-		ruleFlagMp3 = data.album.parsed_fixer_rules?.flag_mp3 ?? false;
-		ruleFlagBadQuality = data.album.parsed_fixer_rules?.flag_bad_quality ?? true;
-		ruleFlagNeedsUpgrade = data.album.parsed_fixer_rules?.flag_needs_upgrade ?? true;
-		ruleFlagCensored = data.album.parsed_fixer_rules?.flag_censored ?? true;
-		ruleFlagClean = data.album.parsed_fixer_rules?.flag_clean ?? false;
-		ruleFlagMissingLyrics = data.album.parsed_fixer_rules?.flag_missing_lyrics ?? true;
-		ruleFlagUnsyncedLyrics = data.album.parsed_fixer_rules?.flag_unsynced_lyrics ?? true;
-		ruleFlagPlainLyrics = data.album.parsed_fixer_rules?.flag_plain_lyrics ?? false;
-		ruleFlagCensoredLyrics = data.album.parsed_fixer_rules?.flag_censored_lyrics ?? true;
 	});
 
 	// Modals and dialogs
@@ -168,40 +136,6 @@
 		}
 		return list;
 	});
-
-	async function saveFixerRules() {
-		isSavingFixerRules = true;
-		try {
-			const rules: FixerRules = {
-				flag_lossy: ruleFlagLossy,
-				flag_mp3: ruleFlagMp3,
-				flag_bad_quality: ruleFlagBadQuality,
-				flag_needs_upgrade: ruleFlagNeedsUpgrade,
-				flag_censored: ruleFlagCensored,
-				flag_clean: ruleFlagClean,
-				flag_missing_lyrics: ruleFlagMissingLyrics,
-				flag_unsynced_lyrics: ruleFlagUnsyncedLyrics,
-				flag_plain_lyrics: ruleFlagPlainLyrics,
-				flag_censored_lyrics: ruleFlagCensoredLyrics
-			};
-			const res = await fetch(`/api/albums/${album.id}/fixer-rules`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ rules, applyToAll: fixerApplyToAll })
-			});
-			if (res.ok) {
-				const json = await res.json();
-				if (json.tracks) tracks = json.tracks;
-				if (json.album) album = json.album;
-				showFixerRulesModal = false;
-				await invalidateAll();
-			}
-		} catch (err) {
-			console.error('Failed to save fixer rules:', err);
-		} finally {
-			isSavingFixerRules = false;
-		}
-	}
 
 	// Group tracks by disc number
 	const discGroups = $derived.by(() => {
@@ -714,19 +648,6 @@
 				>
 					<Pencil class="h-3.5 w-3.5" />
 					Edit Album
-				</button>
-
-				<button
-					type="button"
-					onclick={() => (showFixerRulesModal = true)}
-					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-200 border border-neutral-700 transition"
-					title="Configure what triggers Track Fixer issues for this album"
-				>
-					<SlidersHorizontal class="h-3.5 w-3.5 text-emerald-400" />
-					<span>Fixer Rules</span>
-					{#if hasCustomFixerRules}
-						<span class="h-1.5 w-1.5 rounded-full bg-emerald-400" title="Custom fixer rules active"></span>
-					{/if}
 				</button>
 
 				<a
@@ -1337,177 +1258,6 @@
 					class="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 shadow-md shadow-emerald-600/30 transition"
 				>
 					Add Track
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-<!-- Modal: Track Fixer Rules -->
-{#if showFixerRulesModal}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-		<div class="w-full max-w-lg rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
-			<div class="flex items-center justify-between border-b border-neutral-800 pb-4">
-				<div>
-					<h3 class="text-base font-bold text-white flex items-center gap-2">
-						<SlidersHorizontal class="h-4 w-4 text-emerald-400" />
-						Track Fixer Criteria
-					</h3>
-					<p class="text-xs text-neutral-400 mt-0.5">
-						Customize what conditions trigger "Needs Attention" / Track Fixer for this album.
-					</p>
-				</div>
-				<button type="button" onclick={() => (showFixerRulesModal = false)} class="text-neutral-400 hover:text-white">
-					<X class="h-5 w-5" />
-				</button>
-			</div>
-
-			<div class="mt-5 space-y-5">
-				<!-- Section 1: Audio Formats -->
-				<div class="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-4">
-					<h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">
-						Audio Format Standards
-					</h4>
-					<p class="text-[11px] text-neutral-400 mb-3">
-						Decide whether lossy or compressed formats are considered issues to fix.
-					</p>
-
-					<div class="space-y-3">
-						<div class="flex items-start justify-between gap-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag all MP3 formats</div>
-								<div class="text-[11px] text-neutral-400">Flags all MP3 files (320k, V0, 128k) as needing lossless upgrade</div>
-							</div>
-							<CustomToggle checked={ruleFlagMp3} onchange={(v) => (ruleFlagMp3 = v)} />
-						</div>
-
-						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag any lossy format</div>
-								<div class="text-[11px] text-neutral-400">Strict mode: flags MP3, AAC, OGG, WMA (requires FLAC/lossless)</div>
-							</div>
-							<CustomToggle checked={ruleFlagLossy} onchange={(v) => (ruleFlagLossy = v)} />
-						</div>
-					</div>
-				</div>
-
-				<!-- Section 2: Lyrics Standards -->
-				<div class="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-4">
-					<h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">
-						Lyrics Standards
-					</h4>
-					<p class="text-[11px] text-neutral-400 mb-3">
-						Choose required lyrics precision for this album.
-					</p>
-
-					<div class="space-y-3">
-						<div class="flex items-start justify-between gap-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag missing lyrics</div>
-								<div class="text-[11px] text-neutral-400">Songs with no lyrics file will be marked for attention</div>
-							</div>
-							<CustomToggle checked={ruleFlagMissingLyrics} onchange={(v) => (ruleFlagMissingLyrics = v)} />
-						</div>
-
-						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag unsynced lyrics</div>
-								<div class="text-[11px] text-neutral-400">Flags lyrics where timestamps are shifted or out of sync</div>
-							</div>
-							<CustomToggle checked={ruleFlagUnsyncedLyrics} onchange={(v) => (ruleFlagUnsyncedLyrics = v)} />
-						</div>
-
-						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Require Synced LRC</div>
-								<div class="text-[11px] text-neutral-400">Flags plain text .txt lyrics as needing upgrade to synced .lrc</div>
-							</div>
-							<CustomToggle checked={ruleFlagPlainLyrics} onchange={(v) => (ruleFlagPlainLyrics = v)} />
-						</div>
-
-						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag censored lyrics</div>
-								<div class="text-[11px] text-neutral-400">Flags synced .lrc with bleeped words/asterisks for uncensored replacement</div>
-							</div>
-							<CustomToggle checked={ruleFlagCensoredLyrics} onchange={(v) => (ruleFlagCensoredLyrics = v)} />
-						</div>
-					</div>
-				</div>
-
-				<!-- Section 3: Censorship & Quality -->
-				<div class="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-4">
-					<h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">
-						Censorship & Quality
-					</h4>
-					<p class="text-[11px] text-neutral-400 mb-3">
-						Flag audio imperfections or radio edited tracks.
-					</p>
-
-					<div class="space-y-3">
-						<div class="flex items-start justify-between gap-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag censored versions</div>
-								<div class="text-[11px] text-neutral-400">Flags clean radio edits / muted words for explicit replacement</div>
-							</div>
-							<CustomToggle checked={ruleFlagCensored} onchange={(v) => (ruleFlagCensored = v)} />
-						</div>
-
-						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Require Explicit</div>
-								<div class="text-[11px] text-neutral-400">Flags clean original tracks as needing explicit versions</div>
-							</div>
-							<CustomToggle checked={ruleFlagClean} onchange={(v) => (ruleFlagClean = v)} />
-						</div>
-
-						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag bad quality & low bitrate</div>
-								<div class="text-[11px] text-neutral-400">Audible distortion, low frequency cutoff, bad rips</div>
-							</div>
-							<CustomToggle checked={ruleFlagBadQuality} onchange={(v) => (ruleFlagBadQuality = v)} />
-						</div>
-
-						<div class="flex items-start justify-between gap-3 border-t border-neutral-800/80 pt-3">
-							<div>
-								<div class="text-xs font-semibold text-neutral-200">Flag "needs upgrade" rating</div>
-								<div class="text-[11px] text-neutral-400">Tracks explicitly labeled as needing an upgrade</div>
-							</div>
-							<CustomToggle checked={ruleFlagNeedsUpgrade} onchange={(v) => (ruleFlagNeedsUpgrade = v)} />
-						</div>
-					</div>
-				</div>
-
-				<!-- Apply to all vault albums option -->
-				<div class="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950/50 p-3">
-					<CustomCheckbox
-						checked={fixerApplyToAll}
-						onchange={(v) => (fixerApplyToAll = v)}
-						title="Apply rules to all albums"
-					/>
-					<div class="text-xs text-neutral-300 select-none">
-						<span class="font-semibold text-emerald-300">Apply to all albums in Vault</span>
-						<span class="block text-[11px] text-neutral-500">Also update and recompute fixer issues across your entire collection</span>
-					</div>
-				</div>
-			</div>
-
-			<div class="mt-6 flex justify-end gap-3 border-t border-neutral-800 pt-4">
-				<button
-					type="button"
-					onclick={() => (showFixerRulesModal = false)}
-					class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700"
-				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					onclick={saveFixerRules}
-					disabled={isSavingFixerRules}
-					class="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 shadow-md shadow-emerald-600/30 transition disabled:opacity-50"
-				>
-					{isSavingFixerRules ? 'Saving...' : 'Save Fixer Rules'}
 				</button>
 			</div>
 		</div>

@@ -34,16 +34,39 @@ export type LyricsStatus =
 	| 'censored_lrc'; // Synced .lrc with censored/bleeped lyrics (needs uncensored replacement)
 
 export interface FixerRules {
-	flag_lossy?: boolean; // Flag any lossy format (MP3, AAC, OGG, WMA, OPUS)
-	flag_mp3?: boolean; // Specific flag for all MP3 files
-	flag_bad_quality?: boolean; // default true
-	flag_needs_upgrade?: boolean; // default true
-	flag_censored?: boolean; // default true
-	flag_clean?: boolean; // default false (require explicit)
-	flag_missing_lyrics?: boolean; // default true
-	flag_unsynced_lyrics?: boolean; // default true
-	flag_plain_lyrics?: boolean; // default false (require synced LRC)
-	flag_censored_lyrics?: boolean; // default true (require uncensored lyrics)
+	// Audio Quality Rating rules
+	flag_bad_quality?: boolean;        // default true  (QualityRating === 'bad')
+	flag_needs_upgrade?: boolean;      // default true  (QualityRating === 'needs_upgrade')
+	flag_acceptable_quality?: boolean; // default false (QualityRating === 'acceptable')
+	flag_good_quality?: boolean;       // default false (QualityRating === 'good' — only if user requires 'perfect' 24-bit Hi-Res)
+
+	// Audio Format & Bitrate rules
+	flag_lossy?: boolean;              // default false (Flag ALL lossy formats: MP3, AAC, OGG, OTHER)
+	flag_mp3?: boolean;                // default false (Flag ALL MP3 formats: 320, V0, 192, 128)
+	flag_mp3_320?: boolean;            // default false (Flag MP3_320)
+	flag_mp3_v0?: boolean;             // default false (Flag MP3_V0)
+	flag_mp3_192?: boolean;            // default false (Flag MP3_192)
+	flag_mp3_128?: boolean;            // default false (Flag MP3_128)
+	flag_aac_256?: boolean;            // default false (Flag AAC_256)
+	flag_ogg?: boolean;                // default false (Flag OGG)
+	flag_other_format?: boolean;       // default false (Flag OTHER format)
+	flag_wav_aiff?: boolean;           // default false (Flag uncompressed WAV / AIFF if user wants tagged FLAC/ALAC)
+	min_bitrate_kbps?: number;         // default 0 (Off; if > 0, flags any track with bitrate_kbps > 0 && bitrate_kbps < min_bitrate_kbps)
+
+	// Censorship & Authenticity rules
+	flag_censored?: boolean;           // default true  (CensorshipStatus === 'censored')
+	flag_clean?: boolean;              // default false (CensorshipStatus === 'clean_original')
+	flag_unknown_censorship?: boolean; // default false (CensorshipStatus === 'unknown')
+
+	// Lyrics & Karaoke rules
+	flag_missing_lyrics?: boolean;     // default true  (LyricsStatus === 'missing')
+	flag_unsynced_lyrics?: boolean;    // default true  (LyricsStatus === 'unsynced_lrc')
+	flag_plain_lyrics?: boolean;       // default false (LyricsStatus === 'plain_txt')
+	flag_censored_lyrics?: boolean;    // default true  (LyricsStatus === 'censored_lrc')
+
+	// Completeness & Manual Check rules
+	flag_missing_tracks?: boolean;     // default true  (is_missing === 1)
+	ignore_manually_checked?: boolean; // default false (When true, manually_checked === 1 clears needs_attention to 0)
 }
 
 export interface SearchFilters {
