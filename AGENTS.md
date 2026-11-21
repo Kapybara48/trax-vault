@@ -989,6 +989,18 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added a system suspend/sleep detection heartbeat and Page Lifecycle `freeze` listener in `src/lib/services/player.svelte.ts`.
       - Automatically pauses playback if the system was suspended (wall-clock time jump > 3s), eliminating accidental audio blasts when reopening laptop lids in quiet environments.
 
+70. **Strict Artist Avatar Matching & Generic Artist Portrait Elimination (v1.7.30)**:
+    - **Root Cause of Duplicate Celebrity Faces**:
+      - In `fetchDeezerArtistImage()`, when an artist or compilation name had no exact match (e.g. `"Various Artists"`, `"Original Soundtrack"`, compilation albums), Deezer returned related search results containing those words. Sorting candidates by fan popularity (`nb_fan`) picked the #1 world celebrity (e.g., George Gershwin or Bo Diddley). MusicBrainz had a similar fallback (`chosen = exact || artists[0]`). This caused multiple unmatched artists in the library to inherit the exact same celebrity portrait.
+    - **Strict Matching & Generic Blacklisting**:
+      - Added `GENERIC_ARTIST_NAMES` and `isGenericArtist(name)` in `src/lib/utils.ts` blacklisting compilation, generic, and placeholder artist tags (`Various Artists`, `Soundtrack`, `OST`, `Original Soundtrack`, `Unknown Artist`, etc.) from ever fetching human face portraits.
+      - Overhauled `fetchDeezerArtistImage()` in `src/lib/server/subsonic/artist.ts` and `searchMusicBrainzArtist()` in `src/lib/server/musicbrainz.ts`: early returns `null` for generic names, enforces strict exact or normalized string matching (`normalizeArtistName(candidate) === normalizeArtistName(target)`), and returns `null` if no match exists. Eliminated all blind fallbacks to popular artists.
+    - **Cache Purge & Avatar Reset**:
+      - Added `deleteArtistAvatar(artistName)` and automatic startup cache purge `purgeInvalidArtistCache()` removing corrupted cached portraits and clearing SQLite `artist_metadata` entries for generic/compilation artists.
+      - In `handleSubsonicCoverArt()` in `src/lib/server/subsonic/media.ts`, ensured generic artists purge any avatar file and cleanly fall back to album covers.
+      - Added `DELETE /api/artists/[name]/avatar` API endpoint.
+      - Added a 1-click "Reset Avatar" button (`<Trash2 />`) in the `/player` artist view with confirmation dialog, allowing users to immediately wipe an avatar and restore clean album art fallbacks.
+
 ---
 
 ## 4. Workflows & Verification

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { handleSubsonicCoverArt } from '$lib/server/subsonic/media.js';
-import { encodeArtistId, saveArtistCompanionImageToFolder } from '$lib/server/subsonic/artist.js';
+import { encodeArtistId, saveArtistCompanionImageToFolder, deleteArtistAvatar } from '$lib/server/subsonic/artist.js';
 import { upsertArtistMetadata } from '$lib/server/db.js';
 
 export const GET: RequestHandler = async ({ params, request }) => {
@@ -73,5 +73,20 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	} catch (err: any) {
 		console.error('[API] Failed to upload artist avatar:', err);
 		return json({ error: err.message || 'Failed to upload artist avatar' }, { status: 500 });
+	}
+};
+
+export const DELETE: RequestHandler = async ({ params }) => {
+	const artistName = (params.name || '').trim();
+	if (!artistName) {
+		return json({ error: 'Artist name required' }, { status: 400 });
+	}
+
+	try {
+		const deleted = deleteArtistAvatar(artistName);
+		return json({ success: deleted });
+	} catch (err: any) {
+		console.error('[API] Failed to delete artist avatar:', err);
+		return json({ error: err.message || 'Failed to delete artist avatar' }, { status: 500 });
 	}
 };

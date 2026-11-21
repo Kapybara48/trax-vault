@@ -5,7 +5,7 @@ import type {
 	MusicBrainzReleaseDetail,
 	MusicBrainzReleaseTrack
 } from '$lib/types/index.js';
-import { extractMusicBrainzId } from '$lib/utils.js';
+import { extractMusicBrainzId, isGenericArtist, normalizeArtistName } from '$lib/utils.js';
 import { APP_VERSION } from '$lib/version.js';
 
 try {
@@ -328,6 +328,10 @@ export interface MusicBrainzArtistDetail {
 }
 
 export async function searchMusicBrainzArtist(name: string): Promise<MusicBrainzArtistSearchItem | null> {
+	if (isGenericArtist(name)) {
+		return null;
+	}
+
 	try {
 		const url = `https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(name)}&fmt=json`;
 		const res = await rateLimitedFetch(url);
@@ -336,9 +340,26 @@ export async function searchMusicBrainzArtist(name: string): Promise<MusicBrainz
 		const artists = data.artists || [];
 		if (artists.length === 0) return null;
 
-		// Exact match preferred
-		const exact = artists.find((a: any) => a.name.toLowerCase() === name.toLowerCase());
-		const chosen = exact || artists[0];
+		const nameLower = name.trim().toLowerCase();
+		const nameNorm = normalizeArtistName(name);
+
+		// Match exact case-insensitive first
+		const exact = artists.find((a: any) => (a.name || '').trim().toLowerCase() === nameLower);
+
+		// Match normalized (accents / punctuation stripped)
+		const normalized = exact || artists.find((a: any) => normalizeArtistName(a.name || '') === nameNorm);
+
+		// Only accept a candidate if exact/normalized, or score is >= 95 with identical normalized prefix
+		const chosen = normalized || artists.find((a: any) => {
+			const score = a.score ? parseInt(a.score, 10) : 0;
+			if (score < 95) return false;
+			const aNorm = normalizeArtistName(a.name || '');
+			return aNorm === nameNorm || aNorm.startsWith(nameNorm) || nameNorm.startsWith(aNorm);
+		});
+
+		if (!chosen) {
+			return null;
+		}
 
 		return {
 			id: chosen.id,
@@ -430,6 +451,10 @@ export async function resolveWikimediaAndWikipedia(
 	wikipediaUrl?: string,
 	directImageUrl?: string
 ): Promise<{ biography?: string; imageUrl?: string }> {
+	if (isGenericArtist(artistName)) {
+		return {};
+	}
+
 	let resolvedImageUrl: string | undefined;
 	let wikiTitle: string | undefined;
 

@@ -4,7 +4,8 @@ import { Readable } from 'node:stream';
 import { db, getAlbumById, getTrackById, getPlaylistTracks, getArtistMetadata, upsertArtistMetadata } from '$lib/server/db.js';
 import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/server/scanner.js';
 import { decodeArtistId } from './handlers.js';
-import { findLocalArtistImage, cacheArtistImageToDisk, encodeArtistId, getOrFetchArtistInfo } from './artist.js';
+import { findLocalArtistImage, cacheArtistImageToDisk, encodeArtistId, getOrFetchArtistInfo, deleteArtistAvatar } from './artist.js';
+import { isGenericArtist } from '$lib/utils.js';
 
 const MIME_MAP: Record<string, string> = {
 	'.flac': 'audio/flac',
@@ -264,64 +265,75 @@ export async function handleSubsonicCoverArt(
 	} else if (rawId.startsWith('art-') || rawId.startsWith('art_')) {
 		const artToken = rawId.replace(/^art-/, '');
 		const artistName = decodeArtistId(artToken);
-		let meta = getArtistMetadata(artistName);
 
-		// If metadata is not cached yet or is an old low-quality Wikipedia image, fetch high-resolution Deezer portrait
-		const isOldWiki = Boolean(
-			meta?.image_url && (
-				meta.image_url.includes('upload.wikimedia.org') ||
-				meta.image_url.includes('wikipedia.org') ||
-				meta.image_url.includes('wikimedia')
-			)
-		);
-
-		if (!meta || (!meta.image_disk_path && !meta.image_url) || isOldWiki) {
-			try {
-				await getOrFetchArtistInfo(artistName, { forceRefresh: isOldWiki });
-				meta = getArtistMetadata(artistName);
-			} catch (err) {
-				console.warn(`[getCoverArt] Failed to resolve artist info for "${artistName}":`, err);
-			}
-		}
-
-		// 1. Check cached disk path from metadata
-		if (meta?.image_disk_path && fs.existsSync(meta.image_disk_path)) {
-			imageDiskPath = meta.image_disk_path;
-		}
-
-		// 2. Check local companion file in artist folders
-		if (!imageDiskPath) {
-			const localFound = findLocalArtistImage(artistName);
-			if (localFound) {
-				imageDiskPath = localFound;
-				upsertArtistMetadata({ name: artistName, image_disk_path: localFound });
-			}
-		}
-
-		// 3. Check data/artists/<token>.jpg
-		if (!imageDiskPath) {
-			const baseDir = process.env.DATA_DIR || './data';
-			const diskCacheFile = path.resolve(baseDir, 'artists', `${encodeArtistId(artistName)}.jpg`);
-			if (fs.existsSync(diskCacheFile)) {
-				imageDiskPath = diskCacheFile;
-				upsertArtistMetadata({ name: artistName, image_disk_path: diskCacheFile });
-			}
-		}
-
-		// 4. If remote image URL is present in metadata, download and cache
-		if (!imageDiskPath && meta?.image_url) {
-			const downloaded = await cacheArtistImageToDisk(encodeArtistId(artistName), meta.image_url);
-			if (downloaded && fs.existsSync(downloaded)) {
-				imageDiskPath = downloaded;
-				upsertArtistMetadata({ name: artistName, image_disk_path: downloaded });
-			}
-		}
-
-		// 5. Fallback: first album cover
-		if (!imageDiskPath) {
+		// If this is a generic compilation/soundtrack artist, purge any wrong human portraits
+		if (isGenericArtist(artistName)) {
+			deleteArtistAvatar(artistName);
+			// Fall back to first album cover directly
 			const album = db.prepare('SELECT id, cover_url FROM albums WHERE artist = ? AND cover_url IS NOT NULL LIMIT 1').get(artistName) as any;
 			if (album) {
 				imageDiskPath = parseCoverUrlToDiskPath(album.cover_url);
+			}
+		} else {
+			let meta = getArtistMetadata(artistName);
+
+			// If metadata is not cached yet or is an old low-quality Wikipedia image, fetch high-resolution Deezer portrait
+			const isOldWiki = Boolean(
+				meta?.image_url && (
+					meta.image_url.includes('upload.wikimedia.org') ||
+					meta.image_url.includes('wikipedia.org') ||
+					meta.image_url.includes('wikimedia')
+				)
+			);
+
+			if (!meta || (!meta.image_disk_path && !meta.image_url) || isOldWiki) {
+				try {
+					await getOrFetchArtistInfo(artistName, { forceRefresh: isOldWiki });
+					meta = getArtistMetadata(artistName);
+				} catch (err) {
+					console.warn(`[getCoverArt] Failed to resolve artist info for "${artistName}":`, err);
+				}
+			}
+
+			// 1. Check cached disk path from metadata
+			if (meta?.image_disk_path && fs.existsSync(meta.image_disk_path)) {
+				imageDiskPath = meta.image_disk_path;
+			}
+
+			// 2. Check local companion file in artist folders
+			if (!imageDiskPath) {
+				const localFound = findLocalArtistImage(artistName);
+				if (localFound) {
+					imageDiskPath = localFound;
+					upsertArtistMetadata({ name: artistName, image_disk_path: localFound });
+				}
+			}
+
+			// 3. Check data/artists/<token>.jpg
+			if (!imageDiskPath) {
+				const baseDir = process.env.DATA_DIR || './data';
+				const diskCacheFile = path.resolve(baseDir, 'artists', `${encodeArtistId(artistName)}.jpg`);
+				if (fs.existsSync(diskCacheFile)) {
+					imageDiskPath = diskCacheFile;
+					upsertArtistMetadata({ name: artistName, image_disk_path: diskCacheFile });
+				}
+			}
+
+			// 4. If remote image URL is present in metadata, download and cache
+			if (!imageDiskPath && meta?.image_url) {
+				const downloaded = await cacheArtistImageToDisk(encodeArtistId(artistName), meta.image_url);
+				if (downloaded && fs.existsSync(downloaded)) {
+					imageDiskPath = downloaded;
+					upsertArtistMetadata({ name: artistName, image_disk_path: downloaded });
+				}
+			}
+
+			// 5. Fallback: first album cover
+			if (!imageDiskPath) {
+				const album = db.prepare('SELECT id, cover_url FROM albums WHERE artist = ? AND cover_url IS NOT NULL LIMIT 1').get(artistName) as any;
+				if (album) {
+					imageDiskPath = parseCoverUrlToDiskPath(album.cover_url);
+				}
 			}
 		}
 	} else {

@@ -506,6 +506,42 @@
 		}
 	}
 
+	let isResettingAvatar = $state(false);
+
+	async function resetCurrentArtistAvatar() {
+		if (!selectedArtist || isResettingAvatar) return;
+		const confirmed = await confirmAction({
+			title: 'Reset Artist Avatar',
+			message: `Are you sure you want to remove the avatar photo for "${selectedArtist.name}" and revert to default?`,
+			confirmText: 'Reset Avatar',
+			danger: true
+		});
+		if (!confirmed) return;
+
+		isResettingAvatar = true;
+		try {
+			const res = await fetch(`/api/artists/${encodeURIComponent(selectedArtist.name)}/avatar`, {
+				method: 'DELETE'
+			});
+			const data = await res.json();
+			if (data.success) {
+				selectedArtist.avatar_url = null;
+				const found = artists.find((a) => a.name.toLowerCase() === selectedArtist!.name.toLowerCase());
+				if (found) {
+					found.avatar_url = null;
+				}
+				await alertAction(`Avatar photo for "${selectedArtist.name}" was reset.`, 'Avatar Reset');
+			} else {
+				await alertAction(data.error || 'Failed to reset avatar', 'Error');
+			}
+		} catch (err: any) {
+			console.error('Failed to reset avatar:', err);
+			await alertAction(err.message || 'Error resetting avatar', 'Error');
+		} finally {
+			isResettingAvatar = false;
+		}
+	}
+
 	// Auto-fetch artist metadata on selection if not yet loaded
 	async function loadArtistMetadataIfMissing(art: PlayerArtist) {
 		if (art.biography) return;
@@ -2154,6 +2190,19 @@
 									<FolderDown class="w-3.5 h-3.5 text-emerald-400 {isSavingCompanion ? 'animate-bounce' : ''}" />
 									<span>{isSavingCompanion ? 'Saving...' : 'Save artist.jpg'}</span>
 								</button>
+
+								<!-- Reset Avatar Button -->
+								{#if selectedArtist.avatar_url}
+									<button
+										type="button"
+										onclick={resetCurrentArtistAvatar}
+										disabled={isResettingAvatar}
+										class="p-2 rounded-2xl bg-neutral-800/80 hover:bg-rose-950/60 border border-neutral-700/60 hover:border-rose-700/50 text-neutral-400 hover:text-rose-300 transition cursor-pointer disabled:opacity-50"
+										title="Remove custom or downloaded avatar and revert to default"
+									>
+										<Trash2 class="w-3.5 h-3.5" />
+									</button>
+								{/if}
 
 								<!-- Search in Artist Tracks -->
 								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-36' : 'w-52'}">

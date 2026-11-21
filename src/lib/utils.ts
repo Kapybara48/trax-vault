@@ -8,6 +8,45 @@ export function formatDuration(ms: number | null): string {
 	return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 }
 
+export const GENERIC_ARTIST_NAMES = new Set([
+	'various artists',
+	'various artist',
+	'various',
+	'va',
+	'v.a.',
+	'unknown artist',
+	'unknown',
+	'soundtrack',
+	'soundtracks',
+	'original soundtrack',
+	'ost',
+	'original score',
+	'film score',
+	'movie soundtrack',
+	'game soundtrack',
+	'video game soundtrack',
+	'anime ost',
+	'tv soundtrack',
+	'composer',
+	'compilation'
+]);
+
+export function isGenericArtist(name: string): boolean {
+	if (!name) return true;
+	const clean = name.trim().toLowerCase();
+	return GENERIC_ARTIST_NAMES.has(clean);
+}
+
+export function normalizeArtistName(str: string): string {
+	return str
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+		.replace(/[^\w\s]/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
 export const FORMAT_OPTIONS: { value: AudioFormat; label: string; isLossless: boolean }[] = [
 	{ value: 'FLAC', label: 'FLAC', isLossless: true },
 	{ value: 'ALAC', label: 'ALAC', isLossless: true },

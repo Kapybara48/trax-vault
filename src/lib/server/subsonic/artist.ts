@@ -7,6 +7,7 @@ import {
 	resolveWikimediaAndWikipedia
 } from '$lib/server/musicbrainz.js';
 import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/server/scanner.js';
+import { isGenericArtist, normalizeArtistName, GENERIC_ARTIST_NAMES } from '$lib/utils.js';
 import type { ArtistMetadata, SimilarArtist } from '$lib/types/index.js';
 
 export function encodeArtistId(name: string): string {
@@ -205,16 +206,66 @@ export async function cacheArtistImageToDisk(artistToken: string, imageUrl: stri
 }
 
 /**
+ * Deletes cached artist avatar from disk and clears database image pointers
+ */
+export function deleteArtistAvatar(artistName: string): boolean {
+	try {
+		const token = encodeArtistId(artistName);
+		const baseDir = process.env.DATA_DIR || './data';
+		const diskPath = path.resolve(baseDir, 'artists', `${token}.jpg`);
+		if (fs.existsSync(diskPath)) {
+			try {
+				fs.unlinkSync(diskPath);
+			} catch {}
+		}
+
+		db.prepare(`
+			UPDATE artist_metadata
+			SET image_url = NULL, image_disk_path = NULL, updated_at = CURRENT_TIMESTAMP
+			WHERE LOWER(name) = LOWER(?)
+		`).run(artistName);
+
+		return true;
+	} catch (err) {
+		console.warn(`[Artist Engine] Failed to delete artist avatar for "${artistName}":`, err);
+		return false;
+	}
+}
+
+/**
+ * Purges corrupted/mismatched artist images (e.g., George Gershwin or Bo Diddley on "Various Artists")
+ */
+export function purgeInvalidArtistCache(): void {
+	try {
+		for (const generic of GENERIC_ARTIST_NAMES) {
+			deleteArtistAvatar(generic);
+		}
+	} catch (err) {
+		console.warn('[Artist Engine] Failed to purge invalid artist cache:', err);
+	}
+}
+
+// Auto-purge invalid generic artist images on module initialization
+try {
+	purgeInvalidArtistCache();
+} catch {}
+
+/**
  * Fetches high-resolution official studio artist portrait from Deezer (1000x1000 square)
  */
 export async function fetchDeezerArtistImage(artistName: string): Promise<string | null> {
+	if (isGenericArtist(artistName)) {
+		return null;
+	}
+
 	try {
 		const ctrl = new AbortController();
 		const timeout = setTimeout(() => ctrl.abort(), 5000);
 		try {
-			let res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}`, {
+			let targetName = artistName;
+			let res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(targetName)}`, {
 				signal: ctrl.signal,
-				headers: { 'User-Agent': 'TraxVault/1.7.28' }
+				headers: { 'User-Agent': 'TraxVault/1.7.30' }
 			});
 			if (!res.ok) return null;
 			let data = await res.json();
@@ -223,10 +274,11 @@ export async function fetchDeezerArtistImage(artistName: string): Promise<string
 			// If no results and name has collaboration delimiters (feat, ft, &, with, ,)
 			if (list.length === 0 && (artistName.includes('feat.') || artistName.includes('ft.') || artistName.includes('&') || artistName.includes(',') || artistName.toLowerCase().includes(' with '))) {
 				const primary = artistName.split(/ feat\.? | ft\.? | & |, | with /i)[0].trim();
-				if (primary && primary.toLowerCase() !== artistName.toLowerCase()) {
+				if (primary && primary.toLowerCase() !== artistName.toLowerCase() && !isGenericArtist(primary)) {
+					targetName = primary;
 					res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(primary)}`, {
 						signal: ctrl.signal,
-						headers: { 'User-Agent': 'TraxVault/1.7.28' }
+						headers: { 'User-Agent': 'TraxVault/1.7.30' }
 					});
 					if (res.ok) {
 						data = await res.json();
@@ -237,11 +289,26 @@ export async function fetchDeezerArtistImage(artistName: string): Promise<string
 
 			if (list.length === 0) return null;
 
-			// Find exact case-insensitive match first, sorted by fan count (popularity)
-			const exact = list.filter((a: any) => a.name?.toLowerCase() === artistName.toLowerCase());
-			const best = exact.length > 0
-				? exact.sort((a: any, b: any) => (b.nb_fan || 0) - (a.nb_fan || 0))[0]
-				: list.sort((a: any, b: any) => (b.nb_fan || 0) - (a.nb_fan || 0))[0];
+			// Strict matching: Exact case-insensitive match or normalized match (strips punctuation/accents)
+			const targetNorm = normalizeArtistName(targetName);
+			const originalNorm = normalizeArtistName(artistName);
+
+			const exactMatches = list.filter((a: any) => {
+				const aName = (a.name || '').trim().toLowerCase();
+				if (aName === targetName.toLowerCase() || aName === artistName.toLowerCase()) {
+					return true;
+				}
+				const aNorm = normalizeArtistName(a.name || '');
+				return aNorm === targetNorm || aNorm === originalNorm;
+			});
+
+			// If no exact or normalized match, RETURN NULL! (NEVER pick a random celebrity with the most fans)
+			if (exactMatches.length === 0) {
+				return null;
+			}
+
+			// If multiple exact matches, sort candidates by fan count
+			const best = exactMatches.sort((a: any, b: any) => (b.nb_fan || 0) - (a.nb_fan || 0))[0];
 
 			if (best) {
 				return best.picture_xl || best.picture_big || best.picture_medium || null;
@@ -279,6 +346,32 @@ export async function getOrFetchArtistInfo(
 	const includeNotPresent = options.includeNotPresent ?? true;
 	const forceRefresh = options.forceRefresh ?? false;
 	const artistToken = encodeArtistId(artistName);
+
+	// If generic compilation artist, clear any previously saved wrong human image and return
+	if (isGenericArtist(artistName)) {
+		deleteArtistAvatar(artistName);
+		return {
+			id: artistToken,
+			name: artistName,
+			biography: `${artistName} compilation in your music vault.`,
+			musicBrainzId: '',
+			lastFmUrl: `https://www.last.fm/music/${encodeURIComponent(artistName)}`,
+			smallImageUrl: `/rest/getCoverArt.view?id=art-${artistToken}`,
+			mediumImageUrl: `/rest/getCoverArt.view?id=art-${artistToken}`,
+			largeImageUrl: `/rest/getCoverArt.view?id=art-${artistToken}`,
+			similarArtists: []
+		};
+	}
+
+	if (forceRefresh) {
+		const baseDir = process.env.DATA_DIR || './data';
+		const oldDisk = path.resolve(baseDir, 'artists', `${artistToken}.jpg`);
+		if (fs.existsSync(oldDisk)) {
+			try {
+				fs.unlinkSync(oldDisk);
+			} catch {}
+		}
+	}
 
 	// 1. Check existing SQLite cache (skip if forceRefresh or if image is old low-quality wiki image)
 	const cached = getArtistMetadata(artistName);
