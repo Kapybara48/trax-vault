@@ -1031,6 +1031,20 @@ This document preserves persistent context, architectural conventions, recent ch
       - **Strict Dedicated Artist Folder Verification & Atomic Image Validation**: `findLocalArtistFolder()` now requires `normalizeArtistName(path.basename(dir)) === normalizeArtistName(artistName)`. `isValidImageBuffer()` verifies magic bytes (JPEG/PNG/WebP), minimum byte length, and blocked MD5 checksums, writing files atomically via temp file + `fs.renameSync`.
       - **Browser Cache-Busting Query & Lazy Loading**: Appended `?v=v2_<updated_at>` to `avatar_url` in `/player/+page.server.ts` and added `loading="lazy"` to sidebar avatars.
 
+73. **Artist ID/URL Matcher & Manual Artist Metadata Editor (v1.7.33)**:
+    - **Universal Artist ID/URL Paste & Direct Lookup (`parseArtistExternalInput` & `fetchAndApplyArtistByExternalId`)**:
+      - Added support for matching an artist by pasting an external ID or URL from major databases (working identically to the Album Tagger):
+        - **Deezer Artist URL or ID**: e.g. `https://www.deezer.com/artist/13`, `deezer:13`, or numeric ID `13` -> fetches official 1000x1000 studio portrait directly from `api.deezer.com/artist/{id}`.
+        - **MusicBrainz Artist URL or MBID**: e.g. `https://musicbrainz.org/artist/b95ce3ff-3d05-4e87-9e01-c97b66af13d4`, `mbid:...`, or plain UUID -> extracts linked `deezer.com/artist/{id}` from MusicBrainz `url-rels` (plus TheAudioDB `artist-mb.php?i={mbid}` and Wikipedia biography) to pull both the verified portrait and biography for that exact MBID.
+        - **TheAudioDB Artist URL or ID**: e.g. `https://www.theaudiodb.com/artist/111304-Eminem` or `audiodb:111304`.
+        - **Direct Image URL**: any `http(s)://` image link.
+    - **Interactive Candidate Search (`GET /api/artists/search`)**:
+      - Searches Deezer and MusicBrainz in parallel (or previews a pasted ID/URL), returning visual candidate cards with portrait thumbnails, fan counts, disambiguation, copyable IDs, external links, and 1-click **"Use This"** buttons.
+    - **Manual Artist Metadata Editor (`PUT /api/artists/[name]` & `updateManualArtistMetadata`)**:
+      - Added interactive **"Edit / Match ID"** modal in `/player` artist view with two tabs:
+        1. **Match by ID / URL or Search**: Paste an ID/URL (with quick `"Find on Deezer ↗"` and `"Find on MusicBrainz ↗"` shortcuts) or pick from visual search results.
+        2. **Manual Metadata Editor**: Manually edit artist **Biography**, **Disambiguation / Subtitle**, **MusicBrainz Artist ID (MBID)**, **Last.fm Profile URL**, **Portrait Image URL** (or upload a file), and optionally save companion `artist.jpg` to the artist's music folder.
+
 ---
 
 ## 4. Workflows & Verification

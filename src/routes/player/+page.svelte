@@ -554,17 +554,188 @@
 					selectedArtist.biography = data.artist.biography;
 					selectedArtist.musicbrainz_id = data.artist.musicBrainzId;
 					selectedArtist.lastfm_url = data.artist.lastFmUrl;
+					selectedArtist.disambiguation = data.metadata?.disambiguation || selectedArtist.disambiguation;
+					selectedArtist.image_url = data.metadata?.image_url || selectedArtist.image_url;
 					selectedArtist.avatar_url = freshAvatar;
 					const found = artists.find((a) => a.name.toLowerCase() === art.name.toLowerCase());
 					if (found) {
 						found.biography = data.artist.biography;
 						found.musicbrainz_id = data.artist.musicBrainzId;
 						found.lastfm_url = data.artist.lastFmUrl;
+						found.disambiguation = selectedArtist.disambiguation;
+						found.image_url = selectedArtist.image_url;
 						found.avatar_url = freshAvatar;
 					}
 				}
 			}
 		} catch {}
+	}
+
+	// Edit & Match Artist Metadata Modal State
+	interface ArtistCandidateItem {
+		source: 'deezer' | 'musicbrainz' | 'theaudiodb';
+		externalId: string;
+		displayId: string;
+		name: string;
+		subtitle: string;
+		imageUrl: string | null;
+		externalUrl: string;
+		fanCount?: number;
+	}
+
+	let showEditArtistModal = $state(false);
+	let editArtistTab = $state<'match' | 'manual'>('match');
+	let editArtistExternalInput = $state('');
+	let editArtistSearchQuery = $state('');
+	let editArtistCandidates = $state<ArtistCandidateItem[]>([]);
+	let isSearchingArtistCandidates = $state(false);
+	let isApplyingExternalArtistId = $state(false);
+	let isSavingManualArtist = $state(false);
+	let editArtistSaveToFolder = $state(false);
+
+	let editArtistBiography = $state('');
+	let editArtistDisambiguation = $state('');
+	let editArtistMbid = $state('');
+	let editArtistLastFmUrl = $state('');
+	let editArtistImageUrl = $state('');
+
+	async function openEditArtistModal(initialTab: 'match' | 'manual' = 'match') {
+		if (!selectedArtist) return;
+		editArtistTab = initialTab;
+		editArtistExternalInput = '';
+		editArtistSearchQuery = selectedArtist.name;
+		editArtistBiography = selectedArtist.biography || '';
+		editArtistDisambiguation = selectedArtist.disambiguation || '';
+		editArtistMbid = selectedArtist.musicbrainz_id || '';
+		editArtistLastFmUrl = selectedArtist.lastfm_url || `https://www.last.fm/music/${encodeURIComponent(selectedArtist.name)}`;
+		editArtistImageUrl = selectedArtist.image_url || '';
+		showEditArtistModal = true;
+
+		// Load latest metadata from server and trigger candidate search
+		try {
+			const res = await fetch(`/api/artists/${encodeURIComponent(selectedArtist.name)}`);
+			if (res.ok) {
+				const d = await res.json();
+				if (d.metadata) {
+					editArtistBiography = d.metadata.biography || editArtistBiography;
+					editArtistDisambiguation = d.metadata.disambiguation || editArtistDisambiguation;
+					editArtistMbid = d.metadata.musicbrainz_id || editArtistMbid;
+					editArtistLastFmUrl = d.metadata.lastfm_url || editArtistLastFmUrl;
+					editArtistImageUrl = d.metadata.image_url || editArtistImageUrl;
+				}
+			}
+		} catch {}
+
+		searchArtistCandidatesInModal();
+	}
+
+	async function searchArtistCandidatesInModal() {
+		const q = editArtistSearchQuery.trim();
+		if (!q || isSearchingArtistCandidates) return;
+		isSearchingArtistCandidates = true;
+		try {
+			const res = await fetch(`/api/artists/search?q=${encodeURIComponent(q)}`);
+			if (res.ok) {
+				const d = await res.json();
+				editArtistCandidates = d.candidates || [];
+			}
+		} catch (err) {
+			console.error('Error searching artist candidates:', err);
+		} finally {
+			isSearchingArtistCandidates = false;
+		}
+	}
+
+	function syncUpdatedArtistState(data: any) {
+		if (!selectedArtist) return;
+		const freshAvatar = data.avatarUrl || `/api/artists/${encodeURIComponent(selectedArtist.name)}/avatar?_t=${Date.now()}`;
+		if (data.artist) {
+			selectedArtist.biography = data.artist.biography;
+			selectedArtist.musicbrainz_id = data.artist.musicBrainzId;
+			selectedArtist.lastfm_url = data.artist.lastFmUrl;
+		}
+		if (data.metadata) {
+			selectedArtist.biography = data.metadata.biography ?? selectedArtist.biography;
+			selectedArtist.disambiguation = data.metadata.disambiguation ?? selectedArtist.disambiguation;
+			selectedArtist.musicbrainz_id = data.metadata.musicbrainz_id ?? selectedArtist.musicbrainz_id;
+			selectedArtist.lastfm_url = data.metadata.lastfm_url ?? selectedArtist.lastfm_url;
+			selectedArtist.image_url = data.metadata.image_url ?? selectedArtist.image_url;
+		}
+		selectedArtist.avatar_url = freshAvatar;
+
+		const found = artists.find((a) => a.name.toLowerCase() === selectedArtist!.name.toLowerCase());
+		if (found) {
+			found.biography = selectedArtist.biography;
+			found.disambiguation = selectedArtist.disambiguation;
+			found.musicbrainz_id = selectedArtist.musicbrainz_id;
+			found.lastfm_url = selectedArtist.lastfm_url;
+			found.image_url = selectedArtist.image_url;
+			found.avatar_url = freshAvatar;
+		}
+	}
+
+	async function applyExternalArtistId(inputValue?: string) {
+		const targetInput = (inputValue ?? editArtistExternalInput).trim();
+		if (!selectedArtist || !targetInput || isApplyingExternalArtistId) return;
+		isApplyingExternalArtistId = true;
+		try {
+			const res = await fetch(`/api/artists/${encodeURIComponent(selectedArtist.name)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					externalIdOrUrl: targetInput,
+					saveToFolder: editArtistSaveToFolder
+				})
+			});
+			const data = await res.json();
+			if (res.ok && data.success) {
+				syncUpdatedArtistState(data);
+				showEditArtistModal = false;
+				const folderMsg = data.companionSaved ? `\n\nCompanion artist.jpg was also saved to:\n${data.companionPath}` : '';
+				await alertAction(`Successfully matched and updated artist metadata & portrait for "${selectedArtist.name}"!${folderMsg}`, 'Artist Matched');
+			} else {
+				await alertAction(data.error || 'Failed to apply artist ID or URL', 'Match Failed');
+			}
+		} catch (err: any) {
+			console.error('Failed to apply artist ID:', err);
+			await alertAction(err.message || 'Error applying artist ID', 'Match Failed');
+		} finally {
+			isApplyingExternalArtistId = false;
+		}
+	}
+
+	async function saveManualArtistChanges(e?: Event) {
+		if (e) e.preventDefault();
+		if (!selectedArtist || isSavingManualArtist) return;
+		isSavingManualArtist = true;
+		try {
+			const res = await fetch(`/api/artists/${encodeURIComponent(selectedArtist.name)}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					biography: editArtistBiography,
+					disambiguation: editArtistDisambiguation,
+					musicbrainz_id: editArtistMbid,
+					lastfm_url: editArtistLastFmUrl,
+					image_url: editArtistImageUrl,
+					saveToFolder: editArtistSaveToFolder
+				})
+			});
+			const data = await res.json();
+			if (res.ok && data.success) {
+				syncUpdatedArtistState(data);
+				showEditArtistModal = false;
+				const folderMsg = data.companionSaved ? `\n\nCompanion artist.jpg was also saved to:\n${data.companionPath}` : '';
+				await alertAction(`Artist metadata for "${selectedArtist.name}" was saved!${folderMsg}`, 'Metadata Saved');
+			} else {
+				await alertAction(data.error || 'Failed to save artist metadata', 'Save Failed');
+			}
+		} catch (err: any) {
+			console.error('Failed to save manual artist metadata:', err);
+			await alertAction(err.message || 'Error saving artist metadata', 'Save Failed');
+		} finally {
+			isSavingManualArtist = false;
+		}
 	}
 
 	// Playlist Actions
@@ -2177,6 +2348,17 @@
 									<ListPlus class="w-4 h-4 text-emerald-400" />
 								</button>
 
+								<!-- Edit / Match Artist by ID or URL Button -->
+								<button
+									type="button"
+									onclick={() => openEditArtistModal('match')}
+									class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 font-semibold text-xs transition cursor-pointer"
+									title="Match artist by pasting a MusicBrainz / Deezer / TheAudioDB ID or URL, or manually edit artist biography & portrait"
+								>
+									<Pencil class="w-3.5 h-3.5 text-emerald-400" />
+									<span>Edit / Match ID</span>
+								</button>
+
 								<!-- Refresh Artist Metadata Button -->
 								<button
 									type="button"
@@ -2230,8 +2412,22 @@
 							{#if selectedArtist.biography}
 								<div class="mt-3 p-3 rounded-xl bg-neutral-900/70 border border-neutral-800/80 text-xs text-neutral-300 leading-relaxed text-left">
 									<div class="flex items-center justify-between mb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-										<span class="text-emerald-400">About {selectedArtist.name}</span>
+										<div class="flex items-center gap-2">
+											<span class="text-emerald-400">About {selectedArtist.name}</span>
+											{#if selectedArtist.disambiguation}
+												<span class="text-neutral-500 normal-case font-normal">({selectedArtist.disambiguation})</span>
+											{/if}
+										</div>
 										<div class="flex items-center gap-2.5">
+											<button
+												type="button"
+												onclick={() => openEditArtistModal('manual')}
+												class="text-neutral-400 hover:text-emerald-400 flex items-center gap-1 cursor-pointer"
+												title="Manually edit artist biography & metadata"
+											>
+												<Pencil class="w-2.5 h-2.5" />
+												<span>Edit</span>
+											</button>
 											{#if selectedArtist.musicbrainz_id}
 												<a
 													href="https://musicbrainz.org/artist/{selectedArtist.musicbrainz_id}"
@@ -2950,6 +3146,393 @@
 							<span>Delete Playlist</span>
 						{/if}
 					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Edit & Match Artist Metadata Modal -->
+	{#if showEditArtistModal && selectedArtist}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+			<div class="relative w-full max-w-2xl max-h-[90dvh] flex flex-col rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
+				<!-- Modal Header -->
+				<div class="flex items-center justify-between px-5 py-4 border-b border-neutral-800 bg-neutral-950/60 shrink-0">
+					<div class="flex items-center gap-3 min-w-0">
+						<div class="w-10 h-10 rounded-full overflow-hidden bg-neutral-800 border border-neutral-700 shrink-0 flex items-center justify-center">
+							{#if selectedArtist.avatar_url || selectedArtist.cover_url}
+								<img
+									src={selectedArtist.avatar_url || selectedArtist.cover_url}
+									alt={selectedArtist.name}
+									class="w-full h-full object-cover"
+								/>
+							{:else}
+								<User class="w-5 h-5 text-emerald-400" />
+							{/if}
+						</div>
+						<div class="min-w-0">
+							<h3 class="text-sm sm:text-base font-bold text-white truncate">
+								Manage Artist: {selectedArtist.name}
+							</h3>
+							<p class="text-[11px] text-neutral-400 truncate">
+								Match by Deezer / MusicBrainz / TheAudioDB ID or URL, or manually edit artist data
+							</p>
+						</div>
+					</div>
+					<button
+						type="button"
+						onclick={() => (showEditArtistModal = false)}
+						class="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition cursor-pointer"
+						title="Close"
+					>
+						<X class="h-4 w-4" />
+					</button>
+				</div>
+
+				<!-- Mode Switcher Tabs -->
+				<div class="flex items-center gap-2 px-5 pt-3 pb-2 border-b border-neutral-800/80 bg-neutral-900/90 shrink-0">
+					<button
+						type="button"
+						onclick={() => (editArtistTab = 'match')}
+						class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 {editArtistTab === 'match'
+							? 'bg-emerald-500 text-neutral-950 shadow-sm'
+							: 'bg-neutral-800/80 text-neutral-300 hover:text-white hover:bg-neutral-800'}"
+					>
+						<Search class="w-3.5 h-3.5" />
+						<span>Match by ID / URL or Search</span>
+					</button>
+					<button
+						type="button"
+						onclick={() => (editArtistTab = 'manual')}
+						class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 {editArtistTab === 'manual'
+							? 'bg-emerald-500 text-neutral-950 shadow-sm'
+							: 'bg-neutral-800/80 text-neutral-300 hover:text-white hover:bg-neutral-800'}"
+					>
+						<Pencil class="w-3.5 h-3.5" />
+						<span>Manual Metadata Editor</span>
+					</button>
+				</div>
+
+				<!-- Modal Body -->
+				<div class="flex-1 overflow-y-auto p-5 space-y-5 min-h-0">
+					{#if editArtistTab === 'match'}
+						<!-- Section 1: Direct Paste ID or URL -->
+						<div class="p-4 rounded-xl bg-neutral-950/70 border border-neutral-800 space-y-3">
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<label for="artist-external-id-input" class="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+									1. Paste Artist ID or URL (Works like Album Tagger)
+								</label>
+								<div class="flex items-center gap-2 text-[11px]">
+									<a
+										href="https://www.deezer.com/search/{encodeURIComponent(selectedArtist.name)}/artist"
+										target="_blank"
+										rel="noreferrer"
+										class="text-neutral-400 hover:text-emerald-400 flex items-center gap-1 underline underline-offset-2"
+										title="Find artist on Deezer and copy URL or ID from address bar"
+									>
+										<span>Find on Deezer</span>
+										<ExternalLink class="w-2.5 h-2.5" />
+									</a>
+									<span class="text-neutral-700">&bull;</span>
+									<a
+										href="https://musicbrainz.org/search?query={encodeURIComponent(selectedArtist.name)}&type=artist"
+										target="_blank"
+										rel="noreferrer"
+										class="text-neutral-400 hover:text-emerald-400 flex items-center gap-1 underline underline-offset-2"
+										title="Find artist on MusicBrainz and copy Artist URL or MBID"
+									>
+										<span>Find on MusicBrainz</span>
+										<ExternalLink class="w-2.5 h-2.5" />
+									</a>
+								</div>
+							</div>
+
+							<p class="text-[11px] text-neutral-400 leading-relaxed">
+								Copy an artist URL or ID from <strong class="text-neutral-200">Deezer</strong> (e.g. <code class="text-emerald-300 bg-neutral-900 px-1 py-0.5 rounded">https://www.deezer.com/artist/13</code> or <code class="text-emerald-300 bg-neutral-900 px-1 py-0.5 rounded">13</code>), <strong class="text-neutral-200">MusicBrainz</strong> (e.g. <code class="text-emerald-300 bg-neutral-900 px-1 py-0.5 rounded">https://musicbrainz.org/artist/b95ce3ff-...</code> or UUID), <strong class="text-neutral-200">TheAudioDB</strong>, or a direct image link:
+							</p>
+
+							<div class="flex items-center gap-2">
+								<input
+									id="artist-external-id-input"
+									type="text"
+									bind:value={editArtistExternalInput}
+									onkeydown={(e) => {
+										if (e.key === 'Enter') {
+											e.preventDefault();
+											applyExternalArtistId();
+										}
+									}}
+									placeholder="Paste Deezer URL/ID (e.g. 13), MusicBrainz URL/MBID, or direct Image URL..."
+									class="flex-1 rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+								/>
+								<button
+									type="button"
+									onclick={() => applyExternalArtistId()}
+									disabled={!editArtistExternalInput.trim() || isApplyingExternalArtistId}
+									class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-neutral-950 font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5"
+								>
+									{#if isApplyingExternalArtistId}
+										<RefreshCw class="w-3.5 h-3.5 animate-spin" />
+										<span>Applying...</span>
+									{:else}
+										<CircleCheck class="w-3.5 h-3.5" />
+										<span>Apply ID / URL</span>
+									{/if}
+								</button>
+							</div>
+						</div>
+
+						<!-- Section 2: Visual Candidate Search & 1-Click Picker -->
+						<div class="space-y-3">
+							<div class="flex items-center justify-between">
+								<label for="artist-candidate-search-input" class="text-xs font-bold text-neutral-300 uppercase tracking-wider">
+									2. Or Search & Pick Candidate Directly
+								</label>
+							</div>
+
+							<div class="flex items-center gap-2">
+								<div class="relative flex-1">
+									<Search class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+									<input
+										id="artist-candidate-search-input"
+										type="text"
+										bind:value={editArtistSearchQuery}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') {
+												e.preventDefault();
+												searchArtistCandidatesInModal();
+											}
+										}}
+										placeholder="Search artist name or paste ID to preview..."
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-9 pr-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+									/>
+								</div>
+								<button
+									type="button"
+									onclick={searchArtistCandidatesInModal}
+									disabled={isSearchingArtistCandidates || !editArtistSearchQuery.trim()}
+									class="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+								>
+									<RefreshCw class="w-3.5 h-3.5 text-emerald-400 {isSearchingArtistCandidates ? 'animate-spin' : ''}" />
+									<span>Search</span>
+								</button>
+							</div>
+
+							{#if isSearchingArtistCandidates}
+								<div class="py-10 text-center text-xs text-neutral-400 flex flex-col items-center gap-2">
+									<RefreshCw class="w-5 h-5 text-emerald-400 animate-spin" />
+									<span>Searching Deezer & MusicBrainz for "{editArtistSearchQuery}"...</span>
+								</div>
+							{:else if editArtistCandidates.length > 0}
+								<div class="grid grid-cols-1 gap-2 max-h-72 overflow-y-auto pr-1">
+									{#each editArtistCandidates as cand}
+										<div class="flex items-center gap-3 p-2.5 rounded-xl bg-neutral-950/80 border border-neutral-800 hover:border-emerald-500/40 transition">
+											<!-- Candidate Portrait Preview -->
+											<div class="w-12 h-12 rounded-full overflow-hidden bg-neutral-900 border border-neutral-700 shrink-0 flex items-center justify-center">
+												{#if cand.imageUrl}
+													<img
+														src={cand.imageUrl}
+														alt={cand.name}
+														loading="lazy"
+														class="w-full h-full object-cover"
+													/>
+												{:else}
+													<User class="w-5 h-5 text-neutral-500" />
+												{/if}
+											</div>
+
+											<!-- Candidate Info -->
+											<div class="min-w-0 flex-1">
+												<div class="flex items-center gap-2">
+													<span class="text-xs font-bold text-white truncate">{cand.name}</span>
+													<span class="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border {cand.source === 'deezer'
+														? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+														: cand.source === 'musicbrainz'
+															? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+															: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'}">
+														{cand.source}
+													</span>
+												</div>
+												<div class="text-[11px] text-neutral-400 truncate mt-0.5">
+													{cand.subtitle}
+												</div>
+												<div class="flex items-center gap-2 mt-0.5">
+													<code class="text-[10px] text-emerald-400/90 font-mono bg-neutral-900 px-1.5 py-0.5 rounded select-all">
+														{cand.externalId}
+													</code>
+													<a
+														href={cand.externalUrl}
+														target="_blank"
+														rel="noreferrer"
+														class="text-[10px] text-neutral-400 hover:text-emerald-400 flex items-center gap-0.5"
+													>
+														<span>Open</span>
+														<ExternalLink class="w-2.5 h-2.5" />
+													</a>
+												</div>
+											</div>
+
+											<!-- Apply Candidate Button -->
+											<button
+												type="button"
+												onclick={() => applyExternalArtistId(cand.externalId)}
+												disabled={isApplyingExternalArtistId}
+												class="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-neutral-950 border border-emerald-500/40 font-bold text-xs transition cursor-pointer shrink-0"
+											>
+												Use This
+											</button>
+										</div>
+									{/each}
+								</div>
+							{:else}
+								<div class="py-6 text-center text-xs text-neutral-500">
+									No candidates found. Try searching a different name or paste a direct URL/ID above.
+								</div>
+							{/if}
+						</div>
+
+						<!-- Save Companion artist.jpg Option -->
+						<div class="flex items-center gap-2.5 pt-2 border-t border-neutral-800/80">
+							<input
+								id="match-artist-save-folder"
+								type="checkbox"
+								bind:checked={editArtistSaveToFolder}
+								class="h-4 w-4 rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-emerald-500"
+							/>
+							<label for="match-artist-save-folder" class="text-xs text-neutral-300 select-none cursor-pointer">
+								Also save companion <code class="text-emerald-400">artist.jpg</code> to artist's music folder (if a dedicated artist directory exists)
+							</label>
+						</div>
+					{:else}
+						<!-- MANUAL ARTIST METADATA EDITOR TAB -->
+						<form onsubmit={saveManualArtistChanges} class="space-y-4">
+							<!-- Custom Portrait Upload / URL -->
+							<div class="p-3.5 rounded-xl bg-neutral-950/70 border border-neutral-800 flex flex-col sm:flex-row items-center gap-4">
+								<div class="relative w-16 h-16 rounded-full overflow-hidden bg-neutral-900 border border-neutral-700 shrink-0 flex items-center justify-center">
+									{#if editArtistImageUrl || selectedArtist.avatar_url || selectedArtist.cover_url}
+										<img
+											src={editArtistImageUrl || selectedArtist.avatar_url || selectedArtist.cover_url}
+											alt={selectedArtist.name}
+											class="w-full h-full object-cover"
+										/>
+									{:else}
+										<User class="w-7 h-7 text-neutral-500" />
+									{/if}
+								</div>
+								<div class="flex-1 w-full space-y-2">
+									<div class="flex flex-wrap items-center justify-between gap-2">
+										<label for="manual-artist-img-url" class="text-xs font-semibold text-neutral-200">
+											Portrait Image URL (or Upload File)
+										</label>
+										<button
+											type="button"
+											onclick={triggerArtistAvatarUpload}
+											disabled={isUploadingArtistAvatar}
+											class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[11px] font-semibold text-emerald-400 flex items-center gap-1.5 cursor-pointer"
+										>
+											<Upload class="w-3 h-3" />
+											<span>{isUploadingArtistAvatar ? 'Uploading...' : 'Upload Image File'}</span>
+										</button>
+									</div>
+									<input
+										id="manual-artist-img-url"
+										type="text"
+										bind:value={editArtistImageUrl}
+										placeholder="https://... direct image URL or Deezer artist link"
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+									/>
+								</div>
+							</div>
+
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+								<div>
+									<label for="manual-artist-disambig" class="block text-xs font-semibold text-neutral-300 mb-1">
+										Disambiguation / Subtitle
+									</label>
+									<input
+										id="manual-artist-disambig"
+										type="text"
+										bind:value={editArtistDisambiguation}
+										placeholder="e.g. US rapper, Detroit hip hop"
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+									/>
+								</div>
+
+								<div>
+									<label for="manual-artist-mbid" class="block text-xs font-semibold text-neutral-300 mb-1">
+										MusicBrainz Artist ID (MBID)
+									</label>
+									<input
+										id="manual-artist-mbid"
+										type="text"
+										bind:value={editArtistMbid}
+										placeholder="e.g. b95ce3ff-3d05-4e87-9e01-c97b66af13d4"
+										class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-mono text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+									/>
+								</div>
+							</div>
+
+							<div>
+								<label for="manual-artist-lastfm" class="block text-xs font-semibold text-neutral-300 mb-1">
+									Last.fm Profile URL
+								</label>
+								<input
+									id="manual-artist-lastfm"
+									type="text"
+									bind:value={editArtistLastFmUrl}
+									placeholder="https://www.last.fm/music/..."
+									class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none"
+								/>
+							</div>
+
+							<div>
+								<label for="manual-artist-bio" class="block text-xs font-semibold text-neutral-300 mb-1">
+									Artist Biography
+								</label>
+								<textarea
+									id="manual-artist-bio"
+									bind:value={editArtistBiography}
+									rows="5"
+									placeholder="Write or paste the artist biography here..."
+									class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:border-emerald-500 focus:outline-none leading-relaxed"
+								></textarea>
+							</div>
+
+							<div class="flex items-center gap-2.5 pt-1">
+								<input
+									id="manual-artist-save-folder"
+									type="checkbox"
+									bind:checked={editArtistSaveToFolder}
+									class="h-4 w-4 rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-emerald-500"
+								/>
+								<label for="manual-artist-save-folder" class="text-xs text-neutral-300 select-none cursor-pointer">
+									Also save companion <code class="text-emerald-400">artist.jpg</code> to artist's music folder
+								</label>
+							</div>
+
+							<div class="flex items-center justify-end gap-3 pt-3 border-t border-neutral-800">
+								<button
+									type="button"
+									onclick={() => (showEditArtistModal = false)}
+									class="rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 transition cursor-pointer"
+								>
+									Cancel
+								</button>
+								<button
+									type="submit"
+									disabled={isSavingManualArtist}
+									class="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-neutral-950 hover:bg-emerald-400 disabled:opacity-50 transition cursor-pointer"
+								>
+									{#if isSavingManualArtist}
+										<RefreshCw class="h-3.5 w-3.5 animate-spin" />
+										<span>Saving...</span>
+									{:else}
+										<CircleCheck class="h-3.5 w-3.5" />
+										<span>Save Artist Metadata</span>
+									{/if}
+								</button>
+							</div>
+						</form>
+					{/if}
 				</div>
 			</div>
 		</div>

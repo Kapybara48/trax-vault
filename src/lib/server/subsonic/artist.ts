@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { db, getAlbumsByArtist, getArtistMetadata, upsertArtistMetadata, findSimilarArtistsInLibrary, getDistinctArtists } from '$lib/server/db.js';
 import {
 	searchMusicBrainzArtist,
+	searchMusicBrainzArtistList,
 	getMusicBrainzArtistDetail,
 	resolveWikimediaAndWikipedia
 } from '$lib/server/musicbrainz.js';
@@ -1209,4 +1210,478 @@ export function startBulkArtistEnrichment(options: { forceRefresh?: boolean; sav
 	});
 
 	return { started: true, total: rawArtists.length, message: `Started enrichment for ${rawArtists.length} artists` };
+}
+
+export interface ParsedArtistExternalInput {
+	provider: 'musicbrainz' | 'deezer' | 'theaudiodb' | 'image_url';
+	id: string;
+}
+
+/**
+ * Parses an external artist ID or URL pasted by the user:
+ * - MusicBrainz URL: https://musicbrainz.org/artist/UUID or plain UUID or mbid:UUID / arid:UUID
+ * - Deezer URL: https://www.deezer.com/artist/13 or deezer:13 or plain numeric ID "13"
+ * - TheAudioDB URL: https://www.theaudiodb.com/artist/111304-Eminem or audiodb:111304
+ * - Direct Image URL: https://...jpg
+ */
+export function parseArtistExternalInput(input: string | null | undefined): ParsedArtistExternalInput | null {
+	if (!input) return null;
+	const trimmed = String(input).trim();
+	if (!trimmed) return null;
+
+	// 1. MusicBrainz URL or prefixed UUID or plain UUID
+	const mbUrlMatch = trimmed.match(/musicbrainz\.org\/artist\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+	if (mbUrlMatch) {
+		return { provider: 'musicbrainz', id: mbUrlMatch[1].toLowerCase() };
+	}
+	const mbUuidMatch = trimmed.match(/^(?:(?:mbid|arid|musicbrainz):)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+	if (mbUuidMatch) {
+		return { provider: 'musicbrainz', id: mbUuidMatch[1].toLowerCase() };
+	}
+
+	// 2. Deezer URL or prefixed ID
+	const dzUrlMatch = trimmed.match(/deezer\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?artist\/(\d+)/i);
+	if (dzUrlMatch) {
+		return { provider: 'deezer', id: dzUrlMatch[1] };
+	}
+	const dzPrefixMatch = trimmed.match(/^(?:deezer|dz):(\d+)$/i);
+	if (dzPrefixMatch) {
+		return { provider: 'deezer', id: dzPrefixMatch[1] };
+	}
+
+	// 3. TheAudioDB URL or prefixed ID
+	const adbUrlMatch = trimmed.match(/theaudiodb\.com\/artist\/(\d+)/i);
+	if (adbUrlMatch) {
+		return { provider: 'theaudiodb', id: adbUrlMatch[1] };
+	}
+	const adbPrefixMatch = trimmed.match(/^(?:theaudiodb|audiodb|tadb):(\d+)$/i);
+	if (adbPrefixMatch) {
+		return { provider: 'theaudiodb', id: adbPrefixMatch[1] };
+	}
+
+	// 4. Plain numeric ID -> defaults to Deezer Artist ID
+	if (/^\d{1,12}$/.test(trimmed)) {
+		return { provider: 'deezer', id: trimmed };
+	}
+
+	// 5. Direct HTTP/HTTPS image URL
+	if (/^https?:\/\/.+/i.test(trimmed)) {
+		return { provider: 'image_url', id: trimmed };
+	}
+
+	return null;
+}
+
+export interface ArtistSearchCandidate {
+	source: 'deezer' | 'musicbrainz' | 'theaudiodb';
+	externalId: string; // e.g. "deezer:13" or "mbid:b95ce3ff-..."
+	displayId: string;  // e.g. "13" or "b95ce3ff-..."
+	name: string;
+	subtitle: string;
+	imageUrl: string | null;
+	externalUrl: string;
+	fanCount?: number;
+}
+
+/**
+ * Searches Deezer and MusicBrainz (or resolves a pasted ID/URL) for interactive candidate selection
+ */
+export async function searchArtistCandidates(query: string): Promise<ArtistSearchCandidate[]> {
+	const trimmed = (query || '').trim();
+	if (!trimmed) return [];
+
+	const candidates: ArtistSearchCandidate[] = [];
+	const parsed = parseArtistExternalInput(trimmed);
+
+	if (parsed) {
+		if (parsed.provider === 'deezer') {
+			const dz = await deezerFetchJson(`https://api.deezer.com/artist/${parsed.id}`);
+			if (dz && dz.id && !dz.error) {
+				const pic = getValidDeezerPicture(dz);
+				candidates.push({
+					source: 'deezer',
+					externalId: `deezer:${dz.id}`,
+					displayId: String(dz.id),
+					name: dz.name || `Deezer Artist #${dz.id}`,
+					subtitle: dz.nb_fan ? `${Number(dz.nb_fan).toLocaleString()} fans • Deezer ID: ${dz.id}` : `Deezer ID: ${dz.id}`,
+					imageUrl: pic,
+					externalUrl: `https://www.deezer.com/artist/${dz.id}`,
+					fanCount: dz.nb_fan || 0
+				});
+			}
+			return candidates;
+		} else if (parsed.provider === 'musicbrainz') {
+			const detail = await getMusicBrainzArtistDetail(parsed.id);
+			if (detail) {
+				let pic: string | null = null;
+				if (detail.deezerId) {
+					const dz = await deezerFetchJson(`https://api.deezer.com/artist/${detail.deezerId}`);
+					if (dz) pic = getValidDeezerPicture(dz);
+				}
+				const parts = [detail.type, detail.country, detail.disambiguation].filter(Boolean);
+				candidates.push({
+					source: 'musicbrainz',
+					externalId: `mbid:${detail.id}`,
+					displayId: detail.id,
+					name: detail.name,
+					subtitle: parts.length > 0 ? parts.join(' • ') : `MBID: ${detail.id}`,
+					imageUrl: pic,
+					externalUrl: `https://musicbrainz.org/artist/${detail.id}`
+				});
+			}
+			return candidates;
+		} else if (parsed.provider === 'theaudiodb') {
+			try {
+				const res = await fetch(`https://www.theaudiodb.com/api/v1/json/123/artist.php?i=${parsed.id}`, {
+					headers: { 'User-Agent': 'TraxVault/1.7.32', Accept: 'application/json' }
+				});
+				if (res.ok) {
+					const d = await res.json();
+					const a = d?.artists?.[0];
+					if (a) {
+						candidates.push({
+							source: 'theaudiodb',
+							externalId: `audiodb:${a.idArtist}`,
+							displayId: String(a.idArtist),
+							name: a.strArtist,
+							subtitle: [a.strGenre, a.strCountry, `AudioDB ID: ${a.idArtist}`].filter(Boolean).join(' • '),
+							imageUrl: a.strArtistThumb || null,
+							externalUrl: `https://www.theaudiodb.com/artist/${a.idArtist}`
+						});
+					}
+				}
+			} catch {}
+			return candidates;
+		}
+	}
+
+	// Parallel search across Deezer (for 1000x1000 studio portraits) and MusicBrainz (for MBIDs & biographies)
+	const [dzData, mbList] = await Promise.all([
+		deezerFetchJson(`https://api.deezer.com/search/artist?q=${encodeURIComponent(trimmed)}`),
+		searchMusicBrainzArtistList(trimmed, 6)
+	]);
+
+	const dzList = Array.isArray(dzData?.data) ? dzData.data.slice(0, 8) : [];
+	for (const dz of dzList) {
+		const pic = getValidDeezerPicture(dz);
+		candidates.push({
+			source: 'deezer',
+			externalId: `deezer:${dz.id}`,
+			displayId: String(dz.id),
+			name: dz.name,
+			subtitle: `${Number(dz.nb_fan || 0).toLocaleString()} fans${dz.nb_album ? ` • ${dz.nb_album} albums` : ''} • ID: ${dz.id}`,
+			imageUrl: pic,
+			externalUrl: dz.link || `https://www.deezer.com/artist/${dz.id}`,
+			fanCount: dz.nb_fan || 0
+		});
+	}
+
+	for (const mb of mbList) {
+		const parts = [mb.type, mb.country, mb.disambiguation].filter(Boolean);
+		// Attach matching Deezer preview thumbnail if same normalized name exists in dzList
+		const matchingDz = candidates.find(
+			(c) => c.source === 'deezer' && c.imageUrl && normalizeArtistName(c.name) === normalizeArtistName(mb.name)
+		);
+		candidates.push({
+			source: 'musicbrainz',
+			externalId: `mbid:${mb.id}`,
+			displayId: mb.id,
+			name: mb.name,
+			subtitle: parts.length > 0 ? parts.join(' • ') : 'MusicBrainz Artist',
+			imageUrl: matchingDz?.imageUrl || null,
+			externalUrl: `https://musicbrainz.org/artist/${mb.id}`
+		});
+	}
+
+	return candidates;
+}
+
+/**
+ * Fetches and applies artist portrait and metadata from a specific external ID or URL
+ * (MusicBrainz MBID/URL, Deezer Artist ID/URL, TheAudioDB ID/URL, or direct Image URL).
+ */
+export async function fetchAndApplyArtistByExternalId(
+	artistName: string,
+	externalInput: string,
+	options: { saveToFolder?: boolean } = {}
+): Promise<{
+	success: boolean;
+	artist?: ArtistInfoResult;
+	metadata?: ArtistMetadata | null;
+	avatarUrl?: string;
+	companionSaved?: boolean;
+	companionPath?: string;
+	error?: string;
+}> {
+	const parsed = parseArtistExternalInput(externalInput);
+	if (!parsed) {
+		return {
+			success: false,
+			error: 'Unrecognized ID or URL format. Paste a MusicBrainz Artist URL/MBID, a Deezer Artist URL/ID (e.g. https://www.deezer.com/artist/13 or 13), a TheAudioDB URL/ID, or a direct image URL.'
+		};
+	}
+
+	const artistToken = encodeArtistId(artistName);
+	const existing = getArtistMetadata(artistName);
+
+	let mbid = existing?.musicbrainz_id || '';
+	let disambiguation = existing?.disambiguation || '';
+	let biography = existing?.biography || '';
+	let lastFmUrl = existing?.lastfm_url || `https://www.last.fm/music/${encodeURIComponent(artistName)}`;
+	let imageUrl = existing?.image_url || '';
+	let localDiskPath = existing?.image_disk_path || '';
+
+	try {
+		if (parsed.provider === 'deezer') {
+			const dz = await deezerFetchJson(`https://api.deezer.com/artist/${parsed.id}`);
+			if (!dz || dz.error || !dz.id) {
+				return { success: false, error: `Deezer artist #${parsed.id} was not found.` };
+			}
+			const pic = getValidDeezerPicture(dz);
+			if (!pic) {
+				return { success: false, error: `Deezer artist "${dz.name}" (#${parsed.id}) does not have an artist portrait image.` };
+			}
+			imageUrl = pic;
+
+			const cachedPath = await cacheArtistImageToDisk(artistToken, imageUrl, true, artistName);
+			if (!cachedPath) {
+				return { success: false, error: 'Failed to download and validate portrait image from Deezer.' };
+			}
+			localDiskPath = cachedPath;
+
+			// If biography or MBID is still missing, try enriching from MusicBrainz using the Deezer artist name
+			if (!biography || !mbid) {
+				try {
+					const mbSearch = await searchMusicBrainzArtist(dz.name || artistName);
+					if (mbSearch) {
+						if (!mbid) mbid = mbSearch.id;
+						if (!disambiguation && mbSearch.disambiguation) disambiguation = mbSearch.disambiguation;
+						const detail = await getMusicBrainzArtistDetail(mbSearch.id);
+						if (detail) {
+							if (detail.lastfmUrl) lastFmUrl = detail.lastfmUrl;
+							const wiki = await resolveWikimediaAndWikipedia(dz.name || artistName, detail.wikidataId, detail.wikipediaUrl, undefined);
+							if (wiki.biography) biography = wiki.biography;
+						}
+					}
+				} catch {}
+			}
+		} else if (parsed.provider === 'musicbrainz') {
+			const detail = await getMusicBrainzArtistDetail(parsed.id);
+			if (!detail) {
+				return { success: false, error: `MusicBrainz artist "${parsed.id}" was not found.` };
+			}
+			mbid = detail.id;
+			if (detail.disambiguation) disambiguation = detail.disambiguation;
+			if (detail.lastfmUrl) lastFmUrl = detail.lastfmUrl;
+
+			// 1. Resolve Wikipedia biography
+			const wiki = await resolveWikimediaAndWikipedia(
+				detail.name || artistName,
+				detail.wikidataId,
+				detail.wikipediaUrl,
+				detail.imageUrl
+			);
+			if (wiki.biography) {
+				biography = wiki.biography;
+			}
+
+			// 2. Resolve studio portrait linked to this exact MBID:
+			// Priority A: Exact Deezer artist ID linked in MusicBrainz url-rels!
+			let newImageUrl: string | null = null;
+			if (detail.deezerId) {
+				const dz = await deezerFetchJson(`https://api.deezer.com/artist/${detail.deezerId}`);
+				if (dz) {
+					newImageUrl = getValidDeezerPicture(dz);
+				}
+			}
+
+			// Priority B: TheAudioDB direct MBID lookup (artist-mb.php?i=MBID)
+			if (!newImageUrl) {
+				try {
+					const adbRes = await fetch(`https://www.theaudiodb.com/api/v1/json/123/artist-mb.php?i=${encodeURIComponent(detail.id)}`, {
+						headers: { 'User-Agent': 'TraxVault/1.7.32', Accept: 'application/json' }
+					});
+					if (adbRes.ok) {
+						const adbData = await adbRes.json();
+						const a = adbData?.artists?.[0];
+						if (a) {
+							if (a.strArtistThumb) newImageUrl = a.strArtistThumb;
+							if (!biography && a.strBiographyEN) biography = String(a.strBiographyEN).trim();
+						}
+					}
+				} catch {}
+			}
+
+			// Priority C: Deezer search by the canonical MusicBrainz artist name
+			if (!newImageUrl) {
+				newImageUrl = await fetchDeezerArtistImage(detail.name || artistName);
+			}
+
+			// Priority D: Wikimedia image if user explicitly pasted a MusicBrainz ID and no studio image exists
+			if (!newImageUrl && wiki.imageUrl) {
+				newImageUrl = wiki.imageUrl;
+			}
+
+			if (newImageUrl) {
+				const cachedPath = await cacheArtistImageToDisk(artistToken, newImageUrl, true, artistName);
+				if (cachedPath) {
+					imageUrl = newImageUrl;
+					localDiskPath = cachedPath;
+				}
+			}
+		} else if (parsed.provider === 'theaudiodb') {
+			const res = await fetch(`https://www.theaudiodb.com/api/v1/json/123/artist.php?i=${encodeURIComponent(parsed.id)}`, {
+				headers: { 'User-Agent': 'TraxVault/1.7.32', Accept: 'application/json' }
+			});
+			if (!res.ok) {
+				return { success: false, error: `TheAudioDB artist #${parsed.id} lookup failed.` };
+			}
+			const data = await res.json();
+			const a = data?.artists?.[0];
+			if (!a) {
+				return { success: false, error: `TheAudioDB artist #${parsed.id} was not found.` };
+			}
+			if (a.strMusicBrainzID) mbid = a.strMusicBrainzID;
+			if (a.strBiographyEN) biography = String(a.strBiographyEN).trim();
+			if (a.strGenre || a.strCountry) {
+				disambiguation = [a.strGenre, a.strCountry].filter(Boolean).join(', ');
+			}
+			if (a.strArtistThumb) {
+				const cachedPath = await cacheArtistImageToDisk(artistToken, a.strArtistThumb, true, artistName);
+				if (cachedPath) {
+					imageUrl = a.strArtistThumb;
+					localDiskPath = cachedPath;
+				}
+			}
+		} else if (parsed.provider === 'image_url') {
+			const cachedPath = await cacheArtistImageToDisk(artistToken, parsed.id, true, artistName);
+			if (!cachedPath) {
+				return { success: false, error: 'Could not download a valid image from the provided URL.' };
+			}
+			imageUrl = parsed.id;
+			localDiskPath = cachedPath;
+		}
+
+		if (!biography) {
+			biography = disambiguation
+				? `${artistName} (${disambiguation}).`
+				: `${artistName} is an artist in your music library.`;
+		}
+
+		upsertArtistMetadata({
+			id: artistToken,
+			name: artistName,
+			musicbrainz_id: mbid || null,
+			disambiguation: disambiguation || null,
+			biography: biography || null,
+			image_url: imageUrl || null,
+			image_disk_path: localDiskPath || null,
+			lastfm_url: lastFmUrl || null
+		});
+
+		let companionSaved = false;
+		let companionPath: string | undefined;
+		if (options.saveToFolder) {
+			const compRes = await saveArtistCompanionImageToFolder(artistName);
+			if (compRes.success) {
+				companionSaved = true;
+				companionPath = compRes.path;
+			}
+		}
+
+		const info = await getOrFetchArtistInfo(artistName);
+		const updatedMeta = getArtistMetadata(artistName);
+		return {
+			success: true,
+			artist: info,
+			metadata: updatedMeta,
+			avatarUrl: `/api/artists/${encodeURIComponent(artistName)}/avatar?_t=${Date.now()}`,
+			companionSaved,
+			companionPath
+		};
+	} catch (err: any) {
+		console.error(`[Artist Engine] Error applying external ID "${externalInput}" for "${artistName}":`, err);
+		return { success: false, error: err.message || 'Failed to apply artist metadata' };
+	}
+}
+
+/**
+ * Manually updates artist metadata fields (biography, disambiguation, MBID, Last.fm URL, custom image URL)
+ */
+export async function updateManualArtistMetadata(
+	artistName: string,
+	payload: {
+		biography?: string | null;
+		disambiguation?: string | null;
+		musicbrainz_id?: string | null;
+		lastfm_url?: string | null;
+		image_url?: string | null;
+		saveToFolder?: boolean;
+	}
+): Promise<{
+	success: boolean;
+	artist?: ArtistInfoResult;
+	metadata?: ArtistMetadata | null;
+	avatarUrl?: string;
+	companionSaved?: boolean;
+	companionPath?: string;
+	error?: string;
+}> {
+	const artistToken = encodeArtistId(artistName);
+	const existing = getArtistMetadata(artistName);
+
+	let imageUrl = payload.image_url !== undefined ? (payload.image_url || '').trim() : (existing?.image_url || '');
+	let localDiskPath = existing?.image_disk_path || '';
+
+	// If user entered a new remote image URL (or external Deezer/MBID link in the image URL field), resolve and cache it
+	if (payload.image_url !== undefined && imageUrl && imageUrl !== existing?.image_url) {
+		const parsed = parseArtistExternalInput(imageUrl);
+		if (parsed && parsed.provider === 'deezer') {
+			const dz = await deezerFetchJson(`https://api.deezer.com/artist/${parsed.id}`);
+			const pic = dz ? getValidDeezerPicture(dz) : null;
+			if (pic) imageUrl = pic;
+		}
+		const cachedPath = await cacheArtistImageToDisk(artistToken, imageUrl, true, artistName);
+		if (!cachedPath) {
+			return { success: false, error: 'Failed to download a valid image from the provided Image URL.' };
+		}
+		localDiskPath = cachedPath;
+	}
+
+	const cleanMbid = payload.musicbrainz_id !== undefined
+		? (parseArtistExternalInput(payload.musicbrainz_id)?.id || (payload.musicbrainz_id || '').trim() || null)
+		: (existing?.musicbrainz_id || null);
+
+	upsertArtistMetadata({
+		id: artistToken,
+		name: artistName,
+		biography: payload.biography !== undefined ? (payload.biography || '').trim() || null : existing?.biography,
+		disambiguation: payload.disambiguation !== undefined ? (payload.disambiguation || '').trim() || null : existing?.disambiguation,
+		musicbrainz_id: cleanMbid,
+		lastfm_url: payload.lastfm_url !== undefined ? (payload.lastfm_url || '').trim() || null : existing?.lastfm_url,
+		image_url: imageUrl || null,
+		image_disk_path: localDiskPath || null
+	});
+
+	let companionSaved = false;
+	let companionPath: string | undefined;
+	if (payload.saveToFolder) {
+		const compRes = await saveArtistCompanionImageToFolder(artistName);
+		if (compRes.success) {
+			companionSaved = true;
+			companionPath = compRes.path;
+		}
+	}
+
+	const updatedMeta = getArtistMetadata(artistName);
+	const info = await getOrFetchArtistInfo(artistName);
+
+	return {
+		success: true,
+		artist: info,
+		metadata: updatedMeta,
+		avatarUrl: `/api/artists/${encodeURIComponent(artistName)}/avatar?_t=${Date.now()}`,
+		companionSaved,
+		companionPath
+	};
 }

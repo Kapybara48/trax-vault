@@ -323,8 +323,32 @@ export interface MusicBrainzArtistDetail {
 	wikidataId?: string;
 	wikipediaUrl?: string;
 	lastfmUrl?: string;
+	deezerId?: string;
 	artistRelations: Array<{ type: string; name: string; mbid?: string }>;
 	tags: string[];
+}
+
+export async function searchMusicBrainzArtistList(query: string, limit: number = 8): Promise<MusicBrainzArtistSearchItem[]> {
+	const trimmed = (query || '').trim();
+	if (!trimmed || isGenericArtist(trimmed)) return [];
+	try {
+		const url = `https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(trimmed)}&limit=${limit}&fmt=json`;
+		const res = await rateLimitedFetch(url);
+		if (!res.ok) return [];
+		const data = await res.json();
+		const artists = data.artists || [];
+		return artists.slice(0, limit).map((a: any) => ({
+			id: a.id,
+			name: a.name,
+			type: a.type,
+			country: a.country,
+			disambiguation: a.disambiguation,
+			score: a.score ? parseInt(a.score, 10) : undefined
+		}));
+	} catch (err) {
+		console.warn(`[MusicBrainz] Error searching artist list for "${query}":`, err);
+		return [];
+	}
 }
 
 export async function searchMusicBrainzArtist(name: string): Promise<MusicBrainzArtistSearchItem | null> {
@@ -386,6 +410,7 @@ export async function getMusicBrainzArtistDetail(mbid: string): Promise<MusicBra
 		let wikidataId: string | undefined;
 		let wikipediaUrl: string | undefined;
 		let lastfmUrl: string | undefined;
+		let deezerId: string | undefined;
 		const artistRelations: Array<{ type: string; name: string; mbid?: string }> = [];
 
 		if (Array.isArray(data.relations)) {
@@ -395,6 +420,10 @@ export async function getMusicBrainzArtistDetail(mbid: string): Promise<MusicBra
 				const resource = rel.url?.resource;
 
 				if (targetType === 'url' && resource) {
+					const dzMatch = String(resource).match(/deezer\.com\/(?:[a-z]{2}\/)?artist\/(\d+)/i);
+					if (dzMatch) {
+						deezerId = dzMatch[1];
+					}
 					if (relType === 'image') {
 						imageUrl = resource;
 					} else if (relType === 'wikidata') {
@@ -433,6 +462,7 @@ export async function getMusicBrainzArtistDetail(mbid: string): Promise<MusicBra
 			wikidataId,
 			wikipediaUrl,
 			lastfmUrl,
+			deezerId,
 			artistRelations,
 			tags: Array.from(new Set(tags))
 		};

@@ -21,6 +21,8 @@ export interface PlayerArtist {
 	song_count: number;
 	cover_url: string | null;
 	avatar_url?: string | null;
+	image_url?: string | null;
+	disambiguation?: string | null;
 	biography?: string | null;
 	musicbrainz_id?: string | null;
 	lastfm_url?: string | null;
@@ -167,8 +169,9 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	}
 
 	// Query cached artist metadata
-	const rawMeta = db.prepare('SELECT name, biography, musicbrainz_id, lastfm_url, image_url, image_disk_path, updated_at FROM artist_metadata').all() as Array<{
+	const rawMeta = db.prepare('SELECT name, disambiguation, biography, musicbrainz_id, lastfm_url, image_url, image_disk_path, updated_at FROM artist_metadata').all() as Array<{
 		name: string;
+		disambiguation?: string | null;
 		biography?: string | null;
 		musicbrainz_id?: string | null;
 		lastfm_url?: string | null;
@@ -192,6 +195,8 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 				song_count: a.tracks.length,
 				cover_url: a.cover_url,
 				avatar_url: isGeneric ? null : `/api/artists/${encodeURIComponent(a.name)}/avatar?v=${cacheBust}`,
+				image_url: m?.image_url || null,
+				disambiguation: m?.disambiguation || null,
 				biography: m?.biography || null,
 				musicbrainz_id: m?.musicbrainz_id || null,
 				lastfm_url: m?.lastfm_url || null,
