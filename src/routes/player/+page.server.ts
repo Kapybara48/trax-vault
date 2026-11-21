@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types.js';
 import { db, getAlbums, getUserPlaylists } from '$lib/server/db.js';
 import { encodeArtistId } from '$lib/server/subsonic/artist.js';
+import { isGenericArtist } from '$lib/utils.js';
 import type { Album, Track, Playlist } from '$lib/types/index.js';
 
 export interface PlayerAlbum extends Album {
@@ -182,12 +183,13 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	const artists: PlayerArtist[] = Array.from(artistsMap.values())
 		.map((a) => {
 			const m = metaMap.get(a.name.toLowerCase());
+			const isGeneric = isGenericArtist(a.name);
 			return {
 				name: a.name,
 				album_count: a.albums.length,
 				song_count: a.tracks.length,
 				cover_url: a.cover_url,
-				avatar_url: `/api/artists/${encodeURIComponent(a.name)}/avatar`,
+				avatar_url: isGeneric ? null : `/api/artists/${encodeURIComponent(a.name)}/avatar`,
 				biography: m?.biography || null,
 				musicbrainz_id: m?.musicbrainz_id || null,
 				lastfm_url: m?.lastfm_url || null,

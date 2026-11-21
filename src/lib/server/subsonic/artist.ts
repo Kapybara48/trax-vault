@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { db, getAlbumsByArtist, getArtistMetadata, upsertArtistMetadata, findSimilarArtistsInLibrary, getDistinctArtists } from '$lib/server/db.js';
 import {
 	searchMusicBrainzArtist,
@@ -15,7 +16,7 @@ export function encodeArtistId(name: string): string {
 }
 
 export function decodeArtistId(id: string): string {
-	const cleanId = id.replace(/^art-/, '');
+	const cleanId = id.replace(/^art[-_]/, '');
 	if (cleanId.startsWith('art_')) {
 		try {
 			return Buffer.from(cleanId.substring(4), 'hex').toString('utf8');
@@ -23,9 +24,19 @@ export function decodeArtistId(id: string): string {
 			return cleanId;
 		}
 	}
-	// Fallback: check if an album exists with this ID and use its artist
-	const numericId = parseInt(cleanId, 10);
-	if (!isNaN(numericId)) {
+	// If hex string (even length, only hex characters)
+	if (/^[0-9a-f]{4,}$/i.test(cleanId) && cleanId.length % 2 === 0) {
+		try {
+			const decoded = Buffer.from(cleanId, 'hex').toString('utf8');
+			// If it decoded to valid printable characters, return it
+			if (decoded && /^[\x20-\x7E\p{L}\p{N}\p{P}\p{Z}]+$/u.test(decoded)) {
+				return decoded;
+			}
+		} catch {}
+	}
+	// Fallback: ONLY if cleanId is purely numeric digits
+	if (/^\d+$/.test(cleanId)) {
+		const numericId = parseInt(cleanId, 10);
 		const row = db.prepare('SELECT artist FROM albums WHERE id = ?').get(numericId) as { artist: string } | undefined;
 		if (row?.artist) return row.artist;
 	}
@@ -39,8 +50,7 @@ const ARTIST_IMAGE_NAMES = [
 	'artist.webp',
 	'band.jpg',
 	'band.png',
-	'artist-thumb.jpg',
-	'folder.jpg'
+	'artist-thumb.jpg'
 ];
 
 /**
@@ -48,6 +58,7 @@ const ARTIST_IMAGE_NAMES = [
  */
 export function findLocalArtistImage(artistName: string): string | null {
 	try {
+		const musicDir = getMusicDirectory();
 		const albums = getAlbumsByArtist(artistName);
 		for (const alb of albums) {
 			const track = db.prepare('SELECT file_path FROM tracks WHERE album_id = ? AND file_path IS NOT NULL LIMIT 1').get(alb.id) as { file_path?: string } | undefined;
@@ -56,14 +67,13 @@ export function findLocalArtistImage(artistName: string): string | null {
 			const resolved = resolveTrackFilePath(track);
 			if (!resolved) continue;
 
-			// Check album folder and parent artist folder
+			// Check parent artist folder (must be inside musicDir and not musicDir itself)
 			const albumFolder = path.dirname(resolved);
 			const artistFolder = path.dirname(albumFolder);
 
-			for (const dir of [artistFolder, albumFolder]) {
-				if (!fs.existsSync(dir)) continue;
+			if (artistFolder !== musicDir && isPathWithin(artistFolder, musicDir) && fs.existsSync(artistFolder)) {
 				for (const imgName of ARTIST_IMAGE_NAMES) {
-					const candidate = path.join(dir, imgName);
+					const candidate = path.join(artistFolder, imgName);
 					if (fs.existsSync(candidate)) {
 						return candidate;
 					}
@@ -232,6 +242,17 @@ export function deleteArtistAvatar(artistName: string): boolean {
 	}
 }
 
+export const FALSE_POSITIVE_DEEZER_HASHES = [
+	'24b4805a1a47079669dfbe5c24920c4b', // George Gershwin (Various Artists)
+	'519b6a5550a4e36a87190a7953ef3df0', // Bo Diddley (Soundtrack)
+	'baa7f926e6d71d3a93359c23ed7ea20e', // Oster Lapwass (OST)
+	'd2adeaa31a7a426802ea1786873db7b3', // Null
+	'82de28805504050f244dfe955d5cbb79', // Anton Rubinstein
+	'7fa738468c9a73ff98c1e1b78d622b81'  // Emine'm
+];
+
+const GERSHWIN_MD5 = 'e2d71ec4224ce1aeea889d03cf934c37';
+
 /**
  * Purges corrupted/mismatched artist images (e.g., George Gershwin or Bo Diddley on "Various Artists")
  */
@@ -239,6 +260,39 @@ export function purgeInvalidArtistCache(): void {
 	try {
 		for (const generic of GENERIC_ARTIST_NAMES) {
 			deleteArtistAvatar(generic);
+		}
+
+		// Purge any metadata rows that contain false-positive celebrity portraits
+		const rows = db.prepare('SELECT name, image_url, image_disk_path FROM artist_metadata WHERE image_url IS NOT NULL').all() as Array<{ name: string; image_url: string; image_disk_path?: string }>;
+		for (const row of rows) {
+			const nameLower = row.name.toLowerCase();
+			const isCelebrityMismatch = FALSE_POSITIVE_DEEZER_HASHES.some((h) => row.image_url.includes(h)) &&
+				!['george gershwin', 'bo diddley', 'oster lapwass', "emine'm"].includes(nameLower);
+			if (isCelebrityMismatch) {
+				deleteArtistAvatar(row.name);
+			}
+		}
+
+		// Check cached disk files for Gershwin portrait hash
+		const baseDir = process.env.DATA_DIR || './data';
+		const artistsDir = path.resolve(baseDir, 'artists');
+		if (fs.existsSync(artistsDir)) {
+			const files = fs.readdirSync(artistsDir);
+			for (const file of files) {
+				if (!file.endsWith('.jpg')) continue;
+				const full = path.join(artistsDir, file);
+				try {
+					const buf = fs.readFileSync(full);
+					const fileMd5 = crypto.createHash('md5').update(buf).digest('hex');
+					if (fileMd5 === GERSHWIN_MD5) {
+						const artToken = file.replace(/\.jpg$/, '');
+						const artistName = decodeArtistId(artToken);
+						if (artistName.toLowerCase() !== 'george gershwin') {
+							deleteArtistAvatar(artistName);
+						}
+					}
+				} catch {}
+			}
 		}
 	} catch (err) {
 		console.warn('[Artist Engine] Failed to purge invalid artist cache:', err);
@@ -378,12 +432,18 @@ export async function getOrFetchArtistInfo(
 	const now = Date.now();
 	const isFresh = cached && (now - new Date(cached.updated_at).getTime() < 30 * 24 * 60 * 60 * 1000);
 
-	// Detect if cached image was from low-quality Wikimedia / Wikipedia source
+	// Detect if cached image was from low-quality Wikimedia / Wikipedia source or known false positive
+	const isFalseCelebrityImage = Boolean(
+		cached?.image_url &&
+		FALSE_POSITIVE_DEEZER_HASHES.some((h) => cached.image_url!.includes(h)) &&
+		!['george gershwin', 'bo diddley', 'oster lapwass', "emine'm"].includes(cached.name.toLowerCase())
+	);
 	const hasLowQualityWikiImage = Boolean(
 		cached?.image_url && (
 			cached.image_url.includes('upload.wikimedia.org') ||
 			cached.image_url.includes('wikipedia.org') ||
-			cached.image_url.includes('wikimedia')
+			cached.image_url.includes('wikimedia') ||
+			isFalseCelebrityImage
 		)
 	);
 

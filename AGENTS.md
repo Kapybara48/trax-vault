@@ -1001,6 +1001,20 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added `DELETE /api/artists/[name]/avatar` API endpoint.
       - Added a 1-click "Reset Avatar" button (`<Trash2 />`) in the `/player` artist view with confirmation dialog, allowing users to immediately wipe an avatar and restore clean album art fallbacks.
 
+71. **Artist Avatar Hex Numeric Parsing Bug Fix & False Portrait Purging (v1.7.31)**:
+    - **The Root Cause of "Eminem has a weird black-and-white picture of a guy"**:
+      - In `/api/artists/[name]/avatar/+server.ts`, the endpoint previously called `handleSubsonicCoverArt({ id: token })` without the `art-` prefix, passing a raw hex token like `"456d696e656d"` for `"Eminem"`.
+      - In `handleSubsonicCoverArt()`, because the ID didn't start with `art-`, it fell into the `else` block: `const num = parseInt(rawId, 10)`. In JavaScript, `parseInt("456d696e656d", 10)` parses leading numeric characters and returns `456`. It then looked up **Album #456** in the database and served that album's cover art! Album #456 had a black-and-white picture of a guy on the cover.
+      - Furthermore, `decodeArtistId()` in `src/lib/server/subsonic/artist.ts` had a similar flaw: `const numericId = parseInt(cleanId, 10)` which parsed `"456d696e656d"` as integer 456, querying `SELECT artist FROM albums WHERE id = 456`.
+      - In addition, `findLocalArtistImage()` had `'folder.jpg'` in `ARTIST_IMAGE_NAMES` and searched `albumFolder`, which erroneously picked up album cover artwork from tracks' directories as the artist's face.
+    - **Architectural & Logic Fixes**:
+      - Fixed `GET /api/artists/[name]/avatar` to always prepend `art-` (`id: 'art-' + token`) and explicitly pass `artist: artistName`.
+      - In `handleSubsonicCoverArt()` in `src/lib/server/subsonic/media.ts`, added robust detection for `rawId.startsWith('art-') || rawId.startsWith('art_') || params.artist || (/^[0-9a-f]{4,}$/i.test(rawId) && !/^\d+$/.test(rawId))`. Replaced prefix removal with `/^art[-_]/`.
+      - Strictly guarded numeric fallbacks with `/^\d+$/.test(rawId)` in both `media.ts` and `decodeArtistId()` in `artist.ts`. Strings containing hex characters are never fed to `parseInt()`.
+      - Removed `'folder.jpg'` from `ARTIST_IMAGE_NAMES` and constrained local artist artwork discovery strictly to the parent `artistFolder`.
+      - Changed `Cache-Control` on avatar responses from `max-age=86400` to `no-cache`, ensuring client browsers immediately revalidate and fetch updated images instead of holding stale disk cache.
+      - In `purgeInvalidArtistCache()`, added automatic scanning for known false-positive Deezer hashes (`FALSE_POSITIVE_DEEZER_HASHES` such as George Gershwin and Bo Diddley) and disk cache MD5 validation, purging any mismatched portraits on server boot.
+
 ---
 
 ## 4. Workflows & Verification

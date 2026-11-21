@@ -262,9 +262,9 @@ export async function handleSubsonicCoverArt(
 				}
 			}
 		}
-	} else if (rawId.startsWith('art-') || rawId.startsWith('art_')) {
-		const artToken = rawId.replace(/^art-/, '');
-		const artistName = decodeArtistId(artToken);
+	} else if (rawId.startsWith('art-') || rawId.startsWith('art_') || params.artist || (/^[0-9a-f]{4,}$/i.test(rawId) && !/^\d+$/.test(rawId))) {
+		const artToken = params.artist ? encodeArtistId(params.artist) : rawId.replace(/^art[-_]/, '');
+		const artistName = params.artist || decodeArtistId(artToken);
 
 		// If this is a generic compilation/soundtrack artist, purge any wrong human portraits
 		if (isGenericArtist(artistName)) {
@@ -336,7 +336,7 @@ export async function handleSubsonicCoverArt(
 				}
 			}
 		}
-	} else {
+	} else if (/^\d+$/.test(rawId)) {
 		// Pure numeric ID fallback: try album first, then track
 		const num = parseInt(rawId, 10);
 		if (!isNaN(num)) {
@@ -370,7 +370,7 @@ export async function handleSubsonicCoverArt(
 						headers: {
 							'ETag': etag,
 							'Last-Modified': lastModified,
-							'Cache-Control': 'public, max-age=86400, must-revalidate',
+							'Cache-Control': 'no-cache',
 							'Access-Control-Allow-Origin': '*'
 						}
 					});
@@ -383,7 +383,7 @@ export async function handleSubsonicCoverArt(
 							headers: {
 								'ETag': etag,
 								'Last-Modified': lastModified,
-								'Cache-Control': 'public, max-age=86400, must-revalidate',
+								'Cache-Control': 'no-cache',
 								'Access-Control-Allow-Origin': '*'
 							}
 						});
@@ -400,7 +400,7 @@ export async function handleSubsonicCoverArt(
 					'Content-Length': buffer.length.toString(),
 					'ETag': etag,
 					'Last-Modified': lastModified,
-					'Cache-Control': 'public, max-age=86400, must-revalidate',
+					'Cache-Control': 'no-cache',
 					'Access-Control-Allow-Origin': '*'
 				}
 			});

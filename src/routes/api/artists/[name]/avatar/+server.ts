@@ -13,7 +13,7 @@ export const GET: RequestHandler = async ({ params, request }) => {
 	}
 
 	const token = encodeArtistId(artistName);
-	return handleSubsonicCoverArt({ id: token }, request.headers);
+	return handleSubsonicCoverArt({ id: `art-${token}`, artist: artistName }, request.headers);
 };
 
 export const POST: RequestHandler = async ({ params, request }) => {
