@@ -67,6 +67,9 @@ export async function handle({
 	if (path.startsWith('/rest')) {
 		return resolve(event);
 	}
+	if (path.endsWith('.view') && !path.startsWith('/rest')) {
+		throw redirect(307, `/rest${path}${event.url.search}`);
+	}
 
 	// If auth is globally disabled via environment variable
 	if (authDisabled) {

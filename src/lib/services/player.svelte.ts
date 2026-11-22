@@ -857,12 +857,23 @@ class GlobalPlayer {
 	async setStandaloneMode(isStandalone: boolean, targetDeviceId?: string) {
 		const targetId = targetDeviceId || this.deviceId;
 		if (targetId === this.deviceId) {
+			const wasCompanion = !this.localAudioEnabled;
 			this.standaloneMode = isStandalone;
 			try {
 				localStorage.setItem('traxvault_standalone_mode', isStandalone ? 'true' : 'false');
 			} catch {}
 			if (isStandalone) {
-				this.applyLocalAudioOutputMode(true);
+				this.localAudioEnabled = true;
+				if (wasCompanion) {
+					// Switching off sync from Companion mode: NEVER blast audio!
+					// Keep playback paused locally until the user explicitly hits play.
+					this.isPlaying = false;
+					this.updatePlaybackState('paused');
+					if (this.audioEl && !this.audioEl.paused) {
+						this.audioEl.pause();
+					}
+					this.persistSessionSnapshot();
+				}
 			}
 		}
 

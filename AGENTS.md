@@ -1087,6 +1087,17 @@ This document preserves persistent context, architectural conventions, recent ch
       - Documented secondary installation methods: cloning repo with Docker Compose build and bare-metal Node.js hosting.
       - Created comprehensive, detailed Environment Variables reference table documenting all 14 config options (`PORT`, `DATA_DIR`, `MUSIC_DIR`, `ORIGIN`, `NODE_ENV`, `AUTO_SYNC_LIBRARY`, `DISABLE_REGISTRATION`, `ALLOW_REGISTRATION`, `AUTH_DISABLED`, `ALLOW_INSECURE_AUTH_BYPASS`, `COOKIE_SECURE`, `SUBSONIC_SECRET_KEY`, `BODY_SIZE_LIMIT`, `NODE_OPTIONS`).
 
+77. **Companion Mode Quiet Detach & Settings Master-Detail Redesign (v1.7.40)**:
+    - **Companion Mode Quiet Detach**: Fixed abrupt audio playback blasting when turning off Live Sync from Companion Mode (`localAudioEnabled = false`). `setStandaloneMode(true)` in `src/lib/services/player.svelte.ts` now identifies `wasCompanion`, keeps `isPlaying = false`, safely pauses `<audio>`, and leaves the device quietly paused until the user explicitly hits play.
+    - **Settings Page Master-Detail Redesign (`/settings`)**:
+      - Redesigned [`src/routes/settings/+page.svelte`](file:///home/kapy/Projects/trax-vault/src/routes/settings/+page.svelte) with a sleek left navigation sidebar (desktop vertical menu & mobile horizontal pills) opening full settings views on the right.
+      - Default opened tab is the **Users** management section (`activeTab = 'users'` for administrators, `'account'` for standard users).
+      - Completely removed the redundant MusicBrainz Tagger Studio card from settings.
+    - **Subsonic URL & Password Streamlining**:
+      - Standardized the Subsonic server connection URL to the clean base server URL (`http://<server-ip>:3000`) without `/rest` suffix, matching standard client expectations (Symfonium, Feishin, DSub, Ultrasonic auto-append `/rest/...`).
+      - Added fallback 307 redirect in [`src/hooks.server.ts`](file:///home/kapy/Projects/trax-vault/src/hooks.server.ts) for any direct root `/*.view` requests.
+      - Removed the separate Subsonic password synchronization form: user accounts automatically share their standard password with Subsonic clients via existing AES-256 encrypted `subsonic_secret` storage.
+
 ---
 
 ## 4. Workflows & Verification

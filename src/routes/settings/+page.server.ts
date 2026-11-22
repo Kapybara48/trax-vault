@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		: null;
 
 	const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number })?.count || 0;
-	const subsonicUrl = `${url.protocol}//${url.host}/rest`;
+	const subsonicUrl = `${url.protocol}//${url.host}`;
 	const serverBaseUrl = `${url.protocol}//${url.host}`;
 	const registrationDisabled = isRegistrationDisabled();
 	const allUsers = (locals.user.role === 'admin' && locals.user.id) ? getAllUsers() : [];
