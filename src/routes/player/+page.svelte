@@ -116,7 +116,7 @@
 	// Side Drawers
 	let showLyricsDrawer = $state(false);
 	let showQueueDrawer = $state(false);
-	let mobilePlayerTab = $state<'tracks' | 'library' | 'lyrics' | 'queue'>('tracks');
+	let mobilePlayerTab = $state<'player' | 'tracks' | 'library' | 'lyrics' | 'queue'>('player');
 
 	// Synced Lyrics State
 	let lyricsLoading = $state(false);
@@ -322,7 +322,7 @@
 			showQueueDrawer = false;
 			mobilePlayerTab = 'lyrics';
 		} else if (mobilePlayerTab === 'lyrics') {
-			mobilePlayerTab = 'tracks';
+			mobilePlayerTab = player.currentTrack ? 'player' : 'tracks';
 		}
 	}
 
@@ -332,7 +332,7 @@
 			showLyricsDrawer = false;
 			mobilePlayerTab = 'queue';
 		} else if (mobilePlayerTab === 'queue') {
-			mobilePlayerTab = 'tracks';
+			mobilePlayerTab = player.currentTrack ? 'player' : 'tracks';
 		}
 	}
 
@@ -1213,6 +1213,21 @@
 				}
 			}
 		} catch {}
+
+		// On mobile devices, ensure mobilePlayerTab defaults to 'player' or restores user choice
+		if (typeof window !== 'undefined' && window.innerWidth < 768) {
+			try {
+				const raw = localStorage.getItem('traxvault_player_view_state');
+				const saved = raw ? JSON.parse(raw) : null;
+				if (saved?.mobilePlayerTab) {
+					mobilePlayerTab = saved.mobilePlayerTab;
+				} else {
+					mobilePlayerTab = 'player';
+				}
+			} catch {
+				mobilePlayerTab = 'player';
+			}
+		}
 	});
 </script>
 
@@ -1249,27 +1264,35 @@
 	{/if}
 
 	<!-- Mobile View Switcher (Phones & Small Tablets < md) -->
-	<div class="md:hidden flex items-center justify-between p-1 mx-2 sm:mx-3 mt-2 mb-1 bg-neutral-900/90 border border-neutral-800 rounded-xl text-xs font-semibold shrink-0 gap-1">
+	<div class="md:hidden flex items-center justify-between p-1 mx-2 sm:mx-3 mt-1.5 mb-1 bg-neutral-900/90 border border-neutral-800 rounded-xl text-xs font-semibold shrink-0 gap-1">
 		<button
 			type="button"
-			onclick={() => mobilePlayerTab = 'library'}
-			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'library' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+			onclick={() => { mobilePlayerTab = 'player'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'player' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
 		>
-			<Library class="h-3.5 w-3.5" />
-			<span>Library</span>
+			<Play class="h-3.5 w-3.5 fill-current" />
+			<span>Player</span>
 		</button>
 		<button
 			type="button"
-			onclick={() => mobilePlayerTab = 'tracks'}
-			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'tracks' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+			onclick={() => { mobilePlayerTab = 'tracks'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'tracks' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
 		>
 			<Disc3 class="h-3.5 w-3.5" />
 			<span>Tracks</span>
 		</button>
 		<button
 			type="button"
+			onclick={() => { mobilePlayerTab = 'library'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'library' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+		>
+			<Library class="h-3.5 w-3.5" />
+			<span>Library</span>
+		</button>
+		<button
+			type="button"
 			onclick={() => { mobilePlayerTab = 'lyrics'; showLyricsDrawer = true; showQueueDrawer = false; }}
-			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'lyrics' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'lyrics' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
 		>
 			<Mic class="h-3.5 w-3.5" />
 			<span>Lyrics</span>
@@ -1277,7 +1300,7 @@
 		<button
 			type="button"
 			onclick={() => { mobilePlayerTab = 'queue'; showQueueDrawer = true; showLyricsDrawer = false; }}
-			class="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'queue' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
+			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'queue' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
 		>
 			<ListMusic class="h-3.5 w-3.5" />
 			<span>Queue</span>
@@ -1285,18 +1308,335 @@
 		<button
 			type="button"
 			onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
-			class="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg transition {player.activeRoom?.type === 'shared' || player.connectedDevices.length > 1
+			class="flex items-center justify-center p-1.5 rounded-lg transition shrink-0 {player.activeRoom?.type === 'shared' || player.connectedDevices.length > 1
 				? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
 				: 'text-neutral-400 hover:text-white'}"
 			title="Sync Devices & Listen Together"
 		>
 			<Radio class="h-3.5 w-3.5" />
-			<span>Sync</span>
 		</button>
 	</div>
 
 	<!-- Workspace: Side Library + Main Stage + Drawers -->
-	<div class="flex-1 flex overflow-hidden min-h-0 p-2 sm:p-3 gap-2 sm:gap-3">
+	<div class="flex-1 flex overflow-hidden min-h-0 p-1.5 sm:p-3 gap-1.5 sm:gap-3">
+		<!-- DEDICATED FULL-SCREEN MOBILE NOW PLAYING (Phones < md) -->
+		{#if mobilePlayerTab === 'player'}
+			<section class="flex md:hidden order-1 flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto min-h-0 p-4 sm:p-6 shadow-xl justify-between">
+				{#if player.currentTrack}
+					<div class="flex flex-col items-center justify-center flex-1 w-full max-w-sm mx-auto gap-4 py-2">
+						<!-- Big Album Cover -->
+						<div class="relative w-full aspect-square max-w-[270px] xs:max-w-[300px] rounded-2xl overflow-hidden bg-neutral-950 shadow-2xl shadow-emerald-950/40 border border-neutral-800/80 group">
+							{#if player.currentAlbum?.cover_url}
+								<img src={player.currentAlbum.cover_url} alt="Cover" class="w-full h-full object-cover" />
+							{:else}
+								<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-600">
+									<Disc3 class="w-20 h-20 animate-spin-slow" />
+								</div>
+							{/if}
+						</div>
+
+						<!-- Track Metadata -->
+						<div class="w-full text-center space-y-1 mt-1">
+							<h2 class="text-lg sm:text-xl font-bold text-white tracking-tight line-clamp-1" title={player.currentTrack.title}>
+								{player.currentTrack.title}
+							</h2>
+							<div class="flex items-center justify-center gap-2 text-xs text-neutral-300">
+								<button
+									type="button"
+									onclick={() => {
+										if (player.currentTrack?.artist || player.currentAlbum?.artist) {
+											selectArtist(player.currentTrack?.artist || player.currentAlbum!.artist);
+											mobilePlayerTab = 'tracks';
+										}
+									}}
+									class="hover:text-emerald-400 font-semibold truncate transition cursor-pointer"
+								>
+									{player.currentTrack.artist || player.currentAlbum?.artist || 'Unknown Artist'}
+								</button>
+								{#if player.currentAlbum?.title}
+									<span class="text-neutral-500">&bull;</span>
+									<button
+										type="button"
+										onclick={() => {
+											if (player.currentAlbum) {
+												selectAlbum(player.currentAlbum);
+												mobilePlayerTab = 'tracks';
+											}
+										}}
+										class="text-neutral-400 hover:text-emerald-400 truncate max-w-[150px] transition cursor-pointer"
+									>
+										{player.currentAlbum.title}
+									</button>
+								{/if}
+							</div>
+
+							<!-- Quality Pill -->
+							<div class="flex items-center justify-center gap-2 pt-1 relative">
+								<button
+									type="button"
+									onclick={() => (showQualityMenu = !showQualityMenu)}
+									class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono cursor-pointer transition border {player.streamingQuality === 'original'
+										? 'bg-neutral-900 hover:bg-neutral-800 text-emerald-400 border-emerald-800/50'
+										: 'bg-amber-950/80 hover:bg-amber-900/80 text-amber-300 border-amber-700/60'}"
+								>
+									{#if player.streamingQuality === 'original'}
+										<span class="font-bold">{player.currentTrack.format || 'FLAC'}</span>
+										{#if player.currentTrack.bitrate_kbps}
+											<span class="text-neutral-400">&bull; {player.currentTrack.bitrate_kbps.toLocaleString()}k</span>
+										{/if}
+									{:else}
+										<span class="font-bold">MP3</span>
+										<span class="text-amber-200">&bull; {player.streamingQuality}k</span>
+									{/if}
+								</button>
+								{#if (player.currentTrack.disc_number || 1) > 1}
+									<span class="text-[10px] font-mono text-amber-400 font-semibold bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-800/50">
+										CD {player.currentTrack.disc_number}
+									</span>
+								{/if}
+
+								<!-- Quality Dropdown Popover (Mobile) -->
+								{#if showQualityMenu}
+									<div
+										class="fixed inset-0 z-40"
+										onclick={() => (showQualityMenu = false)}
+									></div>
+									<div
+										class="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-60 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-2 text-xs flex flex-col gap-1 backdrop-blur-xl text-left"
+									>
+										<div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
+											Streaming Quality
+										</div>
+										<button
+											type="button"
+											onclick={() => { player.setStreamingQuality('original'); showQualityMenu = false; }}
+											class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === 'original'
+												? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+												: 'hover:bg-neutral-800 text-neutral-300'}"
+										>
+											<div>
+												<div class="text-xs">Original Audio</div>
+												<div class="text-[10px] text-neutral-500">Lossless / native bit depth</div>
+											</div>
+											{#if player.streamingQuality === 'original'}
+												<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+											{/if}
+										</button>
+										<button
+											type="button"
+											onclick={() => { player.setStreamingQuality('320'); showQualityMenu = false; }}
+											class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === '320'
+												? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+												: 'hover:bg-neutral-800 text-neutral-300'}"
+										>
+											<div>
+												<div class="text-xs">320 kbps (High Quality)</div>
+												<div class="text-[10px] text-neutral-500">Premium MP3 encoding</div>
+											</div>
+											{#if player.streamingQuality === '320'}
+												<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+											{/if}
+										</button>
+										<button
+											type="button"
+											onclick={() => { player.setStreamingQuality('192'); showQualityMenu = false; }}
+											class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === '192'
+												? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+												: 'hover:bg-neutral-800 text-neutral-300'}"
+										>
+											<div>
+												<div class="text-xs">192 kbps (Standard)</div>
+												<div class="text-[10px] text-neutral-500">Balanced bandwidth & quality</div>
+											</div>
+											{#if player.streamingQuality === '192'}
+												<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+											{/if}
+										</button>
+										<button
+											type="button"
+											onclick={() => { player.setStreamingQuality('128'); showQualityMenu = false; }}
+											class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === '128'
+												? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+												: 'hover:bg-neutral-800 text-neutral-300'}"
+										>
+											<div>
+												<div class="text-xs">128 kbps (Data Saver)</div>
+												<div class="text-[10px] text-neutral-500">Low bandwidth, mobile friendly</div>
+											</div>
+											{#if player.streamingQuality === '128'}
+												<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+											{/if}
+										</button>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Scrubber Slider -->
+						<div class="w-full space-y-1 px-1 pt-1">
+							<div class="relative flex items-center group">
+								<input
+									type="range"
+									min="0"
+									max={player.duration || 100}
+									value={player.currentTime}
+									oninput={(e) => player.seekTo(parseFloat(e.currentTarget.value))}
+									class="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none"
+								/>
+							</div>
+							<div class="flex justify-between text-[11px] font-mono text-neutral-400">
+								<span>{formatTime(player.currentTime)}</span>
+								<span>{formatTime(player.duration)}</span>
+							</div>
+						</div>
+
+						<!-- Main Playback Controls -->
+						<div class="flex items-center justify-between w-full max-w-[280px] pt-1">
+							<!-- Shuffle -->
+							<button
+								type="button"
+								onclick={() => player.toggleShuffle()}
+								class="p-2.5 rounded-xl transition cursor-pointer {player.shuffleEnabled ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30' : 'text-neutral-400 hover:text-white'}"
+								title="Shuffle ({player.shuffleEnabled ? 'On' : 'Off'})"
+							>
+								<Shuffle class="w-5 h-5" />
+							</button>
+
+							<!-- Skip Back -->
+							<button
+								type="button"
+								onclick={() => player.previousTrack()}
+								class="p-2.5 rounded-xl text-neutral-200 hover:text-white active:scale-95 transition cursor-pointer"
+								title="Previous Track"
+							>
+								<SkipBack class="w-6 h-6 fill-current" />
+							</button>
+
+							<!-- Main Giant Play/Pause -->
+							<button
+								type="button"
+								onclick={() => player.togglePlay()}
+								class="w-16 h-16 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 flex items-center justify-center shadow-xl shadow-emerald-500/30 active:scale-95 transition cursor-pointer"
+								title={player.isPlaying ? 'Pause' : 'Play'}
+							>
+								{#if player.isPlaying}
+									<Pause class="w-7 h-7 fill-current" />
+								{:else}
+									<Play class="w-7 h-7 fill-current ml-1" />
+								{/if}
+							</button>
+
+							<!-- Skip Forward -->
+							<button
+								type="button"
+								onclick={() => player.nextTrack()}
+								class="p-2.5 rounded-xl text-neutral-200 hover:text-white active:scale-95 transition cursor-pointer"
+								title="Next Track"
+							>
+								<SkipForward class="w-6 h-6 fill-current" />
+							</button>
+
+							<!-- Repeat -->
+							<button
+								type="button"
+								onclick={() => player.toggleRepeat()}
+								class="p-2.5 rounded-xl transition cursor-pointer {player.repeatMode !== 'off' ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30' : 'text-neutral-400 hover:text-white'}"
+								title="Repeat ({player.repeatMode})"
+							>
+								{#if player.repeatMode === 'one'}
+									<Repeat1 class="w-5 h-5" />
+								{:else}
+									<Repeat class="w-5 h-5" />
+								{/if}
+							</button>
+						</div>
+
+						<!-- Volume Control Slider -->
+						<div class="flex items-center gap-3 w-full max-w-[260px] pt-2">
+							<button
+								type="button"
+								onclick={() => player.toggleMute()}
+								class="text-neutral-400 hover:text-white p-1 cursor-pointer"
+							>
+								{#if player.isMuted || player.volume === 0}
+									<VolumeX class="w-4 h-4 text-rose-400" />
+								{:else if player.volume < 0.5}
+									<Volume1 class="w-4 h-4" />
+								{:else}
+									<Volume2 class="w-4 h-4 text-emerald-400" />
+								{/if}
+							</button>
+							<input
+								type="range"
+								min="0"
+								max="1"
+								step="0.01"
+								value={player.isMuted ? 0 : player.volume}
+								oninput={(e) => player.setVolume(parseFloat(e.currentTarget.value))}
+								class="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+							/>
+						</div>
+
+						<!-- Quick Action Navigation Pills -->
+						<div class="flex flex-wrap items-center justify-center gap-2 w-full pt-3 border-t border-neutral-800/60 mt-1">
+							<button
+								type="button"
+								onclick={() => { mobilePlayerTab = 'lyrics'; showLyricsDrawer = true; showQueueDrawer = false; }}
+								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
+							>
+								<Mic class="w-3.5 h-3.5 text-emerald-400" />
+								<span>Lyrics</span>
+							</button>
+							<button
+								type="button"
+								onclick={() => { mobilePlayerTab = 'queue'; showQueueDrawer = true; showLyricsDrawer = false; }}
+								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
+							>
+								<ListMusic class="w-3.5 h-3.5 text-emerald-400" />
+								<span>Queue</span>
+							</button>
+							<button
+								type="button"
+								onclick={() => { mobilePlayerTab = 'tracks'; showLyricsDrawer = false; showQueueDrawer = false; }}
+								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
+							>
+								<Disc3 class="w-3.5 h-3.5 text-cyan-400" />
+								<span>Tracks</span>
+							</button>
+							<button
+								type="button"
+								onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
+								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
+							>
+								<Radio class="w-3.5 h-3.5 text-amber-400" />
+								<span>Sync</span>
+							</button>
+						</div>
+					</div>
+				{:else}
+					<div class="flex flex-col items-center justify-center flex-1 text-center p-6 space-y-4">
+						<div class="w-20 h-20 rounded-full bg-neutral-800/80 border border-neutral-700/60 flex items-center justify-center text-neutral-500 shadow-xl">
+							<Disc3 class="w-10 h-10" />
+						</div>
+						<div>
+							<h3 class="text-base font-bold text-white">No Track Playing</h3>
+							<p class="text-xs text-neutral-400 mt-1 max-w-xs">
+								Choose an album, playlist, or song from your vault to start listening.
+							</p>
+						</div>
+						<button
+							type="button"
+							onclick={() => { mobilePlayerTab = 'library'; showLyricsDrawer = false; showQueueDrawer = false; }}
+							class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/30 flex items-center gap-2 cursor-pointer"
+						>
+							<Library class="w-4 h-4" />
+							<span>Browse Library</span>
+						</button>
+					</div>
+				{/if}
+			</section>
+		{/if}
+
 		<!-- LEFT SIDEBAR: Vault Audio Library & Playlists -->
 		<aside class="{mobilePlayerTab === 'library' ? 'flex' : 'hidden'} md:flex order-1 w-full md:w-72 lg:w-80 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden shrink-0 shadow-xl">
 			<!-- Header & Mode Tabs -->
@@ -1880,52 +2220,52 @@
 		{/if}
 
 		<!-- SONGS & HERO PANEL: Main Viewport (Center when lyrics closed, Right when lyrics open) -->
-		<main class="{mobilePlayerTab === 'tracks' ? 'flex' : 'hidden'} md:flex {showLyricsDrawer ? 'order-3 flex-1 min-w-0 md:min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 shadow-xl transition-all duration-200">
+		<main class="{mobilePlayerTab === 'tracks' ? 'flex' : 'hidden'} md:flex {showLyricsDrawer ? 'order-3 flex-1 min-w-0 md:min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto md:overflow-hidden min-h-0 shadow-xl transition-all duration-200">
 			{#if selectedType === 'album' && selectedAlbum}
 				<!-- ALBUM HERO BANNER -->
-				<div class="{showLyricsDrawer ? 'p-4 pb-3' : 'p-6 pb-4'} border-b border-neutral-800/60 shrink-0">
-					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-4">
+				<div class="{showLyricsDrawer ? 'p-3 sm:p-4 pb-2 sm:pb-3' : 'p-3 sm:p-6 pb-3 sm:pb-4'} border-b border-neutral-800/60 shrink-0">
+					<div class="flex flex-row items-center sm:items-end gap-3 sm:gap-4">
 						<!-- Big Album Cover -->
-						<div class="relative {showLyricsDrawer ? 'w-24 h-24 sm:w-28 sm:h-28' : 'w-36 h-36 sm:w-44 sm:h-44'} rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-2xl border border-neutral-800">
+						<div class="relative {showLyricsDrawer ? 'w-16 h-16 sm:w-24 sm:h-24' : 'w-20 h-20 sm:w-36 sm:h-36 md:w-44 md:h-44'} rounded-xl sm:rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-xl sm:shadow-2xl border border-neutral-800">
 							{#if selectedAlbum.cover_url}
 								<img src={selectedAlbum.cover_url} alt={selectedAlbum.title} class="w-full h-full object-cover" />
 							{:else}
 								<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-600">
-									<Music class={showLyricsDrawer ? 'w-10 h-10' : 'w-14 h-14'} />
+									<Music class={showLyricsDrawer ? 'w-8 h-8' : 'w-10 h-10 sm:w-14 sm:h-14'} />
 								</div>
 							{/if}
 						</div>
 
 						<!-- Album Metadata Header -->
-						<div class="flex-1 min-w-0 text-center sm:text-left space-y-1.5">
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
-								<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/50">
+						<div class="flex-1 min-w-0 text-left space-y-1">
+							<div class="flex flex-wrap items-center justify-start gap-1 sm:gap-1.5">
+								<span class="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-950/60 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-800/50">
 									Album
 								</span>
 
 								{#if selectedAlbum.tracks.some(t => t.format === 'FLAC')}
-									<span class="text-[10px] font-mono text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-800/50">
+									<span class="text-[9px] sm:text-[10px] font-mono text-cyan-300 bg-cyan-950/60 px-1.5 sm:px-2 py-0.5 rounded-full border border-cyan-800/50">
 										Lossless FLAC
 									</span>
 								{/if}
 
 								{#if (selectedAlbum.track_count || 0) > 0 && selectedAlbum.checked_count === selectedAlbum.track_count}
-									<span class="text-[10px] font-semibold text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-600 flex items-center gap-1">
-										<CircleCheck class="w-3 h-3 text-emerald-400" />
+									<span class="text-[9px] sm:text-[10px] font-semibold text-emerald-300 bg-emerald-950/80 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-600 flex items-center gap-1">
+										<CircleCheck class="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400" />
 										Verified
 									</span>
 								{/if}
 							</div>
 
-							<h1 class="{showLyricsDrawer ? 'text-lg sm:text-xl font-bold' : 'text-xl sm:text-3xl lg:text-4xl font-extrabold'} text-white tracking-tight leading-tight line-clamp-2">
+							<h1 class="{showLyricsDrawer ? 'text-base sm:text-xl font-bold' : 'text-base sm:text-2xl md:text-3xl lg:text-4xl font-extrabold'} text-white tracking-tight leading-tight line-clamp-2">
 								{selectedAlbum.title}
 							</h1>
 
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 text-xs text-neutral-300">
+							<div class="flex flex-wrap items-center justify-start gap-1.5 text-xs text-neutral-300">
 								<button
 									type="button"
 									onclick={() => selectArtist(selectedAlbum!.artist)}
-									class="font-bold text-white hover:text-emerald-400 hover:underline transition truncate max-w-[200px] cursor-pointer"
+									class="font-bold text-white hover:text-emerald-400 hover:underline transition truncate max-w-[150px] sm:max-w-[200px] cursor-pointer"
 									title="View {selectedAlbum.artist} discography & songs"
 								>
 									{selectedAlbum.artist}
@@ -1937,15 +2277,15 @@
 								<span>&bull;</span>
 								<span class="text-neutral-400">{selectedAlbum.tracks.length} tracks{albumHasMultipleDiscs ? ` (${albumDiscCount} CDs)` : ''}</span>
 								{#if selectedAlbum.genre && !showLyricsDrawer}
-									<span>&bull;</span>
-									<span class="px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 text-[10px]">
+									<span class="hidden sm:inline">&bull;</span>
+									<span class="hidden sm:inline-block px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 text-[10px]">
 										{selectedAlbum.genre}
 									</span>
 								{/if}
 							</div>
 
 							<!-- Action Bar -->
-							<div class="pt-1.5 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+							<div class="pt-1 flex flex-wrap items-center justify-start gap-1.5 sm:gap-2">
 								<!-- Play Button -->
 								<button
 									type="button"
@@ -1959,7 +2299,7 @@
 											}
 										}
 									}}
-									class="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+									class="px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
 								>
 									{#if player.currentAlbum?.id === selectedAlbum.id && player.isPlaying}
 										<Pause class="w-3.5 h-3.5 fill-current" />
@@ -1982,7 +2322,7 @@
 											}
 										}
 									}}
-									class="p-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1.5 {player.shuffleEnabled && player.currentAlbum?.id === selectedAlbum!.id ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm shadow-emerald-500/20' : 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
+									class="p-1 sm:p-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1.5 {player.shuffleEnabled && player.currentAlbum?.id === selectedAlbum!.id ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm shadow-emerald-500/20' : 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
 									title="Shuffle Play ({player.shuffleEnabled ? 'On' : 'Off'})"
 								>
 									<Shuffle class="w-3.5 h-3.5" />
@@ -1992,7 +2332,7 @@
 								<!-- Open in Album Details -->
 								<a
 									href="/album/{selectedAlbum.id}"
-									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
+									class="p-1 sm:p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
 									title="View Album Details & Fixer Rules"
 								>
 									<ExternalLink class="w-3.5 h-3.5" />
@@ -2003,7 +2343,7 @@
 								<button
 									type="button"
 									onclick={() => openAddToPlaylist(selectedAlbum!.tracks.map((t) => t.id), selectedAlbum!.title)}
-									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
+									class="p-1 sm:p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
 									title="Add entire album to a playlist"
 								>
 									<ListPlus class="w-3.5 h-3.5 text-emerald-400" />
@@ -2011,7 +2351,7 @@
 								</button>
 
 								<!-- Search in Album -->
-								<div class="relative ml-auto {showLyricsDrawer ? 'w-28 sm:w-36' : 'w-36 sm:w-48'}">
+								<div class="relative ml-auto w-32 sm:w-40 md:w-48">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
@@ -2026,7 +2366,7 @@
 				</div>
 
 				<!-- Tracklist Table Container -->
-				<div class="flex-1 overflow-y-auto px-4 py-2 min-h-0">
+				<div class="md:flex-1 md:overflow-y-auto px-2 sm:px-4 py-2 min-h-0">
 					<table class="w-full text-left text-xs border-collapse">
 						<thead class="text-neutral-400 border-b border-neutral-800/60 sticky top-0 bg-neutral-900/90 backdrop-blur z-10">
 							<tr class="h-8">
@@ -2290,63 +2630,63 @@
 				</div>
 			{:else if selectedType === 'playlist' && selectedPlaylist}
 				<!-- PLAYLIST HERO BANNER -->
-				<div class="{showLyricsDrawer ? 'p-4 pb-3' : 'p-6 pb-4'} border-b border-neutral-800/60 shrink-0">
-					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-4">
+				<div class="{showLyricsDrawer ? 'p-3 sm:p-4 pb-2 sm:pb-3' : 'p-3 sm:p-6 pb-3 sm:pb-4'} border-b border-neutral-800/60 shrink-0">
+					<div class="flex flex-row items-center sm:items-end gap-3 sm:gap-4">
 						<!-- Big Playlist Cover Art -->
-						<div class="relative {showLyricsDrawer ? 'w-24 h-24 sm:w-28 sm:h-28' : 'w-36 h-36 sm:w-44 sm:h-44'} rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-2xl border border-neutral-800">
+						<div class="relative {showLyricsDrawer ? 'w-16 h-16 sm:w-24 sm:h-24' : 'w-20 h-20 sm:w-36 sm:h-36 md:w-44 md:h-44'} rounded-xl sm:rounded-2xl overflow-hidden bg-neutral-950 shrink-0 shadow-xl sm:shadow-2xl border border-neutral-800">
 							{#if selectedPlaylist.cover_url}
 								<img src={selectedPlaylist.cover_url} alt={selectedPlaylist.name} class="w-full h-full object-cover" />
 							{:else}
 								<div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-900 via-neutral-950 to-emerald-950/20 text-emerald-400">
-									<ListMusic class={showLyricsDrawer ? 'w-10 h-10' : 'w-16 h-16'} opacity-40 />
+									<ListMusic class={showLyricsDrawer ? 'w-8 h-8' : 'w-10 h-10 sm:w-16 sm:h-16'} opacity-40 />
 								</div>
 							{/if}
 						</div>
 
 						<!-- Playlist Metadata Header -->
-						<div class="flex-1 min-w-0 text-center sm:text-left space-y-1.5">
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
-								<span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-800/50">
+						<div class="flex-1 min-w-0 text-left space-y-1">
+							<div class="flex flex-wrap items-center justify-start gap-1 sm:gap-1.5">
+								<span class="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/50">
 									Playlist
 								</span>
 
 								{#if selectedPlaylist.is_public}
-									<span class="text-[10px] font-medium text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-600/50 flex items-center gap-1">
-										<Globe class="w-3 h-3 text-emerald-400" />
+									<span class="text-[9px] sm:text-[10px] font-medium text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-600/50 flex items-center gap-1">
+										<Globe class="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400" />
 										Public
 									</span>
 								{:else}
-									<span class="text-[10px] font-medium text-neutral-400 bg-neutral-900/80 px-2 py-0.5 rounded-full border border-neutral-700/60 flex items-center gap-1">
-										<Lock class="w-3 h-3 text-neutral-400" />
+									<span class="text-[9px] sm:text-[10px] font-medium text-neutral-400 bg-neutral-900/80 px-2 py-0.5 rounded-full border border-neutral-700/60 flex items-center gap-1">
+										<Lock class="w-2.5 h-2.5 sm:w-3 sm:h-3 text-neutral-400" />
 										Private
 									</span>
 								{/if}
 							</div>
 
-							<h1 class="{showLyricsDrawer ? 'text-lg sm:text-xl font-bold' : 'text-xl sm:text-3xl lg:text-4xl font-extrabold'} text-white tracking-tight leading-tight line-clamp-2">
+							<h1 class="{showLyricsDrawer ? 'text-base sm:text-xl font-bold' : 'text-base sm:text-2xl md:text-3xl lg:text-4xl font-extrabold'} text-white tracking-tight leading-tight line-clamp-2">
 								{selectedPlaylist.name}
 							</h1>
 
 							{#if selectedPlaylist.comment && !showLyricsDrawer}
-								<p class="text-xs text-neutral-300 line-clamp-2 max-w-xl">
+								<p class="text-xs text-neutral-300 line-clamp-1 sm:line-clamp-2 max-w-xl">
 									{selectedPlaylist.comment}
 								</p>
 							{/if}
 
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 text-xs text-neutral-400">
+							<div class="flex flex-wrap items-center justify-start gap-1 sm:gap-1.5 text-xs text-neutral-400">
 								<span class="text-neutral-200 font-semibold">{selectedPlaylist.tracks.length} songs</span>
 								<span>&bull;</span>
 								<span>{formatTotalAlbumDuration(selectedPlaylist.tracks)}</span>
 							</div>
 
 							<!-- Playlist Action Bar -->
-							<div class="pt-1.5 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+							<div class="pt-1 flex flex-wrap items-center justify-start gap-1.5 sm:gap-2">
 								<!-- Play Button -->
 								<button
 									type="button"
 									onclick={playPlaylistAll}
 									disabled={selectedPlaylist.tracks.length === 0}
-									class="px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 disabled:opacity-40 transition-all flex items-center gap-1.5 cursor-pointer"
+									class="px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 disabled:opacity-40 transition-all flex items-center gap-1.5 cursor-pointer"
 								>
 									{#if player.currentAlbum?.id === -selectedPlaylist.id && player.isPlaying}
 										<Pause class="w-3.5 h-3.5 fill-current" />
@@ -2362,7 +2702,7 @@
 									type="button"
 									onclick={playPlaylistShuffle}
 									disabled={selectedPlaylist.tracks.length === 0}
-									class="p-1.5 rounded-xl border text-xs font-semibold disabled:opacity-40 transition flex items-center gap-1.5 {player.shuffleEnabled ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm shadow-emerald-500/20' : 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
+									class="p-1 sm:p-1.5 rounded-xl border text-xs font-semibold disabled:opacity-40 transition flex items-center gap-1.5 {player.shuffleEnabled ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm shadow-emerald-500/20' : 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
 									title="Shuffle Play ({player.shuffleEnabled ? 'On' : 'Off'})"
 								>
 									<Shuffle class="w-3.5 h-3.5" />
@@ -2379,7 +2719,7 @@
 										editPlaylistError = null;
 										showEditPlaylistModal = true;
 									}}
-									class="p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
+									class="p-1 sm:p-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700 text-xs font-semibold transition flex items-center gap-1"
 									title="Edit Playlist Details"
 								>
 									<Pencil class="w-3.5 h-3.5 text-neutral-300" />
@@ -2390,7 +2730,7 @@
 								<button
 									type="button"
 									onclick={() => (showDeletePlaylistModal = true)}
-									class="p-1.5 rounded-xl bg-rose-950/20 border border-rose-900/40 text-rose-300 hover:bg-rose-950/50 hover:text-rose-200 text-xs font-semibold transition flex items-center gap-1"
+									class="p-1 sm:p-1.5 rounded-xl bg-rose-950/20 border border-rose-900/40 text-rose-300 hover:bg-rose-950/50 hover:text-rose-200 text-xs font-semibold transition flex items-center gap-1"
 									title="Delete Playlist"
 								>
 									<Trash2 class="w-3.5 h-3.5" />
@@ -2398,7 +2738,7 @@
 								</button>
 
 								<!-- Search in Playlist -->
-								<div class="relative ml-auto {showLyricsDrawer ? 'w-28 sm:w-36' : 'w-36 sm:w-48'}">
+								<div class="relative ml-auto w-32 sm:w-40 md:w-48">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
@@ -2413,7 +2753,7 @@
 				</div>
 
 				<!-- Playlist Tracklist Table Container -->
-				<div class="flex-1 overflow-y-auto px-4 py-2 min-h-0">
+				<div class="md:flex-1 md:overflow-y-auto px-2 sm:px-4 py-2 min-h-0">
 					{#if selectedPlaylist.tracks.length > 0}
 						<table class="w-full text-left text-xs border-collapse">
 							<thead class="text-neutral-400 border-b border-neutral-800/60 sticky top-0 bg-neutral-900/90 backdrop-blur z-10">
@@ -2655,11 +2995,11 @@
 				</div>
 			{:else if selectedType === 'artist' && selectedArtist}
 				<!-- ARTIST VIEW -->
-				<div class="relative overflow-hidden bg-gradient-to-b from-neutral-800/40 via-neutral-900/60 to-transparent p-4 sm:p-6 pb-4 border-b border-neutral-800/80 shrink-0">
+				<div class="relative overflow-hidden bg-gradient-to-b from-neutral-800/40 via-neutral-900/60 to-transparent p-3 sm:p-6 pb-3 sm:pb-4 border-b border-neutral-800/80 shrink-0">
 					<!-- Hero -->
-					<div class="flex flex-col sm:flex-row items-center sm:items-end gap-5">
-						<!-- Large Artist Circular Avatar -->
-						<div class="relative group w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden bg-neutral-950 shadow-2xl border-2 border-neutral-700/60 shrink-0 flex items-center justify-center">
+					<div class="flex flex-row items-center sm:items-end gap-3 sm:gap-5">
+						<!-- Artist Circular Avatar -->
+						<div class="relative group w-16 h-16 sm:w-28 sm:h-28 md:w-36 md:h-36 rounded-full overflow-hidden bg-neutral-950 shadow-xl sm:shadow-2xl border-2 border-neutral-700/60 shrink-0 flex items-center justify-center">
 							{#if selectedArtist.avatar_url || selectedArtist.cover_url}
 								<img
 									src={selectedArtist.avatar_url || selectedArtist.cover_url}
@@ -2675,7 +3015,7 @@
 									}}
 								/>
 							{:else}
-								<User class="w-16 h-16 text-neutral-600" />
+								<User class="w-8 h-8 sm:w-14 sm:h-14 text-neutral-600" />
 							{/if}
 
 							<!-- Hover Overlay to Upload Custom Artist Portrait -->
@@ -2686,11 +3026,11 @@
 								title="Upload custom portrait for {selectedArtist.name}"
 							>
 								{#if isUploadingArtistAvatar}
-									<RefreshCw class="w-6 h-6 text-emerald-400 animate-spin" />
-									<span class="text-[9px] font-bold uppercase tracking-wider">Uploading...</span>
+									<RefreshCw class="w-5 h-5 text-emerald-400 animate-spin" />
+									<span class="text-[8px] font-bold uppercase tracking-wider">Uploading...</span>
 								{:else}
-									<Camera class="w-6 h-6 text-emerald-400" />
-									<span class="text-[9px] font-bold uppercase tracking-wider">Change Photo</span>
+									<Camera class="w-5 h-5 text-emerald-400" />
+									<span class="text-[8px] font-bold uppercase tracking-wider">Change Photo</span>
 								{/if}
 							</button>
 						</div>
@@ -2705,29 +3045,29 @@
 						/>
 
 						<!-- Artist Meta -->
-						<div class="flex-1 min-w-0 text-center sm:text-left space-y-2">
-							<div class="flex items-center justify-center sm:justify-start gap-2">
-								<span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+						<div class="flex-1 min-w-0 text-left space-y-1">
+							<div class="flex items-center justify-start gap-2">
+								<span class="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
 									Artist
 								</span>
-								<span class="text-xs text-neutral-400 font-mono">
+								<span class="text-[11px] sm:text-xs text-neutral-400 font-mono">
 									{selectedArtist.album_count} {selectedArtist.album_count === 1 ? 'album' : 'albums'} &bull; {selectedArtist.song_count} {selectedArtist.song_count === 1 ? 'song' : 'songs'}
 								</span>
 							</div>
 
-							<h1 class="text-2xl sm:text-4xl font-black text-white tracking-tight truncate leading-tight">
+							<h1 class="text-lg sm:text-3xl md:text-4xl font-black text-white tracking-tight truncate leading-tight">
 								{selectedArtist.name}
 							</h1>
 
 							<!-- Action Buttons -->
-							<div class="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 pt-1.5">
+							<div class="flex flex-wrap items-center justify-start gap-1.5 sm:gap-2.5 pt-1">
 								<!-- Play All Button -->
 								<button
 									type="button"
 									onclick={playArtistAll}
-									class="flex items-center gap-2 px-5 py-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/25 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
+									class="flex items-center gap-1.5 px-3.5 sm:px-5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/25 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
 								>
-									<Play class="w-4 h-4 fill-current" />
+									<Play class="w-3.5 h-3.5 fill-current" />
 									<span>Play All</span>
 								</button>
 
@@ -2735,31 +3075,31 @@
 								<button
 									type="button"
 									onclick={playArtistShuffle}
-									class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-white font-semibold text-xs transition cursor-pointer"
+									class="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-white font-semibold text-xs transition cursor-pointer"
 								>
-									<Shuffle class="w-4 h-4 text-emerald-400" />
-									<span>Shuffle</span>
+									<Shuffle class="w-3.5 h-3.5 text-emerald-400" />
+									<span class="hidden sm:inline">Shuffle</span>
 								</button>
 
 								<!-- Add All to Playlist -->
 								<button
 									type="button"
 									onclick={() => openAddToPlaylist(selectedArtist!.tracks.map((t) => t.id), selectedArtist!.name)}
-									class="p-2 rounded-2xl bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer"
+									class="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer"
 									title="Add all songs by this artist to a playlist"
 								>
-									<ListPlus class="w-4 h-4 text-emerald-400" />
+									<ListPlus class="w-3.5 h-3.5 text-emerald-400" />
 								</button>
 
 								<!-- Edit / Match Artist by ID or URL Button -->
 								<button
 									type="button"
 									onclick={() => openEditArtistModal('match')}
-									class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 font-semibold text-xs transition cursor-pointer"
+									class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 font-semibold text-xs transition cursor-pointer"
 									title="Match artist by pasting a MusicBrainz / Deezer / TheAudioDB ID or URL, or manually edit artist biography & portrait"
 								>
-									<Pencil class="w-3.5 h-3.5 text-emerald-400" />
-									<span>Edit / Match ID</span>
+									<Pencil class="w-3 h-3 text-emerald-400" />
+									<span class="hidden sm:inline">Edit / Match ID</span>
 								</button>
 
 								<!-- Refresh Artist Metadata Button -->
@@ -2767,11 +3107,11 @@
 									type="button"
 									onclick={refreshCurrentArtist}
 									disabled={isRefreshingArtist}
-									class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-neutral-300 hover:text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+									class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-neutral-300 hover:text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50"
 									title="Re-fetch artist biography, avatar, and relations from Deezer & MusicBrainz"
 								>
-									<RefreshCw class="w-3.5 h-3.5 text-emerald-400 {isRefreshingArtist ? 'animate-spin' : ''}" />
-									<span>{isRefreshingArtist ? 'Updating...' : 'Update Info'}</span>
+									<RefreshCw class="w-3 h-3 text-emerald-400 {isRefreshingArtist ? 'animate-spin' : ''}" />
+									<span class="hidden sm:inline">{isRefreshingArtist ? 'Updating...' : 'Update Info'}</span>
 								</button>
 
 								<!-- Save Companion artist.jpg Button -->
@@ -2779,11 +3119,11 @@
 									type="button"
 									onclick={saveCompanionArtistImage}
 									disabled={isSavingCompanion}
-									class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-neutral-300 hover:text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+									class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-neutral-300 hover:text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50"
 									title="Save companion artist.jpg directly into artist music directory on disk"
 								>
-									<FolderDown class="w-3.5 h-3.5 text-emerald-400 {isSavingCompanion ? 'animate-bounce' : ''}" />
-									<span>{isSavingCompanion ? 'Saving...' : 'Save artist.jpg'}</span>
+									<FolderDown class="w-3 h-3 text-emerald-400 {isSavingCompanion ? 'animate-bounce' : ''}" />
+									<span class="hidden sm:inline">{isSavingCompanion ? 'Saving...' : 'Save artist.jpg'}</span>
 								</button>
 
 								<!-- Reset Avatar Button -->
@@ -2792,7 +3132,7 @@
 										type="button"
 										onclick={resetCurrentArtistAvatar}
 										disabled={isResettingAvatar}
-										class="p-2 rounded-2xl bg-neutral-800/80 hover:bg-rose-950/60 border border-neutral-700/60 hover:border-rose-700/50 text-neutral-400 hover:text-rose-300 transition cursor-pointer disabled:opacity-50"
+										class="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl bg-neutral-800/80 hover:bg-rose-950/60 border border-neutral-700/60 hover:border-rose-700/50 text-neutral-400 hover:text-rose-300 transition cursor-pointer disabled:opacity-50"
 										title="Remove custom or downloaded avatar and revert to default"
 									>
 										<Trash2 class="w-3.5 h-3.5" />
@@ -2800,20 +3140,20 @@
 								{/if}
 
 								<!-- Search in Artist Tracks -->
-								<div class="relative ml-auto {showLyricsDrawer ? 'w-28 sm:w-36' : 'w-36 sm:w-52'}">
-									<Search class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+								<div class="relative ml-auto w-32 sm:w-40 md:w-52">
+									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
 										bind:value={albumTrackSearch}
 										placeholder="Search songs..."
-										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-8 pr-3 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
+										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-7 pr-2.5 py-1 sm:py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
 									/>
 								</div>
 							</div>
 
 							<!-- Biography & External Links -->
 							{#if selectedArtist.biography}
-								<div class="mt-3 p-3 rounded-xl bg-neutral-900/70 border border-neutral-800/80 text-xs text-neutral-300 leading-relaxed text-left">
+								<div class="mt-2 p-2.5 rounded-xl bg-neutral-900/70 border border-neutral-800/80 text-xs text-neutral-300 leading-relaxed text-left">
 									<div class="flex items-center justify-between mb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
 										<div class="flex items-center gap-2">
 											<span class="text-emerald-400">About {selectedArtist.name}</span>
@@ -2857,7 +3197,7 @@
 											{/if}
 										</div>
 									</div>
-									<p class="line-clamp-3 hover:line-clamp-none transition-all cursor-pointer font-sans" title="Click to expand/collapse">
+									<p class="line-clamp-2 sm:line-clamp-3 hover:line-clamp-none transition-all cursor-pointer font-sans" title="Click to expand/collapse">
 										{selectedArtist.biography}
 									</p>
 								</div>
@@ -2867,7 +3207,7 @@
 				</div>
 
 				<!-- Artist Scrollable Body: Discography Albums Grid + All Songs Table -->
-				<div class="flex-1 overflow-y-auto px-4 py-3 min-h-0 space-y-6">
+				<div class="md:flex-1 md:overflow-y-auto px-3 sm:px-4 py-3 min-h-0 space-y-6">
 					<!-- Section 1: Discography Albums -->
 					{#if selectedArtist.albums.length > 0}
 						<div class="space-y-2.5">
@@ -3165,11 +3505,18 @@
 	</div>
 
 	<!-- BOTTOM FLOATING AUDIO CONTROL DOCK -->
-	<footer class="h-20 bg-neutral-900/85 backdrop-blur-2xl border-t border-neutral-800/80 px-2 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 z-40 shrink-0 shadow-2xl">
+	<footer class="{mobilePlayerTab === 'player' ? 'hidden md:flex' : 'flex'} h-20 bg-neutral-900/85 backdrop-blur-2xl border-t border-neutral-800/80 px-2 sm:px-6 items-center justify-between gap-2 sm:gap-4 z-40 shrink-0 shadow-2xl">
 		<!-- Track Info Pill -->
-		<div class="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-initial sm:w-1/4 min-w-0 sm:min-w-[160px] sm:max-w-[280px]">
+		<div
+			role="button"
+			tabindex="0"
+			onclick={() => { mobilePlayerTab = 'player'; }}
+			onkeydown={(e) => { if (e.key === 'Enter') mobilePlayerTab = 'player'; }}
+			class="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-initial sm:w-1/4 min-w-0 sm:min-w-[160px] sm:max-w-[280px] cursor-pointer group"
+			title="Open Now Playing"
+		>
 			{#if player.currentTrack}
-				<div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 shadow-md relative">
+				<div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 shadow-md relative group-hover:border-emerald-500/50 transition">
 					{#if player.currentAlbum?.cover_url}
 						<img src={player.currentAlbum.cover_url} alt="Cover" class="w-full h-full object-cover" />
 					{:else}
@@ -3180,7 +3527,7 @@
 				</div>
 
 				<div class="min-w-0 flex-1">
-					<div class="text-xs font-bold text-white truncate hover:underline cursor-pointer" title={player.currentTrack.title}>
+					<div class="text-xs font-bold text-white truncate group-hover:text-emerald-400 transition" title={player.currentTrack.title}>
 						{player.currentTrack.title}
 					</div>
 					<div class="text-[10px] text-neutral-400 truncate mt-0.5" title={player.currentTrack.artist || player.currentAlbum?.artist}>
@@ -3193,7 +3540,7 @@
 						{/if}
 						<button
 							type="button"
-							onclick={() => (showQualityMenu = !showQualityMenu)}
+							onclick={(e) => { e.stopPropagation(); showQualityMenu = !showQualityMenu; }}
 							class="flex items-center gap-1 px-1.5 py-0.5 rounded cursor-pointer transition border {player.streamingQuality === 'original'
 								? 'bg-neutral-900/90 hover:bg-neutral-800 text-emerald-400 border-emerald-800/40 hover:border-emerald-500/50'
 								: 'bg-amber-950/80 hover:bg-amber-900/80 text-amber-300 border-amber-700/60 shadow-[0_0_8px_rgba(245,158,11,0.2)]'}"
