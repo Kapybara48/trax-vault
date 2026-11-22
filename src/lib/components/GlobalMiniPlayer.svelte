@@ -65,13 +65,19 @@
 							CD {player.currentTrack.disc_number}
 						</span>
 					{/if}
-					<span class="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-neutral-950 border border-emerald-500/30 text-emerald-400 font-semibold">
-						{player.currentTrack.format}
-					</span>
-					{#if player.currentTrack.bitrate_kbps}
-						<span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 font-bold">
-							{player.currentTrack.bitrate_kbps.toLocaleString()} kbps
+					{#if player.streamingQuality !== 'original'}
+						<span class="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-amber-950/80 border border-amber-700/60 text-amber-300 font-bold" title="Transcoded audio streaming">
+							MP3 {player.streamingQuality}k
 						</span>
+					{:else}
+						<span class="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-neutral-950 border border-emerald-500/30 text-emerald-400 font-semibold">
+							{player.currentTrack.format}
+						</span>
+						{#if player.currentTrack.bitrate_kbps}
+							<span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 font-bold">
+								{player.currentTrack.bitrate_kbps.toLocaleString()} kbps
+							</span>
+						{/if}
 					{/if}
 				</div>
 			</div>

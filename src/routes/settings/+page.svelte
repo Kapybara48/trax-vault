@@ -26,7 +26,8 @@
 		Music,
 		X,
 		ShieldAlert,
-		ChevronDown
+		ChevronDown,
+		Zap
 	} from '@lucide/svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 
@@ -877,6 +878,14 @@
 							</div>
 							<p class="text-[11px] text-neutral-400 mt-1">Cached Cover Art Archive covers and artist photography</p>
 						</div>
+
+						<div class="p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/70 text-xs sm:col-span-2">
+							<div class="font-semibold text-neutral-200 flex items-center gap-2">
+								<Zap class="w-3.5 h-3.5 text-amber-400" />
+								<span>On-the-Fly Audio Transcoding</span>
+							</div>
+							<p class="text-[11px] text-neutral-400 mt-1">Automatic real-time transcoding (MP3/Opus at 128k, 192k, 256k, 320k) for low-bandwidth cellular streaming and space-saving phone offline storage.</p>
+						</div>
 					</div>
 
 					<!-- Symfonium & Client Sync Guidance Collapsible -->
@@ -901,6 +910,18 @@
 										Symfonium caches lyrics in its <span class="text-neutral-200">Media Info Cache</span>. For streaming tracks, go to 
 										<span class="text-purple-300 font-semibold">Settings → Advanced → Clear media info cache</span>, then tap <span class="text-purple-300 font-semibold">Sync</span> to immediately fetch fresh lyrics from Trax Vault.
 									</p>
+								</div>
+
+								<div class="pt-2.5 border-t border-neutral-800/60">
+									<p class="font-semibold text-neutral-200 mb-1">⚡ Space-Saving Phone Downloads &amp; Transcoding</p>
+									<p class="leading-relaxed text-[11px]">
+										To save storage space on your phone, configure <span class="text-purple-300 font-semibold">Settings → Media Provider → Transcoding</span> in Symfonium or other Subsonic players:
+									</p>
+									<ul class="list-disc list-inside mt-1.5 space-y-1 text-neutral-400 text-[11px]">
+										<li>Set <span class="text-neutral-200">Max download bitrate</span> to <span class="text-emerald-400 font-semibold">128 kbps</span> or <span class="text-emerald-400 font-semibold">192 kbps</span> MP3/Opus.</li>
+										<li>Set <span class="text-neutral-200">Max streaming bitrate (Cellular)</span> to <span class="text-amber-400 font-semibold">128 kbps</span> for bad/slow cellular connections.</li>
+										<li>Trax Vault will transcode on-the-fly and cache transcoded files on the server for instant delivery.</li>
+									</ul>
 								</div>
 
 								<div class="pt-2.5 border-t border-neutral-800/60">

@@ -6,6 +6,7 @@ import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/serv
 import { decodeArtistId } from './handlers.js';
 import { encodeArtistId, deleteArtistAvatar, resolveAndCacheArtistAvatar } from './artist.js';
 import { isGenericArtist } from '$lib/utils.js';
+import { shouldTranscode, getOrTranscodeTrack } from '$lib/server/transcoder.js';
 
 const MIME_MAP: Record<string, string> = {
 	'.flac': 'audio/flac',
@@ -79,35 +80,65 @@ export async function handleSubsonicStream(
 	}
 
 	const ext = path.extname(canonicalFilePath).toLowerCase();
-	const contentType = MIME_MAP[ext] || 'audio/mpeg';
-	const fileSize = stat.size;
-	const etag = `"${stat.mtimeMs.toString(36)}-${fileSize.toString(36)}"`;
-	const lastModified = stat.mtime.toUTCString();
+	let effectiveContentType = MIME_MAP[ext] || 'audio/mpeg';
+	let effectiveFilePath = canonicalFilePath;
+	let effectiveFileSize = stat.size;
+	let effectiveMtimeMs = stat.mtimeMs;
+
+	// Handle Subsonic transcoding (maxBitRate or format parameter)
+	const maxBitRateParam = params.maxBitRate || params.bitrate;
+	const requestedBitrate = maxBitRateParam ? parseInt(maxBitRateParam.toString(), 10) : null;
+	const requestedFormat = params.format ? params.format.toString() : null;
+
+	if (shouldTranscode(track, requestedBitrate, requestedFormat)) {
+		try {
+			const targetBitrate = requestedBitrate && requestedBitrate > 0 ? requestedBitrate : 192;
+			const transcodeRes = await getOrTranscodeTrack({
+				track,
+				canonicalSourcePath: canonicalFilePath,
+				bitrateKbps: targetBitrate,
+				targetFormat: requestedFormat || 'mp3'
+			});
+			effectiveFilePath = transcodeRes.filePath;
+			effectiveContentType = transcodeRes.contentType;
+			effectiveFileSize = transcodeRes.fileSize;
+			try {
+				effectiveMtimeMs = fs.statSync(effectiveFilePath).mtimeMs;
+			} catch {}
+		} catch (err) {
+			console.warn('[Subsonic Stream] Transcoding failed, falling back to original audio:', err);
+		}
+	}
+
+	const etag = `"${effectiveMtimeMs.toString(36)}-${effectiveFileSize.toString(36)}"`;
+	const lastModified = new Date(effectiveMtimeMs).toUTCString();
+	const isDownload = params.isDownload === true || params.download === 'true';
+	const downloadFileName = path.basename(effectiveFilePath);
 
 	const rangeHeader = requestHeaders.get('range');
-	if (rangeHeader) {
+	if (rangeHeader && !isDownload) {
 		const parts = rangeHeader.replace(/bytes=/, '').split('-');
 		const start = parseInt(parts[0], 10);
-		const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+		const end = parts[1] ? parseInt(parts[1], 10) : effectiveFileSize - 1;
 
-		if (start >= fileSize || end >= fileSize || start > end) {
+		if (start >= effectiveFileSize || end >= effectiveFileSize || start > end) {
 			return new Response(null, {
 				status: 416,
-				headers: { 'Content-Range': `bytes */${fileSize}` }
+				headers: { 'Content-Range': `bytes */${effectiveFileSize}` }
 			});
 		}
 
 		const chunkSize = end - start + 1;
-		const stream = fs.createReadStream(canonicalFilePath, { start, end });
+		const stream = fs.createReadStream(effectiveFilePath, { start, end });
 		const webStream = Readable.toWeb(stream) as ReadableStream;
 
 		return new Response(webStream, {
 			status: 206,
 			headers: {
-				'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+				'Content-Range': `bytes ${start}-${end}/${effectiveFileSize}`,
 				'Accept-Ranges': 'bytes',
 				'Content-Length': chunkSize.toString(),
-				'Content-Type': contentType,
+				'Content-Type': effectiveContentType,
 				'ETag': etag,
 				'Last-Modified': lastModified,
 				'Cache-Control': 'no-cache',
@@ -132,7 +163,7 @@ export async function handleSubsonicStream(
 	}
 	if (ifModifiedSince) {
 		const modifiedSinceDate = new Date(ifModifiedSince);
-		if (!isNaN(modifiedSinceDate.getTime()) && stat.mtime.getTime() <= modifiedSinceDate.getTime()) {
+		if (!isNaN(modifiedSinceDate.getTime()) && effectiveMtimeMs <= modifiedSinceDate.getTime()) {
 			return new Response(null, {
 				status: 304,
 				headers: {
@@ -145,20 +176,26 @@ export async function handleSubsonicStream(
 		}
 	}
 
-	const stream = fs.createReadStream(canonicalFilePath);
+	const stream = fs.createReadStream(effectiveFilePath);
 	const webStream = Readable.toWeb(stream) as ReadableStream;
+
+	const headers: Record<string, string> = {
+		'Accept-Ranges': 'bytes',
+		'Content-Length': effectiveFileSize.toString(),
+		'Content-Type': effectiveContentType,
+		'ETag': etag,
+		'Last-Modified': lastModified,
+		'Cache-Control': 'no-cache',
+		'Access-Control-Allow-Origin': '*'
+	};
+
+	if (isDownload) {
+		headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(downloadFileName)}`;
+	}
 
 	return new Response(webStream, {
 		status: 200,
-		headers: {
-			'Accept-Ranges': 'bytes',
-			'Content-Length': fileSize.toString(),
-			'Content-Type': contentType,
-			'ETag': etag,
-			'Last-Modified': lastModified,
-			'Cache-Control': 'no-cache',
-			'Access-Control-Allow-Origin': '*'
-		}
+		headers
 	});
 }
 

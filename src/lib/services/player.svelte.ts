@@ -100,6 +100,9 @@ class GlobalPlayer {
 	syncModalTab = $state<'devices' | 'rooms'>('devices');
 	lastSyncUpdatedBy = $state<string | null>(null);
 
+	// Streaming & Transcoding Quality Settings ('original' | '320' | '192' | '128')
+	streamingQuality = $state<'original' | '320' | '192' | '128'>('original');
+
 	private audioEl: HTMLAudioElement | null = null;
 	private lastSavedSessionTime = 0;
 
@@ -193,6 +196,19 @@ class GlobalPlayer {
 				}
 			} catch {}
 
+			// Restore streaming quality
+			try {
+				const savedQuality = localStorage.getItem('traxvault_streaming_quality');
+				if (
+					savedQuality === 'original' ||
+					savedQuality === '320' ||
+					savedQuality === '192' ||
+					savedQuality === '128'
+				) {
+					this.streamingQuality = savedQuality;
+				}
+			} catch {}
+
 			// Restore last played track and exact playback position from localStorage
 			try {
 				const savedSessionStr = localStorage.getItem('traxvault_last_session');
@@ -223,7 +239,7 @@ class GlobalPlayer {
 
 						// Prepare audio element with the exact track and seek position (without auto-playing)
 						this.loadedAudioTrackId = savedSession.track.id;
-						el.src = `/api/tracks/${savedSession.track.id}/audio`;
+						el.src = this.getAudioUrl(savedSession.track.id);
 						el.currentTime = savedTime;
 						this.isPlaying = false;
 						this.updatePlaybackState('paused');
@@ -594,6 +610,48 @@ class GlobalPlayer {
 		}
 	}
 
+	getAudioUrl(trackId: number, quality?: 'original' | '320' | '192' | '128'): string {
+		const q = quality || this.streamingQuality;
+		if (q === 'original') {
+			return `/api/tracks/${trackId}/audio`;
+		}
+		return `/api/tracks/${trackId}/audio?bitrate=${q}&format=mp3`;
+	}
+
+	private isAudioSrcCurrent(trackId: number): boolean {
+		if (!this.audioEl || !this.audioEl.src) return false;
+		const expected = this.getAudioUrl(trackId);
+		try {
+			const currentUrl = new URL(this.audioEl.src, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+			const expectedUrl = new URL(expected, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+			return currentUrl.pathname === expectedUrl.pathname && currentUrl.search === expectedUrl.search;
+		} catch {
+			return this.audioEl.src.includes(expected);
+		}
+	}
+
+	setStreamingQuality(quality: 'original' | '320' | '192' | '128') {
+		if (this.streamingQuality === quality) return;
+		this.streamingQuality = quality;
+		if (typeof localStorage !== 'undefined') {
+			try {
+				localStorage.setItem('traxvault_streaming_quality', quality);
+			} catch {}
+		}
+
+		// If audio element is currently loaded, seamlessly reload source preserving current seek
+		if (this.audioEl && this.currentTrack && this.loadedAudioTrackId === this.currentTrack.id) {
+			const pos = this.currentTime;
+			const wasPlaying = this.isPlaying;
+			const newSrc = this.getAudioUrl(this.currentTrack.id);
+			this.audioEl.src = newSrc;
+			this.audioEl.currentTime = pos;
+			if (wasPlaying && this.localAudioEnabled) {
+				this.audioEl.play().catch(() => {});
+			}
+		}
+	}
+
 	private syncLocalAudioElement(
 		track: Track,
 		targetPositionSec: number,
@@ -602,15 +660,13 @@ class GlobalPlayer {
 	) {
 		if (!this.audioEl || !this.localAudioEnabled) return;
 
-		const expectedSrcPath = `/api/tracks/${track.id}/audio`;
 		const needsSrcLoad =
 			this.loadedAudioTrackId !== track.id ||
-			!this.audioEl.src ||
-			!this.audioEl.src.includes(expectedSrcPath);
+			!this.isAudioSrcCurrent(track.id);
 
 		if (needsSrcLoad) {
 			this.loadedAudioTrackId = track.id;
-			this.audioEl.src = expectedSrcPath;
+			this.audioEl.src = this.getAudioUrl(track.id);
 			this.audioEl.currentTime = Math.max(0, targetPositionSec);
 		} else {
 			const drift = Math.abs(this.audioEl.currentTime - targetPositionSec);
@@ -1217,7 +1273,7 @@ class GlobalPlayer {
 
 		if (this.audioEl && this.localAudioEnabled) {
 			this.loadedAudioTrackId = track.id;
-			this.audioEl.src = `/api/tracks/${track.id}/audio`;
+			this.audioEl.src = this.getAudioUrl(track.id);
 			this.audioEl
 				.play()
 				.then(() => {
@@ -1286,10 +1342,9 @@ class GlobalPlayer {
 		this.remoteRefServerMs = this.getEstimatedServerNowMs();
 
 		if (this.localAudioEnabled && this.audioEl) {
-			const expectedSrcPath = `/api/tracks/${this.currentTrack.id}/audio`;
-			if (!this.audioEl.src || !this.audioEl.src.includes(expectedSrcPath)) {
+			if (!this.isAudioSrcCurrent(this.currentTrack.id)) {
 				this.loadedAudioTrackId = this.currentTrack.id;
-				this.audioEl.src = expectedSrcPath;
+				this.audioEl.src = this.getAudioUrl(this.currentTrack.id);
 				this.audioEl.currentTime = Math.max(0, this.currentTime);
 			}
 			this.audioEl

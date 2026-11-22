@@ -1098,6 +1098,21 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added fallback 307 redirect in [`src/hooks.server.ts`](file:///home/kapy/Projects/trax-vault/src/hooks.server.ts) for any direct root `/*.view` requests.
       - Removed the separate Subsonic password synchronization form: user accounts automatically share their standard password with Subsonic clients via existing AES-256 encrypted `subsonic_secret` storage.
 
+78. **On-the-Fly Audio Transcoding & Space-Saving Mobile Downloads (v1.7.41)**:
+    - **High-Performance Transcoding Engine (`src/lib/server/transcoder.ts`)**:
+      - Powered by `ffmpeg-static` with fallback to system `ffmpeg` binary (added to production `Dockerfile`).
+      - On-demand transcoding from lossless source files (FLAC, ALAC, WAV, AIFF, APE) to MP3/Opus at requested bitrates (320k HQ, 192k Standard, 128k Data Saver).
+      - Persistent disk cache located in `${DATA_DIR}/transcode_cache/` with concurrency locking to avoid duplicate parallel encodes.
+      - Full HTTP 206 Partial Content range seeking support and exact `Content-Length` headers on transcoded streams.
+    - **Subsonic & OpenSubsonic Integration**:
+      - Transcoding dynamically triggered via `/rest/stream.view` and `/rest/download.view` when clients send `maxBitRate` or `format`.
+      - Enables Symfonium and other Subsonic players to download compressed MP3s to phones to save space, and stream at lower bitrates on weak cellular connections.
+    - **Web Audio Streaming & Download Quality**:
+      - Updated `GET /api/tracks/[id]/audio` to accept `bitrate` / `maxBitRate`, `format`, and `download` parameters.
+      - Added streaming quality selector to the Studio Player dock (`/player` and `GlobalPlayer`), allowing users to switch between Original Lossless, 320k, 192k, and 128k with instant audio switching and persistent preference storage (`traxvault_streaming_quality`).
+      - Added multi-quality download dropdowns to `TrackRow.svelte` and Player track tables (Original, 320k MP3, 192k MP3, 128k Data Saver).
+      - Added Transcoding capabilities card and Symfonium offline configuration guide to `/settings`.
+
 ---
 
 ## 4. Workflows & Verification

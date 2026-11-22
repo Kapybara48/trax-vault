@@ -5,6 +5,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { getTrackById } from '$lib/server/db.js';
 import { getMusicDirectory, isPathWithin, resolveTrackFilePath } from '$lib/server/scanner.js';
+import { shouldTranscode, getOrTranscodeTrack } from '$lib/server/transcoder.js';
 
 const MIME_MAP: Record<string, string> = {
 	'.flac': 'audio/flac',
@@ -66,52 +67,76 @@ export const GET: RequestHandler = async ({ params, request, url }) => {
 	}
 
 	const ext = path.extname(canonicalFilePath).toLowerCase();
-	const contentType = MIME_MAP[ext] || 'audio/mpeg';
-	const fileSize = stat.size;
 	const isDownload = url.searchParams.get('download') === 'true';
-	const fileName = path.basename(canonicalFilePath);
+
+	const requestedBitrateRaw = url.searchParams.get('bitrate') || url.searchParams.get('maxBitRate');
+	const requestedBitrate = requestedBitrateRaw ? parseInt(requestedBitrateRaw, 10) : null;
+	const requestedFormat = url.searchParams.get('format') || null;
+
+	let streamFilePath = canonicalFilePath;
+	let streamFileSize = stat.size;
+	let streamContentType = MIME_MAP[ext] || 'audio/mpeg';
+	let streamFileName = path.basename(canonicalFilePath);
+
+	if (shouldTranscode(track, requestedBitrate, requestedFormat)) {
+		try {
+			const transcodeRes = await getOrTranscodeTrack({
+				track,
+				canonicalSourcePath: canonicalFilePath,
+				bitrateKbps: requestedBitrate || 192,
+				targetFormat: requestedFormat || 'mp3'
+			});
+			streamFilePath = transcodeRes.filePath;
+			streamFileSize = transcodeRes.fileSize;
+			streamContentType = transcodeRes.contentType;
+			const base = path.basename(canonicalFilePath, path.extname(canonicalFilePath));
+			streamFileName = `${base}.${transcodeRes.targetFormat}`;
+		} catch (err) {
+			console.error(`[API/Audio] Transcoding failed for track ${trackId}, streaming original:`, err);
+		}
+	}
 
 	const rangeHeader = request.headers.get('range');
 	if (rangeHeader && !isDownload) {
 		const parts = rangeHeader.replace(/bytes=/, '').split('-');
 		const start = parseInt(parts[0], 10);
-		const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+		const end = parts[1] ? parseInt(parts[1], 10) : streamFileSize - 1;
 
-		if (start >= fileSize || end >= fileSize || start > end) {
+		if (start >= streamFileSize || end >= streamFileSize || start > end) {
 			return new Response(null, {
 				status: 416,
-				headers: { 'Content-Range': `bytes */${fileSize}` }
+				headers: { 'Content-Range': `bytes */${streamFileSize}` }
 			});
 		}
 
 		const chunkSize = end - start + 1;
-		const stream = fs.createReadStream(canonicalFilePath, { start, end });
+		const stream = fs.createReadStream(streamFilePath, { start, end });
 		const webStream = Readable.toWeb(stream) as ReadableStream;
 
 		return new Response(webStream, {
 			status: 206,
 			headers: {
-				'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+				'Content-Range': `bytes ${start}-${end}/${streamFileSize}`,
 				'Accept-Ranges': 'bytes',
 				'Content-Length': chunkSize.toString(),
-				'Content-Type': contentType,
+				'Content-Type': streamContentType,
 				'Cache-Control': 'no-cache'
 			}
 		});
 	}
 
-	const stream = fs.createReadStream(canonicalFilePath);
+	const stream = fs.createReadStream(streamFilePath);
 	const webStream = Readable.toWeb(stream) as ReadableStream;
 
 	const headers: Record<string, string> = {
 		'Accept-Ranges': 'bytes',
-		'Content-Length': fileSize.toString(),
-		'Content-Type': contentType,
+		'Content-Length': streamFileSize.toString(),
+		'Content-Type': streamContentType,
 		'Cache-Control': 'no-cache'
 	};
 
 	if (isDownload) {
-		headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+		headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(streamFileName)}`;
 	}
 
 	return new Response(webStream, {

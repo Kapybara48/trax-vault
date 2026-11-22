@@ -53,6 +53,7 @@
 	let isRescanning = $state(false);
 	let showDeleteModal = $state(false);
 	let showNotes = $state(false);
+	let showDownloadMenu = $state(false);
 	let notesValue = $state(track.notes || '');
 	let replaceInputRef = $state<HTMLInputElement | null>(null);
 
@@ -386,14 +387,65 @@
 			{/if}
 
 			{#if track.file_path && track.is_missing !== 1}
-				<a
-					href="/api/tracks/{track.id}/audio?download=true"
-					download
-					class="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-emerald-400 transition inline-flex items-center"
-					title="Download Audio File"
-				>
-					<Download class="h-3.5 w-3.5" />
-				</a>
+				<div class="relative inline-block">
+					<button
+						type="button"
+						onclick={() => (showDownloadMenu = !showDownloadMenu)}
+						class="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-emerald-400 transition inline-flex items-center"
+						title="Download Audio File"
+					>
+						<Download class="h-3.5 w-3.5" />
+					</button>
+					{#if showDownloadMenu}
+						<div
+							class="fixed inset-0 z-40"
+							onclick={() => (showDownloadMenu = false)}
+						></div>
+						<div
+							class="absolute right-0 bottom-full mb-1 z-50 w-48 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-1.5 text-xs flex flex-col gap-1 backdrop-blur-xl"
+						>
+							<div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
+								Download Audio
+							</div>
+							<a
+								href="/api/tracks/{track.id}/audio?download=true"
+								download
+								onclick={() => (showDownloadMenu = false)}
+								class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+							>
+								<span>Original ({track.format || 'Audio'})</span>
+								<span class="text-[10px] font-mono text-neutral-500">Full</span>
+							</a>
+							<a
+								href="/api/tracks/{track.id}/audio?download=true&bitrate=320&format=mp3"
+								download
+								onclick={() => (showDownloadMenu = false)}
+								class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+							>
+								<span>320 kbps MP3</span>
+								<span class="text-[10px] font-mono text-emerald-400 font-semibold">HQ</span>
+							</a>
+							<a
+								href="/api/tracks/{track.id}/audio?download=true&bitrate=192&format=mp3"
+								download
+								onclick={() => (showDownloadMenu = false)}
+								class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+							>
+								<span>192 kbps MP3</span>
+								<span class="text-[10px] font-mono text-neutral-400">Normal</span>
+							</a>
+							<a
+								href="/api/tracks/{track.id}/audio?download=true&bitrate=128&format=mp3"
+								download
+								onclick={() => (showDownloadMenu = false)}
+								class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+							>
+								<span>128 kbps MP3</span>
+								<span class="text-[10px] font-mono text-amber-400 font-semibold">Saver</span>
+							</a>
+						</div>
+					{/if}
+				</div>
 			{/if}
 
 			<button

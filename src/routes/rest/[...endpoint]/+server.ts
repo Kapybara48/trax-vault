@@ -93,11 +93,14 @@ async function handleSubsonic(endpoint: string, request: Request, url: URL): Pro
 	const paramStr = Object.entries(safeParams).map(([k, v]) => `${k}=${v}`).join(' ');
 	console.log(`[Subsonic] ${request.method} ${action} ${paramStr}`);
 
-	// Media streams and cover art
-	if (action === 'stream') {
+	// Media streams, downloads, and cover art
+	if (action === 'stream' || action === 'download') {
 		const auth = authenticateSubsonicRequest(params);
 		if (auth.error) {
 			return buildSubsonicError(auth.error.code, auth.error.message, format, jsonpCallback);
+		}
+		if (action === 'download') {
+			params.isDownload = true;
 		}
 		return handleSubsonicStream(params, request.headers);
 	}

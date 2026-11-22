@@ -42,7 +42,8 @@
 		Camera,
 		Upload,
 		Radio,
-		Users
+		Users,
+		Download
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -67,6 +68,10 @@
 	let selectedAlbum = $state<PlayerAlbum | null>(null);
 	let selectedPlaylist = $state<PlayerPlaylist | null>(null);
 	let selectedArtist = $state<PlayerArtist | null>(null);
+
+	// Quality & Transcoding Menus
+	let showQualityMenu = $state(false);
+	let activeDownloadTrackId = $state<number | null>(null);
 
 	// Persist view state in localStorage across page refreshes
 	function persistPlayerViewState() {
@@ -2169,8 +2174,8 @@
 										{formatDurationMs(track.duration_ms)}
 									</td>
 
-									<!-- Add to Playlist Action -->
-									<td class="text-center pr-3">
+									<!-- Add to Playlist & Download Actions -->
+									<td class="text-center pr-3 whitespace-nowrap">
 										<button
 											type="button"
 											onclick={(e) => {
@@ -2182,6 +2187,72 @@
 										>
 											<ListPlus class="w-3.5 h-3.5" />
 										</button>
+
+										<div class="relative inline-block ml-1">
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													activeDownloadTrackId = activeDownloadTrackId === track.id ? null : track.id;
+												}}
+												class="p-1 rounded text-neutral-500 hover:text-emerald-400 hover:bg-neutral-800 transition"
+												title="Download Track (Select Quality)"
+											>
+												<Download class="w-3.5 h-3.5" />
+											</button>
+											{#if activeDownloadTrackId === track.id}
+												<div
+													class="fixed inset-0 z-40"
+													onclick={(e) => {
+														e.stopPropagation();
+														activeDownloadTrackId = null;
+													}}
+												></div>
+												<div
+													class="absolute right-0 bottom-full mb-1 z-50 w-48 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-1.5 text-xs flex flex-col gap-1 backdrop-blur-xl text-left"
+												>
+													<div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
+														Download Audio
+													</div>
+													<a
+														href="/api/tracks/{track.id}/audio?download=true"
+														download
+														onclick={() => (activeDownloadTrackId = null)}
+														class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+													>
+														<span>Original ({track.format || 'Audio'})</span>
+														<span class="text-[10px] font-mono text-neutral-500">Full</span>
+													</a>
+													<a
+														href="/api/tracks/{track.id}/audio?download=true&bitrate=320&format=mp3"
+														download
+														onclick={() => (activeDownloadTrackId = null)}
+														class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+													>
+														<span>320 kbps MP3</span>
+														<span class="text-[10px] font-mono text-emerald-400 font-semibold">HQ</span>
+													</a>
+													<a
+														href="/api/tracks/{track.id}/audio?download=true&bitrate=192&format=mp3"
+														download
+														onclick={() => (activeDownloadTrackId = null)}
+														class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+													>
+														<span>192 kbps MP3</span>
+														<span class="text-[10px] font-mono text-neutral-400">Normal</span>
+													</a>
+													<a
+														href="/api/tracks/{track.id}/audio?download=true&bitrate=128&format=mp3"
+														download
+														onclick={() => (activeDownloadTrackId = null)}
+														class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+													>
+														<span>128 kbps MP3</span>
+														<span class="text-[10px] font-mono text-amber-400 font-semibold">Saver</span>
+													</a>
+												</div>
+											{/if}
+										</div>
 									</td>
 								</tr>
 							{/each}
@@ -2447,6 +2518,73 @@
 												>
 													<ArrowDown class="w-3.5 h-3.5" />
 												</button>
+
+												<!-- Download Track -->
+												<div class="relative inline-block">
+													<button
+														type="button"
+														onclick={(e) => {
+															e.stopPropagation();
+															activeDownloadTrackId = activeDownloadTrackId === track.id ? null : track.id;
+														}}
+														class="p-1 rounded text-neutral-400 hover:bg-neutral-800 hover:text-emerald-400 transition"
+														title="Download Track"
+													>
+														<Download class="w-3.5 h-3.5" />
+													</button>
+													{#if activeDownloadTrackId === track.id}
+														<div
+															class="fixed inset-0 z-40"
+															onclick={(e) => {
+																e.stopPropagation();
+																activeDownloadTrackId = null;
+															}}
+														></div>
+														<div
+															class="absolute right-0 bottom-full mb-1 z-50 w-48 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-1.5 text-xs flex flex-col gap-1 backdrop-blur-xl text-left font-normal"
+														>
+															<div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
+																Download Audio
+															</div>
+															<a
+																href="/api/tracks/{track.id}/audio?download=true"
+																download
+																onclick={() => (activeDownloadTrackId = null)}
+																class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+															>
+																<span>Original ({track.format || 'Audio'})</span>
+																<span class="text-[10px] font-mono text-neutral-500">Full</span>
+															</a>
+															<a
+																href="/api/tracks/{track.id}/audio?download=true&bitrate=320&format=mp3"
+																download
+																onclick={() => (activeDownloadTrackId = null)}
+																class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+															>
+																<span>320 kbps MP3</span>
+																<span class="text-[10px] font-mono text-emerald-400 font-semibold">HQ</span>
+															</a>
+															<a
+																href="/api/tracks/{track.id}/audio?download=true&bitrate=192&format=mp3"
+																download
+																onclick={() => (activeDownloadTrackId = null)}
+																class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+															>
+																<span>192 kbps MP3</span>
+																<span class="text-[10px] font-mono text-neutral-400">Normal</span>
+															</a>
+															<a
+																href="/api/tracks/{track.id}/audio?download=true&bitrate=128&format=mp3"
+																download
+																onclick={() => (activeDownloadTrackId = null)}
+																class="px-2 py-1.5 rounded-lg hover:bg-neutral-800 text-neutral-200 hover:text-emerald-300 flex items-center justify-between"
+															>
+																<span>128 kbps MP3</span>
+																<span class="text-[10px] font-mono text-amber-400 font-semibold">Saver</span>
+															</a>
+														</div>
+													{/if}
+												</div>
 
 												<!-- Remove Track -->
 												<button
@@ -2991,15 +3129,114 @@
 					<div class="text-[10px] text-neutral-400 truncate mt-0.5" title={player.currentTrack.artist || player.currentAlbum?.artist}>
 						{player.currentTrack.artist || player.currentAlbum?.artist || 'Unknown Artist'}
 					</div>
-					<div class="hidden xs:flex sm:flex items-center gap-1.5 mt-0.5 text-[9px] font-mono">
+					<div class="hidden xs:flex sm:flex items-center gap-1.5 mt-0.5 text-[9px] font-mono relative">
 						{#if (player.currentTrack.disc_number || 1) > 1}
 							<span class="text-amber-400 font-semibold bg-amber-950/60 px-1 rounded border border-amber-800/50">CD {player.currentTrack.disc_number}</span>
 							<span class="text-neutral-500">&bull;</span>
 						{/if}
-						<span class="text-emerald-400 font-semibold">{player.currentTrack.format}</span>
-						{#if player.currentTrack.bitrate_kbps}
-							<span class="text-neutral-500">&bull;</span>
-							<span class="text-neutral-400">{player.currentTrack.bitrate_kbps.toLocaleString()} kbps</span>
+						<button
+							type="button"
+							onclick={() => (showQualityMenu = !showQualityMenu)}
+							class="flex items-center gap-1 px-1.5 py-0.5 rounded cursor-pointer transition border {player.streamingQuality === 'original'
+								? 'bg-neutral-900/90 hover:bg-neutral-800 text-emerald-400 border-emerald-800/40 hover:border-emerald-500/50'
+								: 'bg-amber-950/80 hover:bg-amber-900/80 text-amber-300 border-amber-700/60 shadow-[0_0_8px_rgba(245,158,11,0.2)]'}"
+							title="Streaming quality: {player.streamingQuality === 'original' ? 'Original Lossless' : player.streamingQuality + 'k MP3'}. Click to configure."
+						>
+							{#if player.streamingQuality === 'original'}
+								<span class="font-bold">{player.currentTrack.format}</span>
+								{#if player.currentTrack.bitrate_kbps}
+									<span class="text-neutral-400">&bull; {player.currentTrack.bitrate_kbps.toLocaleString()}k</span>
+								{/if}
+							{:else}
+								<span class="font-bold">MP3</span>
+								<span class="text-amber-200">&bull; {player.streamingQuality}k</span>
+							{/if}
+						</button>
+
+						{#if showQualityMenu}
+							<div
+								class="fixed inset-0 z-40"
+								onclick={() => (showQualityMenu = false)}
+							></div>
+							<div
+								class="absolute left-0 bottom-full mb-2 z-50 w-60 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-2 text-xs flex flex-col gap-1 backdrop-blur-xl"
+							>
+								<div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
+									Streaming Quality
+								</div>
+								<button
+									type="button"
+									onclick={() => {
+										player.setStreamingQuality('original');
+										showQualityMenu = false;
+									}}
+									class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === 'original'
+										? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+										: 'hover:bg-neutral-800 text-neutral-300'}"
+								>
+									<div>
+										<div class="text-xs">Original Audio</div>
+										<div class="text-[10px] text-neutral-500">Lossless / native bit depth</div>
+									</div>
+									{#if player.streamingQuality === 'original'}
+										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+									{/if}
+								</button>
+								<button
+									type="button"
+									onclick={() => {
+										player.setStreamingQuality('320');
+										showQualityMenu = false;
+									}}
+									class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === '320'
+										? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+										: 'hover:bg-neutral-800 text-neutral-300'}"
+								>
+									<div>
+										<div class="text-xs">320 kbps (High Quality)</div>
+										<div class="text-[10px] text-neutral-500">Crisp, transparent MP3</div>
+									</div>
+									{#if player.streamingQuality === '320'}
+										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+									{/if}
+								</button>
+								<button
+									type="button"
+									onclick={() => {
+										player.setStreamingQuality('192');
+										showQualityMenu = false;
+									}}
+									class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === '192'
+										? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+										: 'hover:bg-neutral-800 text-neutral-300'}"
+								>
+									<div>
+										<div class="text-xs">192 kbps (Standard)</div>
+										<div class="text-[10px] text-neutral-500">Balanced bandwidth & quality</div>
+									</div>
+									{#if player.streamingQuality === '192'}
+										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+									{/if}
+								</button>
+								<button
+									type="button"
+									onclick={() => {
+										player.setStreamingQuality('128');
+										showQualityMenu = false;
+									}}
+									class="px-2 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer {player.streamingQuality === '128'
+										? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+										: 'hover:bg-neutral-800 text-neutral-300'}"
+								>
+									<div>
+										<div class="text-xs">128 kbps (Data Saver)</div>
+										<div class="text-[10px] text-neutral-500">Low bandwidth, mobile friendly</div>
+									</div>
+									{#if player.streamingQuality === '128'}
+										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+									{/if}
+								</button>
+							</div>
 						{/if}
 					</div>
 				</div>
