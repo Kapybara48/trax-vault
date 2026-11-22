@@ -40,7 +40,9 @@
 		Sparkles,
 		FolderDown,
 		Camera,
-		Upload
+		Upload,
+		Radio,
+		Users
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -1052,6 +1054,18 @@
 				player.playTrack(foundTrack, foundAlbum, foundAlbum.tracks);
 			}
 		}
+
+		// Auto-join shared listening room if ?room=CODE is present in URL
+		try {
+			const params = new URLSearchParams(window.location.search);
+			const roomParam = params.get('room');
+			if (roomParam && roomParam.trim()) {
+				const code = roomParam.trim().toUpperCase();
+				if (player.activeRoom?.code !== code) {
+					player.joinListeningRoom(code);
+				}
+			}
+		} catch {}
 	});
 </script>
 
@@ -1059,6 +1073,108 @@
 
 <!-- Trax Vault Studio Audio Player (Full Viewport, Non-Scrollable Window) -->
 <div class="flex-1 h-full flex flex-col bg-neutral-950 text-neutral-100 font-sans select-none overflow-hidden min-h-0">
+	<!-- Live Sync / Companion Display / Listen Together Status Bar -->
+	{#if player.audioUnlockRequired && player.localAudioEnabled}
+		<div class="mx-2 sm:mx-3 mt-2 px-3.5 py-2 rounded-xl bg-emerald-950/90 border border-emerald-500/50 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 shadow-lg">
+			<div class="flex items-center gap-2 text-emerald-200">
+				<Volume2 class="w-4 h-4 text-emerald-400 animate-bounce shrink-0" />
+				<span>
+					<strong>Synced Audio Ready:</strong> Click to unlock synchronized audio playback in this browser tab.
+				</span>
+			</div>
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					onclick={() => player.unlockAudioPlayback()}
+					class="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs transition cursor-pointer"
+				>
+					Play Synced Audio Here
+				</button>
+				<button
+					type="button"
+					onclick={() => player.setLocalAudioMode(false, false)}
+					class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs transition cursor-pointer"
+				>
+					Lyrics Companion Only
+				</button>
+			</div>
+		</div>
+	{:else if player.activeRoom?.type === 'shared' || !player.localAudioEnabled || player.connectedDevices.length > 1}
+		<div
+			class="mx-2 sm:mx-3 mt-2 px-3.5 py-1.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 {player.activeRoom?.type === 'shared'
+				? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+				: !player.localAudioEnabled
+					? 'bg-cyan-950/60 border-cyan-500/40 text-cyan-200'
+					: 'bg-neutral-900/90 border-neutral-800 text-neutral-300'}"
+		>
+			<div class="flex items-center gap-2 min-w-0">
+				{#if player.activeRoom?.type === 'shared'}
+					<Users class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+					<span class="truncate">
+						Listening Together in <strong class="text-white">{player.activeRoom.name}</strong>
+						<span class="font-mono text-[11px] px-1.5 py-0.2 rounded bg-neutral-900/90 text-emerald-300 border border-emerald-500/30 ml-1">
+							{player.activeRoom.code}
+						</span>
+						<span class="text-neutral-400 ml-1">
+							&bull; {player.connectedDevices.length} {player.connectedDevices.length === 1 ? 'listener' : 'listeners'}
+						</span>
+					</span>
+				{:else if !player.localAudioEnabled}
+					<Radio class="w-3.5 h-3.5 text-cyan-400 animate-pulse shrink-0" />
+					<span class="truncate">
+						<strong>Companion Display &amp; Synced Lyrics Remote</strong>
+						<span class="hidden sm:inline text-cyan-300/80">
+							&bull; Audio muted on this device while controlling active speaker
+						</span>
+					</span>
+				{:else}
+					<Radio class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+					<span class="truncate">
+						Synced across <strong class="text-white">{player.connectedDevices.length} devices</strong>
+					</span>
+				{/if}
+			</div>
+
+			<div class="flex items-center gap-1.5 shrink-0">
+				{#if !player.localAudioEnabled}
+					<button
+						type="button"
+						onclick={() => player.setLocalAudioMode(true, true)}
+						class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-neutral-950 border border-emerald-500/40 text-[11px] font-bold transition cursor-pointer"
+						title="Transfer exclusive audio playback to this device"
+					>
+						Transfer Audio Here
+					</button>
+					<button
+						type="button"
+						onclick={() => player.setLocalAudioMode(true, false)}
+						class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer hidden sm:inline-flex"
+						title="Play synchronized audio on both devices simultaneously"
+					>
+						Play on Both
+					</button>
+				{:else if player.connectedDevices.length > 1}
+					<button
+						type="button"
+						onclick={() => player.setLocalAudioMode(false, false)}
+						class="px-2.5 py-1 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-cyan-300 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
+						title="Mute local audio and use this device as a live synced lyrics & remote control display"
+					>
+						Switch to Lyrics Companion
+					</button>
+				{/if}
+
+				<button
+					type="button"
+					onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
+					class="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white border border-neutral-700 text-[11px] font-bold transition cursor-pointer"
+				>
+					Manage Sync
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Mobile View Switcher (Phones & Small Tablets < md) -->
 	<div class="md:hidden flex items-center justify-between p-1 mx-2 sm:mx-3 mt-2 mb-1 bg-neutral-900/90 border border-neutral-800 rounded-xl text-xs font-semibold shrink-0 gap-1">
 		<button
@@ -1092,6 +1208,17 @@
 		>
 			<ListMusic class="h-3.5 w-3.5" />
 			<span>Queue</span>
+		</button>
+		<button
+			type="button"
+			onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
+			class="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg transition {player.activeRoom?.type === 'shared' || player.connectedDevices.length > 1
+				? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+				: 'text-neutral-400 hover:text-white'}"
+			title="Sync Devices & Listen Together"
+		>
+			<Radio class="h-3.5 w-3.5" />
+			<span>Sync</span>
 		</button>
 	</div>
 
@@ -2882,6 +3009,32 @@
 				title="Play Queue"
 			>
 				<ListMusic class="w-4 h-4" />
+			</button>
+
+			<!-- Multi-Device Sync & Listen Together Modal Trigger -->
+			<button
+				type="button"
+				onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
+				class="px-2.5 py-2 rounded-xl transition cursor-pointer border flex items-center gap-1.5 text-xs font-bold {player.activeRoom?.type === 'shared'
+					? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-md'
+					: !player.localAudioEnabled
+						? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md'
+						: player.connectedDevices.length > 1
+							? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+							: 'bg-neutral-800/80 text-neutral-400 border-neutral-700/60 hover:text-white hover:bg-neutral-700'}"
+				title="Sync Devices & Listen Together"
+			>
+				{#if player.activeRoom?.type === 'shared'}
+					<Users class="w-4 h-4 text-emerald-400" />
+					<span class="hidden lg:inline font-mono text-[11px]">{player.activeRoom.code}</span>
+				{:else}
+					<Radio class="w-4 h-4 {player.connectedDevices.length > 1 ? 'text-emerald-400' : ''}" />
+					{#if !player.localAudioEnabled}
+						<span class="hidden lg:inline text-[10px]">Companion</span>
+					{:else if player.connectedDevices.length > 1}
+						<span class="text-[11px]">{player.connectedDevices.length}</span>
+					{/if}
+				{/if}
 			</button>
 
 			<!-- Volume Controls -->

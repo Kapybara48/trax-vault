@@ -6,6 +6,69 @@ export interface PlayerAlbum extends Album {
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
+export interface SyncRoomSummary {
+	id: string;
+	type: 'personal' | 'shared';
+	code: string | null;
+	name: string;
+	hostUserId: number;
+	hostUsername: string;
+	isPublic: boolean;
+	allowGuestControl: boolean;
+	listenerCount: number;
+	currentTrackTitle: string | null;
+	currentTrackArtist: string | null;
+	currentCoverUrl: string | null;
+	isPlaying: boolean;
+}
+
+export interface SyncDeviceInfo {
+	deviceId: string;
+	deviceName: string;
+	userId: number;
+	username: string;
+	isAudioOutput: boolean;
+	connectedAtMs: number;
+	lastSeenMs: number;
+}
+
+export interface SyncPlaybackState {
+	currentTrack: Track | null;
+	currentAlbum: { id?: number; title: string; artist: string; cover_url: string | null } | null;
+	activeQueue: Track[];
+	queueIndex: number;
+	isPlaying: boolean;
+	positionSec: number;
+	durationSec: number;
+	shuffleEnabled: boolean;
+	repeatMode: RepeatMode;
+	updatedAtServerMs: number;
+	updatedByDeviceId: string | null;
+	updatedByUsername: string | null;
+}
+
+function detectFriendlyDeviceName(): string {
+	if (typeof navigator === 'undefined') return 'Web Browser';
+	const ua = navigator.userAgent || '';
+
+	let os = 'Desktop';
+	if (/Android/i.test(ua)) os = 'Android';
+	else if (/iPad/i.test(ua)) os = 'iPad';
+	else if (/iPhone|iPod/i.test(ua)) os = 'iPhone';
+	else if (/Mac OS X|Macintosh/i.test(ua)) os = 'macOS';
+	else if (/Windows/i.test(ua)) os = 'Windows PC';
+	else if (/Linux/i.test(ua)) os = 'Linux PC';
+
+	let browser = 'Browser';
+	if (/Edg\//i.test(ua)) browser = 'Edge';
+	else if (/OPR\/|Opera/i.test(ua)) browser = 'Opera';
+	else if (/Firefox\//i.test(ua)) browser = 'Firefox';
+	else if (/Chrome\//i.test(ua)) browser = 'Chrome';
+	else if (/Safari\//i.test(ua)) browser = 'Safari';
+
+	return `${os} (${browser})`;
+}
+
 class GlobalPlayer {
 	currentTrack = $state<Track | null>(null);
 	currentAlbum = $state<PlayerAlbum | null>(null);
@@ -19,9 +82,29 @@ class GlobalPlayer {
 	shuffleEnabled = $state<boolean>(false);
 	repeatMode = $state<RepeatMode>('off');
 
+	// Multi-Device Sync & "Listen Together" Reactive State
+	deviceId = $state<string>('');
+	deviceName = $state<string>('Web Player');
+	syncConnected = $state<boolean>(false);
+	localAudioEnabled = $state<boolean>(true);
+	audioUnlockRequired = $state<boolean>(false);
+	activeRoom = $state<SyncRoomSummary | null>(null);
+	connectedDevices = $state<SyncDeviceInfo[]>([]);
+	publicRooms = $state<SyncRoomSummary[]>([]);
+	showSyncModal = $state<boolean>(false);
+	syncModalTab = $state<'devices' | 'rooms'>('devices');
+	lastSyncUpdatedBy = $state<string | null>(null);
+
 	private audioEl: HTMLAudioElement | null = null;
 	private historyTrackIds: number[] = [];
 	private initialized = false;
+	private eventSource: EventSource | null = null;
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private serverClockOffsetMs = 0;
+	private remoteRefPositionSec = 0;
+	private remoteRefServerMs = 0;
+	private isApplyingRemoteState = false;
+	private loadedAudioTrackId: number | null = null;
 
 	init(el: HTMLAudioElement) {
 		if (this.audioEl === el) return;
@@ -30,9 +113,35 @@ class GlobalPlayer {
 		if (!this.initialized) {
 			this.initialized = true;
 
+			// Restore or generate persistent Device ID & Friendly Name
+			try {
+				let savedDeviceId = localStorage.getItem('traxvault_device_id');
+				if (!savedDeviceId) {
+					savedDeviceId =
+						typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+							? crypto.randomUUID()
+							: 'dev_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+					localStorage.setItem('traxvault_device_id', savedDeviceId);
+				}
+				this.deviceId = savedDeviceId;
+
+				const savedDeviceName = localStorage.getItem('traxvault_device_name');
+				if (savedDeviceName && savedDeviceName.trim()) {
+					this.deviceName = savedDeviceName.trim();
+				} else {
+					this.deviceName = detectFriendlyDeviceName();
+					localStorage.setItem('traxvault_device_name', this.deviceName);
+				}
+			} catch {
+				this.deviceId = 'dev_' + Math.random().toString(36).slice(2);
+				this.deviceName = detectFriendlyDeviceName();
+			}
+
 			// Restore saved volume
 			try {
-				const saved = localStorage.getItem('traxvault_player_volume') || localStorage.getItem('trackvault_player_volume');
+				const saved =
+					localStorage.getItem('traxvault_player_volume') ||
+					localStorage.getItem('trackvault_player_volume');
 				if (saved) {
 					this.volume = parseFloat(saved);
 				}
@@ -40,11 +149,15 @@ class GlobalPlayer {
 
 			// Restore saved shuffle and repeat modes
 			try {
-				const savedShuffle = localStorage.getItem('traxvault_player_shuffle') ?? localStorage.getItem('trackvault_player_shuffle');
+				const savedShuffle =
+					localStorage.getItem('traxvault_player_shuffle') ??
+					localStorage.getItem('trackvault_player_shuffle');
 				if (savedShuffle !== null) {
 					this.shuffleEnabled = savedShuffle === 'true';
 				}
-				const savedRepeat = localStorage.getItem('traxvault_player_repeat') || localStorage.getItem('trackvault_player_repeat');
+				const savedRepeat =
+					localStorage.getItem('traxvault_player_repeat') ||
+					localStorage.getItem('trackvault_player_repeat');
 				if (savedRepeat === 'off' || savedRepeat === 'all' || savedRepeat === 'one') {
 					this.repeatMode = savedRepeat;
 				}
@@ -58,25 +171,43 @@ class GlobalPlayer {
 				lastHeartbeat = now;
 
 				// If more than 3000ms elapsed between 500ms intervals, system was suspended/slept
-				if (elapsed > 3000 && this.isPlaying) {
-					console.log('[Player] System resumed from sleep/suspend. Pausing playback to prevent auto-play jumpscares.');
+				if (elapsed > 3000 && this.isPlaying && this.localAudioEnabled) {
+					console.log(
+						'[Player] System resumed from sleep/suspend. Pausing playback to prevent auto-play jumpscares.'
+					);
 					this.pause();
 				}
 			}, 500);
 
 			if (typeof document !== 'undefined') {
 				document.addEventListener('freeze', () => {
-					if (this.isPlaying) {
+					if (this.isPlaying && this.localAudioEnabled) {
 						this.pause();
 					}
 				});
 			}
+
+			// 50ms Companion Clock Interpolation Loop (drives smooth synced lyrics & progress bar when local audio is muted or blocked)
+			setInterval(() => {
+				this.tickCompanionClock();
+			}, 50);
+
+			// 5-second Reference Clock Checkpoint from Active Speaker Device
+			setInterval(() => {
+				this.sendPeriodicSpeakerCheckpoint();
+			}, 5000);
+
+			// Start SSE Real-Time Sync Stream
+			this.connectSyncStream();
 		}
 
 		el.volume = this.getEffectiveGain();
 
 		el.ontimeupdate = () => {
+			if (!this.localAudioEnabled || this.audioUnlockRequired) return;
 			this.currentTime = el.currentTime;
+			this.remoteRefPositionSec = el.currentTime;
+			this.remoteRefServerMs = this.getEstimatedServerNowMs();
 		};
 
 		el.ondurationchange = () => {
@@ -92,32 +223,676 @@ class GlobalPlayer {
 		};
 
 		el.onplay = () => {
+			if (!this.localAudioEnabled) {
+				el.pause();
+				return;
+			}
+			this.audioUnlockRequired = false;
 			this.isPlaying = true;
 			this.updatePlaybackState('playing');
 		};
 
 		el.onplaying = () => {
+			if (!this.localAudioEnabled) {
+				el.pause();
+				return;
+			}
+			this.audioUnlockRequired = false;
 			this.isPlaying = true;
 			this.updatePlaybackState('playing');
 		};
 
 		el.onpause = () => {
+			// When in Companion mode (localAudioEnabled === false) or applying remote state,
+			// pausing the local <audio> element must NOT overwrite the room's isPlaying state.
+			if (!this.localAudioEnabled || this.isApplyingRemoteState || this.audioUnlockRequired) {
+				return;
+			}
 			this.isPlaying = false;
 			this.updatePlaybackState('paused');
 		};
 
 		el.onerror = () => {
+			if (!this.localAudioEnabled) return;
 			this.isPlaying = false;
 			this.updatePlaybackState('none');
 		};
 
 		el.onended = () => {
+			if (!this.localAudioEnabled) return;
 			this.isPlaying = false;
 			this.updatePlaybackState('paused');
 			this.handleTrackEnded();
 		};
 
 		this.setupMediaSession();
+	}
+
+	private getEstimatedServerNowMs(): number {
+		return Date.now() + this.serverClockOffsetMs;
+	}
+
+	private updateServerClockOffset(serverNowMs?: number) {
+		if (typeof serverNowMs === 'number' && serverNowMs > 0) {
+			this.serverClockOffsetMs = serverNowMs - Date.now();
+		}
+	}
+
+	private computeExpectedRemotePositionSec(): number {
+		if (!this.currentTrack) return 0;
+		if (!this.isPlaying) return Math.max(0, this.remoteRefPositionSec);
+		const elapsedSec = Math.max(
+			0,
+			(this.getEstimatedServerNowMs() - this.remoteRefServerMs) / 1000
+		);
+		const pos = this.remoteRefPositionSec + elapsedSec;
+		if (this.duration > 0) {
+			return Math.min(this.duration, pos);
+		}
+		return pos;
+	}
+
+	private tickCompanionClock() {
+		if (!this.currentTrack || !this.isPlaying) return;
+
+		// If local audio is muted (Companion mode) or waiting for user gesture unlock,
+		// advance currentTime smoothly from the synchronized server clock reference
+		if (!this.localAudioEnabled || this.audioUnlockRequired) {
+			const expected = this.computeExpectedRemotePositionSec();
+			this.currentTime = expected;
+		}
+	}
+
+	private sendPeriodicSpeakerCheckpoint() {
+		if (
+			!this.syncConnected ||
+			!this.localAudioEnabled ||
+			!this.isPlaying ||
+			!this.currentTrack ||
+			!this.audioEl ||
+			this.audioEl.paused
+		) {
+			return;
+		}
+
+		// Only send periodic checkpoints if there is at least 1 other device in the room
+		if (this.connectedDevices.length <= 1) return;
+
+		// To avoid multiple speakers broadcasting simultaneously, only the device that last
+		// updated state or the first active audio device in the room sends the checkpoint
+		const audioDevices = this.connectedDevices.filter((d) => d.isAudioOutput);
+		if (audioDevices.length > 0 && audioDevices[0].deviceId !== this.deviceId) {
+			return;
+		}
+
+		this.broadcastPlaybackState(false);
+	}
+
+	connectSyncStream(roomCode?: string) {
+		if (typeof window === 'undefined' || !this.deviceId) return;
+
+		if (this.eventSource) {
+			try {
+				this.eventSource.close();
+			} catch {}
+			this.eventSource = null;
+		}
+
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+
+		// Also check if URL has ?room=CODE
+		let effectiveRoomCode = roomCode;
+		if (!effectiveRoomCode) {
+			try {
+				const urlParams = new URLSearchParams(window.location.search);
+				const urlRoom = urlParams.get('room');
+				if (urlRoom && urlRoom.trim()) {
+					effectiveRoomCode = urlRoom.trim().toUpperCase();
+				}
+			} catch {}
+		}
+
+		const params = new URLSearchParams({
+			deviceId: this.deviceId,
+			deviceName: this.deviceName
+		});
+		if (effectiveRoomCode) {
+			params.set('roomCode', effectiveRoomCode);
+		}
+
+		const es = new EventSource(`/api/sync/stream?${params.toString()}`);
+		this.eventSource = es;
+
+		es.onopen = () => {
+			this.syncConnected = true;
+		};
+
+		es.addEventListener('welcome', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data);
+				this.updateServerClockOffset(data.serverNowMs);
+				this.syncConnected = true;
+
+				if (data.room) this.activeRoom = data.room;
+				if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+				if (Array.isArray(data.publicRooms)) this.publicRooms = data.publicRooms;
+
+				if (typeof data.myAudioOutput === 'boolean') {
+					this.applyLocalAudioOutputMode(data.myAudioOutput, data.state);
+				}
+
+				if (data.state && data.state.currentTrack) {
+					this.applyRemotePlaybackState(data.state);
+				} else if (this.currentTrack) {
+					// Room has no track yet, but this device already has a track loaded -> seed room state!
+					this.broadcastPlaybackState(false);
+				}
+			} catch (err) {
+				console.warn('[Sync] Failed to parse welcome event:', err);
+			}
+		});
+
+		es.addEventListener('state_updated', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data);
+				this.updateServerClockOffset(data.serverNowMs);
+				if (data.room) this.activeRoom = data.room;
+				if (data.state) {
+					this.applyRemotePlaybackState(data.state);
+				}
+			} catch (err) {
+				console.warn('[Sync] Failed to parse state_updated event:', err);
+			}
+		});
+
+		es.addEventListener('devices_updated', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data);
+				this.updateServerClockOffset(data.serverNowMs);
+				if (data.room) this.activeRoom = data.room;
+				if (Array.isArray(data.devices)) {
+					this.connectedDevices = data.devices;
+					const myDev = data.devices.find((d: SyncDeviceInfo) => d.deviceId === this.deviceId);
+					if (myDev && myDev.isAudioOutput !== this.localAudioEnabled) {
+						this.applyLocalAudioOutputMode(myDev.isAudioOutput, data.state);
+					}
+				}
+			} catch (err) {
+				console.warn('[Sync] Failed to parse devices_updated event:', err);
+			}
+		});
+
+		es.addEventListener('room_updated', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data);
+				if (data.room) this.activeRoom = data.room;
+			} catch {}
+		});
+
+		es.addEventListener('lobby_updated', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data);
+				if (Array.isArray(data.publicRooms)) {
+					this.publicRooms = data.publicRooms;
+				}
+			} catch {}
+		});
+
+		es.onerror = () => {
+			this.syncConnected = false;
+			try {
+				es.close();
+			} catch {}
+			if (this.eventSource === es) {
+				this.eventSource = null;
+			}
+			if (!this.reconnectTimer) {
+				this.reconnectTimer = setTimeout(() => {
+					this.reconnectTimer = null;
+					this.connectSyncStream();
+				}, 3000);
+			}
+		};
+	}
+
+	private applyLocalAudioOutputMode(enableAudio: boolean, latestState?: SyncPlaybackState) {
+		const changed = this.localAudioEnabled !== enableAudio;
+		this.localAudioEnabled = enableAudio;
+
+		if (!this.audioEl) return;
+
+		if (!enableAudio) {
+			// Switching into Companion / Lyrics Remote mode: mute/pause local <audio> without pausing room state
+			this.isApplyingRemoteState = true;
+			try {
+				if (!this.audioEl.paused) {
+					this.audioEl.pause();
+				}
+				this.audioUnlockRequired = false;
+			} finally {
+				this.isApplyingRemoteState = false;
+			}
+		} else if (changed && enableAudio && this.currentTrack) {
+			// Switching from Companion mode into Active Audio Output mode: sync & start local <audio>
+			if (latestState) {
+				this.applyRemotePlaybackState(latestState, true);
+			} else {
+				const targetPos = this.computeExpectedRemotePositionSec();
+				this.syncLocalAudioElement(this.currentTrack, targetPos, this.isPlaying, true);
+			}
+		}
+	}
+
+	private syncLocalAudioElement(
+		track: Track,
+		targetPositionSec: number,
+		shouldPlay: boolean,
+		forceSeek = false
+	) {
+		if (!this.audioEl || !this.localAudioEnabled) return;
+
+		const expectedSrcPath = `/api/tracks/${track.id}/audio`;
+		const needsSrcLoad =
+			this.loadedAudioTrackId !== track.id ||
+			!this.audioEl.src ||
+			!this.audioEl.src.includes(expectedSrcPath);
+
+		if (needsSrcLoad) {
+			this.loadedAudioTrackId = track.id;
+			this.audioEl.src = expectedSrcPath;
+			this.audioEl.currentTime = Math.max(0, targetPositionSec);
+		} else {
+			const drift = Math.abs(this.audioEl.currentTime - targetPositionSec);
+			if (forceSeek || drift > 0.35) {
+				try {
+					this.audioEl.currentTime = Math.max(0, targetPositionSec);
+				} catch {}
+			}
+		}
+
+		if (shouldPlay) {
+			if (this.audioEl.paused) {
+				this.audioEl
+					.play()
+					.then(() => {
+						this.audioUnlockRequired = false;
+						this.isPlaying = true;
+					})
+					.catch(() => {
+						// Browser blocked unprompted autoplay; keep isPlaying=true for companion lyrics
+						// and prompt user for 1-click audio unlock
+						this.audioUnlockRequired = true;
+						this.isPlaying = true;
+					});
+			}
+		} else {
+			if (!this.audioEl.paused) {
+				this.audioEl.pause();
+			}
+			this.audioUnlockRequired = false;
+		}
+	}
+
+	private applyRemotePlaybackState(state: SyncPlaybackState, forceAudioSync = false) {
+		this.isApplyingRemoteState = true;
+		try {
+			this.lastSyncUpdatedBy = state.updatedByUsername || null;
+			this.remoteRefPositionSec = Math.max(0, state.positionSec || 0);
+			this.remoteRefServerMs = state.updatedAtServerMs || this.getEstimatedServerNowMs();
+
+			const trackChanged = this.currentTrack?.id !== state.currentTrack?.id;
+			this.currentTrack = state.currentTrack;
+
+			if (state.currentAlbum) {
+				this.currentAlbum = {
+					id: state.currentAlbum.id ?? 0,
+					musicbrainz_id: null,
+					title: state.currentAlbum.title,
+					artist: state.currentAlbum.artist,
+					release_year: null,
+					genre: null,
+					cover_url: state.currentAlbum.cover_url,
+					media_type: null,
+					notes: null,
+					created_at: '',
+					updated_at: '',
+					tracks: state.activeQueue || []
+				};
+			}
+
+			if (Array.isArray(state.activeQueue)) {
+				this.activeQueue = state.activeQueue;
+			}
+			if (typeof state.queueIndex === 'number') {
+				this.queueIndex = state.queueIndex;
+			}
+			if (typeof state.shuffleEnabled === 'boolean') {
+				this.shuffleEnabled = state.shuffleEnabled;
+			}
+			if (state.repeatMode) {
+				this.repeatMode = state.repeatMode;
+			}
+
+			const fallbackDuration =
+				state.currentTrack?.duration_ms && state.currentTrack.duration_ms > 0
+					? state.currentTrack.duration_ms / 1000
+					: 0;
+			if (state.durationSec && state.durationSec > 0) {
+				this.duration = state.durationSec;
+			} else if (fallbackDuration > 0 && (trackChanged || this.duration === 0)) {
+				this.duration = fallbackDuration;
+			}
+
+			this.isPlaying = Boolean(state.isPlaying);
+			const targetPos = this.computeExpectedRemotePositionSec();
+			this.currentTime = targetPos;
+
+			if (state.currentTrack) {
+				if (this.localAudioEnabled) {
+					// If this update did NOT originate from our own device (or forceAudioSync is true),
+					// synchronize our local <audio> element
+					if (state.updatedByDeviceId !== this.deviceId || forceAudioSync) {
+						this.syncLocalAudioElement(
+							state.currentTrack,
+							targetPos,
+							this.isPlaying,
+							trackChanged || forceAudioSync
+						);
+					}
+				} else if (this.audioEl && !this.audioEl.paused) {
+					this.audioEl.pause();
+				}
+
+				if (typeof document !== 'undefined') {
+					const artist =
+						state.currentTrack.artist ||
+						(this.currentAlbum ? this.currentAlbum.artist : 'Trax Vault');
+					document.title = `${state.currentTrack.title} • ${artist} | Trax Vault`;
+				}
+			} else {
+				if (this.audioEl && !this.audioEl.paused) {
+					this.audioEl.pause();
+				}
+			}
+
+			this.updateMediaSession();
+		} finally {
+			this.isApplyingRemoteState = false;
+		}
+	}
+
+	private async broadcastPlaybackState(activateLocalAudioIfNone = true) {
+		if (this.isApplyingRemoteState || !this.deviceId || typeof fetch === 'undefined') return;
+
+		const durationSec =
+			this.duration > 0
+				? this.duration
+				: this.currentTrack?.duration_ms
+					? this.currentTrack.duration_ms / 1000
+					: 0;
+
+		const statePayload: Partial<SyncPlaybackState> = {
+			currentTrack: this.currentTrack,
+			currentAlbum: this.currentAlbum
+				? {
+						id: this.currentAlbum.id,
+						title: this.currentAlbum.title,
+						artist: this.currentAlbum.artist,
+						cover_url: this.currentAlbum.cover_url
+					}
+				: null,
+			activeQueue: this.activeQueue,
+			queueIndex: this.queueIndex,
+			isPlaying: this.isPlaying,
+			positionSec: this.currentTime,
+			durationSec,
+			shuffleEnabled: this.shuffleEnabled,
+			repeatMode: this.repeatMode
+		};
+
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'update_state',
+					deviceId: this.deviceId,
+					deviceName: this.deviceName,
+					state: statePayload,
+					activateLocalAudioIfNone
+				})
+			});
+			if (res.ok) {
+				const data = await res.json();
+				this.updateServerClockOffset(data.serverNowMs);
+			}
+		} catch (err) {
+			console.warn('[Sync] Failed to broadcast playback state:', err);
+		}
+	}
+
+	unlockAudioPlayback() {
+		if (!this.currentTrack) return;
+		this.localAudioEnabled = true;
+		this.audioUnlockRequired = false;
+		const targetPos = this.computeExpectedRemotePositionSec();
+		this.syncLocalAudioElement(this.currentTrack, targetPos, this.isPlaying, true);
+	}
+
+	async setLocalAudioMode(enableAudio: boolean, exclusive = false, targetDeviceId?: string) {
+		const targetId = targetDeviceId || this.deviceId;
+		if (targetId === this.deviceId) {
+			this.applyLocalAudioOutputMode(enableAudio);
+		}
+
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'set_device_audio',
+					deviceId: this.deviceId,
+					targetDeviceId: targetId,
+					isAudioOutput: enableAudio,
+					exclusive
+				})
+			});
+			const data = await res.json();
+			if (res.ok) {
+				this.updateServerClockOffset(data.serverNowMs);
+				if (data.room) this.activeRoom = data.room;
+				if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+			}
+		} catch (err) {
+			console.warn('[Sync] Failed to set device audio mode:', err);
+		}
+	}
+
+	async updateDeviceName(newName: string) {
+		const clean = newName.trim().slice(0, 50);
+		if (!clean) return;
+		this.deviceName = clean;
+		try {
+			localStorage.setItem('traxvault_device_name', clean);
+		} catch {}
+
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'rename_device',
+					deviceId: this.deviceId,
+					deviceName: clean
+				})
+			});
+			const data = await res.json();
+			if (res.ok && Array.isArray(data.devices)) {
+				this.connectedDevices = data.devices;
+			}
+		} catch (err) {
+			console.warn('[Sync] Failed to rename device:', err);
+		}
+	}
+
+	async createListeningRoom(options: {
+		roomName: string;
+		isPublic: boolean;
+		allowGuestControl: boolean;
+	}): Promise<{ ok: boolean; error?: string; code?: string | null }> {
+		try {
+			const durationSec =
+				this.duration > 0
+					? this.duration
+					: this.currentTrack?.duration_ms
+						? this.currentTrack.duration_ms / 1000
+						: 0;
+
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'create_room',
+					deviceId: this.deviceId,
+					deviceName: this.deviceName,
+					roomName: options.roomName,
+					isPublic: options.isPublic,
+					allowGuestControl: options.allowGuestControl,
+					initialState: {
+						currentTrack: this.currentTrack,
+						currentAlbum: this.currentAlbum
+							? {
+									id: this.currentAlbum.id,
+									title: this.currentAlbum.title,
+									artist: this.currentAlbum.artist,
+									cover_url: this.currentAlbum.cover_url
+								}
+							: null,
+						activeQueue: this.activeQueue,
+						queueIndex: this.queueIndex,
+						isPlaying: this.isPlaying,
+						positionSec: this.currentTime,
+						durationSec,
+						shuffleEnabled: this.shuffleEnabled,
+						repeatMode: this.repeatMode
+					}
+				})
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				return { ok: false, error: data.error || 'Failed to create room.' };
+			}
+			this.updateServerClockOffset(data.serverNowMs);
+			if (data.room) this.activeRoom = data.room;
+			if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+			if (Array.isArray(data.publicRooms)) this.publicRooms = data.publicRooms;
+			this.localAudioEnabled = true;
+			return { ok: true, code: data.room?.code };
+		} catch (err: any) {
+			return { ok: false, error: err?.message || 'Network error creating room.' };
+		}
+	}
+
+	async joinListeningRoom(roomCode: string): Promise<{ ok: boolean; error?: string }> {
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'join_room',
+					deviceId: this.deviceId,
+					deviceName: this.deviceName,
+					roomCode: roomCode.trim().toUpperCase()
+				})
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				return { ok: false, error: data.error || 'Could not join room.' };
+			}
+			this.updateServerClockOffset(data.serverNowMs);
+			if (data.room) this.activeRoom = data.room;
+			if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+			if (Array.isArray(data.publicRooms)) this.publicRooms = data.publicRooms;
+			this.applyLocalAudioOutputMode(true, data.state);
+			if (data.state) {
+				this.applyRemotePlaybackState(data.state, true);
+			}
+			return { ok: true };
+		} catch (err: any) {
+			return { ok: false, error: err?.message || 'Network error joining room.' };
+		}
+	}
+
+	async leaveListeningRoom(): Promise<void> {
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'leave_room',
+					deviceId: this.deviceId
+				})
+			});
+			const data = await res.json();
+			if (res.ok) {
+				this.updateServerClockOffset(data.serverNowMs);
+				if (data.room) this.activeRoom = data.room;
+				if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+				if (Array.isArray(data.publicRooms)) this.publicRooms = data.publicRooms;
+			}
+		} catch (err) {
+			console.warn('[Sync] Failed to leave room:', err);
+		}
+	}
+
+	async updateRoomSettings(settings: {
+		isPublic?: boolean;
+		allowGuestControl?: boolean;
+		name?: string;
+	}): Promise<void> {
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'update_room_settings',
+					deviceId: this.deviceId,
+					...settings
+				})
+			});
+			const data = await res.json();
+			if (res.ok && data.room) {
+				this.activeRoom = data.room;
+				if (Array.isArray(data.publicRooms)) this.publicRooms = data.publicRooms;
+			}
+		} catch (err) {
+			console.warn('[Sync] Failed to update room settings:', err);
+		}
+	}
+
+	async refreshPublicRooms(): Promise<void> {
+		try {
+			const res = await fetch(`/api/sync?deviceId=${encodeURIComponent(this.deviceId)}`);
+			if (res.ok) {
+				const data = await res.json();
+				if (Array.isArray(data.publicRooms)) {
+					this.publicRooms = data.publicRooms;
+				}
+			}
+		} catch {}
+	}
+
+	openSyncModal(tab: 'devices' | 'rooms' = 'devices') {
+		this.syncModalTab = tab;
+		this.showSyncModal = true;
+		this.refreshPublicRooms();
+	}
+
+	closeSyncModal() {
+		this.showSyncModal = false;
 	}
 
 	private updatePlaybackState(state: 'playing' | 'paused' | 'none') {
@@ -158,7 +933,8 @@ class GlobalPlayer {
 			return;
 		}
 
-		const artist = this.currentTrack.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Trax Vault');
+		const artist =
+			this.currentTrack.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Trax Vault');
 		const albumTitle = this.currentAlbum ? this.currentAlbum.title : 'Trax Vault';
 		const artworkUrl = this.currentAlbum?.cover_url;
 
@@ -171,7 +947,7 @@ class GlobalPlayer {
 					? [
 							{ src: artworkUrl, sizes: '300x300', type: 'image/jpeg' },
 							{ src: artworkUrl, sizes: '512x512', type: 'image/jpeg' }
-					  ]
+						]
 					: []
 			});
 			navigator.mediaSession.playbackState = this.isPlaying ? 'playing' : 'paused';
@@ -202,17 +978,34 @@ class GlobalPlayer {
 		if (this.historyTrackIds.length > 50) this.historyTrackIds.shift();
 		this.historyTrackIds.push(track.id);
 
-		if (this.audioEl) {
+		this.currentTime = 0;
+		this.duration =
+			track.duration_ms && track.duration_ms > 0 ? track.duration_ms / 1000 : this.duration;
+		this.remoteRefPositionSec = 0;
+		this.remoteRefServerMs = this.getEstimatedServerNowMs();
+
+		// If no device in the room is currently set to output audio, enable local audio on this device
+		const anyAudioDevice = this.connectedDevices.some((d) => d.isAudioOutput);
+		if (!this.localAudioEnabled && !anyAudioDevice) {
+			this.localAudioEnabled = true;
+		}
+
+		if (this.audioEl && this.localAudioEnabled) {
+			this.loadedAudioTrackId = track.id;
 			this.audioEl.src = `/api/tracks/${track.id}/audio`;
 			this.audioEl
 				.play()
 				.then(() => {
+					this.audioUnlockRequired = false;
 					this.isPlaying = true;
 				})
 				.catch((err) => {
 					console.warn('Playback error:', err);
 					this.isPlaying = false;
 				});
+		} else {
+			// Companion Mode remote control: set isPlaying=true and broadcast to active speaker device
+			this.isPlaying = true;
 		}
 
 		if (typeof document !== 'undefined') {
@@ -221,6 +1014,7 @@ class GlobalPlayer {
 		}
 
 		this.updateMediaSession();
+		this.broadcastPlaybackState(true);
 	}
 
 	playPlaylist(
@@ -250,8 +1044,6 @@ class GlobalPlayer {
 	}
 
 	play() {
-		if (!this.audioEl) return;
-
 		if (!this.currentTrack) {
 			if (this.activeQueue.length > 0) {
 				this.playTrack(this.activeQueue[0]);
@@ -259,30 +1051,58 @@ class GlobalPlayer {
 			return;
 		}
 
-		if (!this.isPlaying) {
+		const anyAudioDevice = this.connectedDevices.some((d) => d.isAudioOutput);
+		if (!this.localAudioEnabled && !anyAudioDevice) {
+			this.localAudioEnabled = true;
+		}
+
+		this.remoteRefPositionSec = this.currentTime;
+		this.remoteRefServerMs = this.getEstimatedServerNowMs();
+
+		if (this.localAudioEnabled && this.audioEl) {
+			const expectedSrcPath = `/api/tracks/${this.currentTrack.id}/audio`;
+			if (!this.audioEl.src || !this.audioEl.src.includes(expectedSrcPath)) {
+				this.loadedAudioTrackId = this.currentTrack.id;
+				this.audioEl.src = expectedSrcPath;
+				this.audioEl.currentTime = Math.max(0, this.currentTime);
+			}
 			this.audioEl
 				.play()
 				.then(() => {
+					this.audioUnlockRequired = false;
 					this.isPlaying = true;
 					this.updatePlaybackState('playing');
+					this.broadcastPlaybackState(true);
 				})
 				.catch((e) => {
 					console.warn('Play error:', e);
 					this.isPlaying = false;
 					this.updatePlaybackState('paused');
 				});
+		} else {
+			// Companion Mode: remotely resume playback on active speaker device
+			this.isPlaying = true;
+			this.updatePlaybackState('playing');
+			this.broadcastPlaybackState(true);
 		}
 	}
 
 	pause() {
-		if (this.audioEl) {
+		if (this.audioEl && !this.audioEl.paused) {
 			this.audioEl.pause();
-			this.isPlaying = false;
-			this.updatePlaybackState('paused');
 		}
+		this.isPlaying = false;
+		this.remoteRefPositionSec = this.currentTime;
+		this.remoteRefServerMs = this.getEstimatedServerNowMs();
+		this.updatePlaybackState('paused');
+		this.broadcastPlaybackState(false);
 	}
 
 	togglePlay() {
+		if (this.audioUnlockRequired && this.localAudioEnabled) {
+			this.unlockAudioPlayback();
+			return;
+		}
 		if (this.isPlaying) {
 			this.pause();
 		} else {
@@ -292,10 +1112,15 @@ class GlobalPlayer {
 
 	private handleTrackEnded() {
 		if (this.repeatMode === 'one' && this.currentTrack) {
-			if (this.audioEl) {
+			this.currentTime = 0;
+			this.remoteRefPositionSec = 0;
+			this.remoteRefServerMs = this.getEstimatedServerNowMs();
+			if (this.audioEl && this.localAudioEnabled) {
 				this.audioEl.currentTime = 0;
 				this.audioEl.play().catch((e) => console.warn(e));
 			}
+			this.isPlaying = true;
+			this.broadcastPlaybackState(false);
 			return;
 		}
 		this.nextTrack();
@@ -319,6 +1144,7 @@ class GlobalPlayer {
 				nextIdx = 0;
 			} else {
 				this.isPlaying = false;
+				this.broadcastPlaybackState(false);
 				return;
 			}
 		}
@@ -330,8 +1156,8 @@ class GlobalPlayer {
 	}
 
 	previousTrack() {
-		if (this.audioEl && this.audioEl.currentTime > 3) {
-			this.audioEl.currentTime = 0;
+		if (this.currentTime > 3) {
+			this.seekTo(0);
 			return;
 		}
 
@@ -353,10 +1179,19 @@ class GlobalPlayer {
 	}
 
 	seekTo(seconds: number) {
-		if (!this.audioEl) return;
-		const clamped = Math.max(0, Math.min(seconds, this.duration || 0));
-		this.audioEl.currentTime = clamped;
+		const maxDur =
+			this.duration ||
+			(this.currentTrack?.duration_ms ? this.currentTrack.duration_ms / 1000 : 100);
+		const clamped = Math.max(0, Math.min(seconds, maxDur));
+		if (this.audioEl && this.localAudioEnabled) {
+			try {
+				this.audioEl.currentTime = clamped;
+			} catch {}
+		}
 		this.currentTime = clamped;
+		this.remoteRefPositionSec = clamped;
+		this.remoteRefServerMs = this.getEstimatedServerNowMs();
+		this.broadcastPlaybackState(false);
 	}
 
 	/**
@@ -395,6 +1230,7 @@ class GlobalPlayer {
 		try {
 			localStorage.setItem('traxvault_player_shuffle', this.shuffleEnabled.toString());
 		} catch {}
+		this.broadcastPlaybackState(false);
 	}
 
 	toggleRepeat() {
@@ -408,6 +1244,7 @@ class GlobalPlayer {
 		try {
 			localStorage.setItem('traxvault_player_repeat', this.repeatMode);
 		} catch {}
+		this.broadcastPlaybackState(false);
 	}
 
 	stop() {
@@ -416,10 +1253,12 @@ class GlobalPlayer {
 			this.audioEl.currentTime = 0;
 			this.audioEl.src = '';
 		}
+		this.loadedAudioTrackId = null;
 		this.currentTrack = null;
 		this.isPlaying = false;
 		this.currentTime = 0;
 		this.duration = 0;
+		this.remoteRefPositionSec = 0;
 		this.updatePlaybackState('none');
 		if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
 			try {
@@ -429,6 +1268,7 @@ class GlobalPlayer {
 		if (typeof document !== 'undefined') {
 			document.title = 'Trax Vault - Music Quality & Lyrics Tracker';
 		}
+		this.broadcastPlaybackState(false);
 	}
 }
 

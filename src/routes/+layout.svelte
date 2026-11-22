@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import GlobalMiniPlayer from '$lib/components/GlobalMiniPlayer.svelte';
+	import SyncRoomModal from '$lib/components/SyncRoomModal.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import { player } from '$lib/services/player.svelte.js';
 	import { APP_VERSION } from '$lib/version.js';
@@ -88,6 +89,11 @@
 				</p>
 			</div>
 		</footer>
+	{/if}
+
+	<!-- Global Multi-Device Sync & Listen Together Modal -->
+	{#if !isAuthPage}
+		<SyncRoomModal />
 	{/if}
 
 	<!-- Global Confirmation & Alert Modal -->
