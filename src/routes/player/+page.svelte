@@ -68,6 +68,39 @@
 	let selectedPlaylist = $state<PlayerPlaylist | null>(null);
 	let selectedArtist = $state<PlayerArtist | null>(null);
 
+	// Persist view state in localStorage across page refreshes
+	function persistPlayerViewState() {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			const viewState = {
+				libraryTab,
+				selectedType,
+				selectedAlbumId: selectedAlbum?.id ?? null,
+				selectedPlaylistId: selectedPlaylist?.id ?? null,
+				selectedArtistName: selectedArtist?.name ?? null,
+				showLyricsDrawer,
+				showQueueDrawer,
+				mobilePlayerTab
+			};
+			localStorage.setItem('traxvault_player_view_state', JSON.stringify(viewState));
+		} catch {}
+	}
+
+	$effect(() => {
+		// Track reactive view properties and persist changes
+		const _ = [
+			libraryTab,
+			selectedType,
+			selectedAlbum?.id,
+			selectedPlaylist?.id,
+			selectedArtist?.name,
+			showLyricsDrawer,
+			showQueueDrawer,
+			mobilePlayerTab
+		];
+		persistPlayerViewState();
+	});
+
 	// Filters & Search
 	let librarySearch = $state('');
 	let albumFilter = $state<'all' | 'lossless' | 'verified'>('all');
@@ -1009,6 +1042,43 @@
 	}
 
 	onMount(() => {
+		// Restore saved view state if no explicit URL parameters override it
+		try {
+			const savedViewStr = localStorage.getItem('traxvault_player_view_state');
+			if (savedViewStr && !data.initialArtist && !data.initialPlaylistId && !data.initialAlbumId) {
+				const savedView = JSON.parse(savedViewStr);
+				if (savedView.libraryTab === 'albums' || savedView.libraryTab === 'artists' || savedView.libraryTab === 'playlists') {
+					libraryTab = savedView.libraryTab;
+				}
+				if (savedView.showLyricsDrawer === true) {
+					showLyricsDrawer = true;
+				}
+				if (savedView.showQueueDrawer === true && !showLyricsDrawer) {
+					showQueueDrawer = true;
+				}
+				if (savedView.mobilePlayerTab) {
+					mobilePlayerTab = savedView.mobilePlayerTab;
+				}
+
+				if (savedView.selectedType === 'artist' && savedView.selectedArtistName) {
+					const foundArt = artists.find((a) => a.name.toLowerCase() === savedView.selectedArtistName.toLowerCase().trim());
+					if (foundArt) {
+						selectArtist(foundArt);
+					}
+				} else if (savedView.selectedType === 'playlist' && savedView.selectedPlaylistId) {
+					const foundPl = playlists.find((p) => p.id === savedView.selectedPlaylistId);
+					if (foundPl) {
+						selectPlaylist(foundPl);
+					}
+				} else if (savedView.selectedAlbumId) {
+					const foundAlb = albums.find((a) => a.id === savedView.selectedAlbumId);
+					if (foundAlb) {
+						selectAlbum(foundAlb);
+					}
+				}
+			}
+		} catch {}
+
 		// Initial Target Selection from parameters or player state
 		if (data.initialArtist) {
 			const foundArt = artists.find((a) => a.name.toLowerCase() === data.initialArtist!.toLowerCase().trim());

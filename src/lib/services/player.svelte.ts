@@ -101,6 +101,23 @@ class GlobalPlayer {
 	lastSyncUpdatedBy = $state<string | null>(null);
 
 	private audioEl: HTMLAudioElement | null = null;
+	private lastSavedSessionTime = 0;
+
+	private persistSessionSnapshot() {
+		if (typeof localStorage === 'undefined' || !this.currentTrack) return;
+		try {
+			const snapshot = {
+				track: this.currentTrack,
+				album: this.currentAlbum,
+				queue: this.activeQueue,
+				queueIndex: this.queueIndex,
+				currentTime: Math.round(this.currentTime * 10) / 10,
+				duration: this.duration,
+				savedAt: Date.now()
+			};
+			localStorage.setItem('traxvault_last_session', JSON.stringify(snapshot));
+		} catch {}
+	}
 	private historyTrackIds: number[] = [];
 	private initialized = false;
 	private eventSource: EventSource | null = null;
@@ -174,6 +191,47 @@ class GlobalPlayer {
 				}
 			} catch {}
 
+			// Restore last played track and exact playback position from localStorage
+			try {
+				const savedSessionStr = localStorage.getItem('traxvault_last_session');
+				if (savedSessionStr) {
+					const savedSession = JSON.parse(savedSessionStr);
+					if (savedSession && savedSession.track) {
+						this.currentTrack = savedSession.track;
+						if (savedSession.album) {
+							this.currentAlbum = savedSession.album;
+						}
+						if (Array.isArray(savedSession.queue) && savedSession.queue.length > 0) {
+							this.activeQueue = savedSession.queue;
+						} else {
+							this.activeQueue = [savedSession.track];
+						}
+						if (typeof savedSession.queueIndex === 'number') {
+							this.queueIndex = savedSession.queueIndex;
+						}
+						const savedTime = typeof savedSession.currentTime === 'number' ? Math.max(0, savedSession.currentTime) : 0;
+						this.currentTime = savedTime;
+						this.remoteRefPositionSec = savedTime;
+						this.remoteRefServerMs = Date.now();
+						if (typeof savedSession.duration === 'number' && savedSession.duration > 0) {
+							this.duration = savedSession.duration;
+						} else if (savedSession.track.duration_ms) {
+							this.duration = savedSession.track.duration_ms / 1000;
+						}
+
+						// Prepare audio element with the exact track and seek position (without auto-playing)
+						this.loadedAudioTrackId = savedSession.track.id;
+						el.src = `/api/tracks/${savedSession.track.id}/audio`;
+						el.currentTime = savedTime;
+						this.isPlaying = false;
+						this.updatePlaybackState('paused');
+						this.updateMediaSession();
+					}
+				}
+			} catch (err) {
+				console.warn('[Player] Could not restore last session:', err);
+			}
+
 			// Suspend / Sleep Detection Heartbeat (prevents auto-play audio jumpscares on laptop wake)
 			let lastHeartbeat = Date.now();
 			setInterval(() => {
@@ -219,6 +277,13 @@ class GlobalPlayer {
 			this.currentTime = el.currentTime;
 			this.remoteRefPositionSec = el.currentTime;
 			this.remoteRefServerMs = this.getEstimatedServerNowMs();
+
+			// Throttled persistence: save position every 1 second while playing
+			const now = Date.now();
+			if (now - this.lastSavedSessionTime > 1000) {
+				this.lastSavedSessionTime = now;
+				this.persistSessionSnapshot();
+			}
 		};
 
 		el.ondurationchange = () => {
@@ -412,9 +477,11 @@ class GlobalPlayer {
 				}
 
 				if (data.state && data.state.currentTrack) {
+					// In a personal room, if this device just refreshed and was not playing audio on the server,
+					// keep the restored track and position paused locally rather than letting the server start it
 					this.applyRemotePlaybackState(data.state);
 				} else if (this.currentTrack) {
-					// Room has no track yet, but this device already has a track loaded -> seed room state!
+					// Room has no track yet, but this device restored its last session -> seed room state (paused)!
 					this.broadcastPlaybackState(false);
 				}
 			} catch (err) {
@@ -680,6 +747,8 @@ class GlobalPlayer {
 			if (trackChanged) {
 				this.updateMediaSession();
 			}
+
+			this.persistSessionSnapshot();
 		} finally {
 			this.isApplyingRemoteState = false;
 		}
@@ -1153,6 +1222,7 @@ class GlobalPlayer {
 		}
 
 		this.updateMediaSession();
+		this.persistSessionSnapshot();
 		this.broadcastPlaybackState(true);
 	}
 
@@ -1234,6 +1304,7 @@ class GlobalPlayer {
 		this.remoteRefPositionSec = this.currentTime;
 		this.remoteRefServerMs = this.getEstimatedServerNowMs();
 		this.updatePlaybackState('paused');
+		this.persistSessionSnapshot();
 		this.broadcastPlaybackState(false);
 	}
 
@@ -1330,6 +1401,7 @@ class GlobalPlayer {
 		this.currentTime = clamped;
 		this.remoteRefPositionSec = clamped;
 		this.remoteRefServerMs = this.getEstimatedServerNowMs();
+		this.persistSessionSnapshot();
 		this.broadcastPlaybackState(false);
 	}
 
@@ -1399,6 +1471,9 @@ class GlobalPlayer {
 		this.duration = 0;
 		this.remoteRefPositionSec = 0;
 		this.updatePlaybackState('none');
+		try {
+			localStorage.removeItem('traxvault_last_session');
+		} catch {}
 		if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
 			try {
 				navigator.mediaSession.metadata = null;
