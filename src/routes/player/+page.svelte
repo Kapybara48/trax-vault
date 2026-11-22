@@ -56,8 +56,8 @@
 	let playlists = $state<PlayerPlaylist[]>([...data.playlists]);
 	let artists = $state<PlayerArtist[]>([...(data.artists || [])]);
 
-	// Library Switcher Tab: 'albums' vs 'artists' vs 'playlists'
-	let libraryTab = $state<'albums' | 'artists' | 'playlists'>(
+	// Library Switcher Tab: 'albums' vs 'artists' vs 'songs' vs 'playlists'
+	let libraryTab = $state<'albums' | 'artists' | 'songs' | 'playlists'>(
 		data.initialView === 'playlists' ? 'playlists' : (data.initialView === 'artists' ? 'artists' : 'albums')
 	);
 
@@ -111,6 +111,7 @@
 	let albumFilter = $state<'all' | 'lossless' | 'verified'>('all');
 	let playlistFilter = $state<'all' | 'public' | 'private'>('all');
 	let albumTrackSearch = $state('');
+	let queueSearch = $state('');
 
 	// Side Drawers
 	let showLyricsDrawer = $state(false);
@@ -375,6 +376,54 @@
 			list = list.filter((a) => a.name.toLowerCase().includes(q));
 		}
 		return list;
+	});
+
+	// Flat list of all tracks across all albums for song searching
+	const allLibraryTracks = $derived(
+		albums.flatMap((a) => a.tracks)
+	);
+
+	// Filtered library songs
+	let filteredSongs = $derived.by(() => {
+		let list = allLibraryTracks;
+		if (librarySearch.trim()) {
+			const q = librarySearch.trim().toLowerCase();
+			list = list.filter(
+				(t) =>
+					t.title.toLowerCase().includes(q) ||
+					(t.artist && t.artist.toLowerCase().includes(q)) ||
+					(t.album_title && t.album_title.toLowerCase().includes(q))
+			);
+		}
+		return list;
+	});
+
+	function playLibrarySong(track: Track) {
+		const parentAlbum = albums.find((a) => a.id === track.album_id);
+		if (parentAlbum) {
+			selectedType = 'album';
+			selectedAlbum = parentAlbum;
+			const playable = parentAlbum.tracks.filter((t) => t.is_missing !== 1);
+			player.playTrack(track, parentAlbum, playable);
+		} else {
+			player.playTrack(track, undefined, [track]);
+		}
+		if (mobilePlayerTab === 'library') {
+			mobilePlayerTab = 'tracks';
+		}
+	}
+
+	// Filtered queue next up tracks
+	let filteredQueueTracks = $derived.by(() => {
+		const nextTracks = player.activeQueue.slice(player.queueIndex + 1);
+		if (!queueSearch.trim()) return nextTracks;
+		const q = queueSearch.trim().toLowerCase();
+		return nextTracks.filter(
+			(tr) =>
+				tr.title.toLowerCase().includes(q) ||
+				(tr.artist && tr.artist.toLowerCase().includes(q)) ||
+				(player.currentAlbum?.artist && player.currentAlbum.artist.toLowerCase().includes(q))
+		);
 	});
 
 	// Filtered tracks within currently selected item (album, artist, or playlist)
@@ -1197,96 +1246,6 @@
 				</button>
 			</div>
 		</div>
-	{:else if player.activeRoom?.type === 'shared' || (!player.standaloneMode && (!player.localAudioEnabled || player.connectedDevices.filter((d) => !d.isStandalone).length > 1))}
-		<div
-			class="mx-2 sm:mx-3 mt-2 px-3.5 py-1.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 {player.activeRoom?.type === 'shared'
-				? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
-				: !player.localAudioEnabled
-					? 'bg-cyan-950/60 border-cyan-500/40 text-cyan-200'
-					: 'bg-neutral-900/90 border-neutral-800 text-neutral-300'}"
-		>
-			<div class="flex items-center gap-2 min-w-0">
-				{#if player.activeRoom?.type === 'shared'}
-					<Users class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-					<span class="truncate">
-						Listening Together in <strong class="text-white">{player.activeRoom.name}</strong>
-						<span class="font-mono text-[11px] px-1.5 py-0.2 rounded bg-neutral-900/90 text-emerald-300 border border-emerald-500/30 ml-1">
-							{player.activeRoom.code}
-						</span>
-						<span class="text-neutral-400 ml-1">
-							&bull; {player.connectedDevices.length} {player.connectedDevices.length === 1 ? 'listener' : 'listeners'}
-						</span>
-					</span>
-				{:else if !player.localAudioEnabled}
-					<Radio class="w-3.5 h-3.5 text-cyan-400 animate-pulse shrink-0" />
-					<span class="truncate">
-						<strong>Companion Display &amp; Synced Lyrics Remote</strong>
-						<span class="hidden sm:inline text-cyan-300/80">
-							&bull; Audio muted on this device while controlling active speaker
-						</span>
-					</span>
-				{:else}
-					<Radio class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-					<span class="truncate">
-						Synced across <strong class="text-white">{player.connectedDevices.filter((d) => !d.isStandalone).length} devices</strong>
-					</span>
-				{/if}
-			</div>
-
-			<div class="flex items-center gap-1.5 shrink-0">
-				{#if !player.localAudioEnabled}
-					<button
-						type="button"
-						onclick={() => player.setLocalAudioMode(true, true)}
-						class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-neutral-950 border border-emerald-500/40 text-[11px] font-bold transition cursor-pointer"
-						title="Transfer exclusive audio playback to this device"
-					>
-						Transfer Audio Here
-					</button>
-					<button
-						type="button"
-						onclick={() => player.setLocalAudioMode(true, false)}
-						class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer hidden sm:inline-flex"
-						title="Play synchronized audio on both devices simultaneously"
-					>
-						Play on Both
-					</button>
-					<button
-						type="button"
-						onclick={() => player.setStandaloneMode(true)}
-						class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
-						title="Turn off sync so this device plays independently"
-					>
-						Turn Off Sync
-					</button>
-				{:else if player.connectedDevices.filter((d) => !d.isStandalone).length > 1}
-					<button
-						type="button"
-						onclick={() => player.setLocalAudioMode(false, false)}
-						class="px-2.5 py-1 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-cyan-300 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
-						title="Mute local audio and use this device as a live synced lyrics & remote control display"
-					>
-						Lyrics Companion
-					</button>
-					<button
-						type="button"
-						onclick={() => player.setStandaloneMode(true)}
-						class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
-						title="Turn off sync so this device plays independently"
-					>
-						Turn Off Sync
-					</button>
-				{/if}
-
-				<button
-					type="button"
-					onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
-					class="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white border border-neutral-700 text-[11px] font-bold transition cursor-pointer"
-				>
-					Manage Sync
-				</button>
-			</div>
-		</div>
 	{/if}
 
 	<!-- Mobile View Switcher (Phones & Small Tablets < md) -->
@@ -1368,39 +1327,50 @@
 					</div>
 				</div>
 
-				<!-- Segmented Switcher: Albums vs Artists vs Playlists -->
-				<div class="grid grid-cols-3 p-0.5 rounded-xl bg-neutral-950/80 border border-neutral-800 mb-2.5">
+				<!-- Segmented Switcher: Albums vs Artists vs Songs vs Playlists -->
+				<div class="grid grid-cols-4 p-0.5 rounded-xl bg-neutral-950/80 border border-neutral-800 mb-2.5">
 					<button
 						type="button"
 						onclick={() => (libraryTab = 'albums')}
-						class="flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer {libraryTab === 'albums'
+						class="flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer {libraryTab === 'albums'
 							? 'bg-neutral-800 text-white shadow-sm'
 							: 'text-neutral-400 hover:text-neutral-200'}"
 					>
-						<Disc3 class="w-3.5 h-3.5 {libraryTab === 'albums' ? 'text-emerald-400' : ''}" />
-						<span class="truncate">Albums ({albums.length})</span>
+						<Disc3 class="w-3 h-3 {libraryTab === 'albums' ? 'text-emerald-400' : ''}" />
+						<span class="truncate">Albums</span>
 					</button>
 
 					<button
 						type="button"
 						onclick={() => (libraryTab = 'artists')}
-						class="flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer {libraryTab === 'artists'
+						class="flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer {libraryTab === 'artists'
 							? 'bg-neutral-800 text-white shadow-sm'
 							: 'text-neutral-400 hover:text-neutral-200'}"
 					>
-						<User class="w-3.5 h-3.5 {libraryTab === 'artists' ? 'text-emerald-400' : ''}" />
-						<span class="truncate">Artists ({artists.length})</span>
+						<User class="w-3 h-3 {libraryTab === 'artists' ? 'text-emerald-400' : ''}" />
+						<span class="truncate">Artists</span>
+					</button>
+
+					<button
+						type="button"
+						onclick={() => (libraryTab = 'songs')}
+						class="flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer {libraryTab === 'songs'
+							? 'bg-neutral-800 text-white shadow-sm'
+							: 'text-neutral-400 hover:text-neutral-200'}"
+					>
+						<Music class="w-3 h-3 {libraryTab === 'songs' ? 'text-emerald-400' : ''}" />
+						<span class="truncate">Songs</span>
 					</button>
 
 					<button
 						type="button"
 						onclick={() => (libraryTab = 'playlists')}
-						class="flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer {libraryTab === 'playlists'
+						class="flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer {libraryTab === 'playlists'
 							? 'bg-neutral-800 text-white shadow-sm'
 							: 'text-neutral-400 hover:text-neutral-200'}"
 					>
-						<ListMusic class="w-3.5 h-3.5 {libraryTab === 'playlists' ? 'text-emerald-400' : ''}" />
-						<span class="truncate">Playlists ({playlists.length})</span>
+						<ListMusic class="w-3 h-3 {libraryTab === 'playlists' ? 'text-emerald-400' : ''}" />
+						<span class="truncate">Playlists</span>
 					</button>
 				</div>
 
@@ -1410,7 +1380,7 @@
 					<input
 						type="text"
 						bind:value={librarySearch}
-						placeholder={libraryTab === 'albums' ? 'Search album, artist...' : (libraryTab === 'artists' ? 'Search artists...' : 'Search playlists...')}
+						placeholder={libraryTab === 'albums' ? 'Search album, artist...' : (libraryTab === 'artists' ? 'Search artists...' : (libraryTab === 'songs' ? 'Search all songs...' : 'Search playlists...'))}
 						class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-8 pr-3 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60 transition"
 					/>
 					{#if librarySearch}
@@ -1601,6 +1571,65 @@
 					{#if filteredArtists.length === 0}
 						<div class="p-6 text-center text-xs text-neutral-500">
 							No artists found matching your search.
+						</div>
+					{/if}
+				{:else if libraryTab === 'songs'}
+					<!-- ALL SONGS LIST -->
+					{#each filteredSongs as track}
+						{@const isCurrentTrack = player.currentTrack?.id === track.id}
+						{@const isCurrentPlaying = isCurrentTrack && player.isPlaying}
+						{@const isMissing = track.is_missing === 1}
+						<div
+							role="button"
+							tabindex="0"
+							onclick={() => {
+								if (!isMissing) playLibrarySong(track);
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' && !isMissing) playLibrarySong(track);
+							}}
+							class="w-full flex items-center gap-2.5 p-2 rounded-xl transition text-left cursor-pointer group border {isCurrentTrack
+								? 'bg-neutral-800/80 border-emerald-500/40 text-white shadow-md'
+								: 'border-transparent text-neutral-300 hover:bg-neutral-800/40 hover:text-white'}"
+						>
+							<div class="relative w-10 h-10 rounded-lg overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm flex items-center justify-center">
+								{#if track.album_cover_url}
+									<img src={track.album_cover_url} alt={track.title} class="w-full h-full object-cover" />
+								{:else}
+									<Music class="w-4 h-4 text-neutral-600" />
+								{/if}
+								{#if isCurrentPlaying}
+									<div class="absolute inset-0 bg-neutral-950/70 flex items-center justify-center">
+										<div class="flex items-end gap-0.5 h-3">
+											<span class="w-0.5 bg-emerald-400 animate-pulse h-full"></span>
+											<span class="w-0.5 bg-emerald-400 animate-pulse h-1.5"></span>
+											<span class="w-0.5 bg-emerald-400 animate-pulse h-full"></span>
+										</div>
+									</div>
+								{/if}
+							</div>
+
+							<div class="min-w-0 flex-1">
+								<div class="text-xs font-semibold truncate {isCurrentTrack ? 'text-emerald-300' : 'text-white'}">
+									{track.title}
+								</div>
+								<div class="text-[10px] text-neutral-400 truncate">
+									{track.artist || track.album_artist || 'Unknown Artist'} &bull; {track.album_title || ''}
+								</div>
+							</div>
+
+							<div class="text-right shrink-0">
+								<span class="text-[10px] font-mono text-neutral-500 block">{formatDurationMs(track.duration_ms)}</span>
+								{#if track.format}
+									<span class="text-[9px] font-mono text-neutral-400">{track.format}</span>
+								{/if}
+							</div>
+						</div>
+					{/each}
+
+					{#if filteredSongs.length === 0}
+						<div class="p-6 text-center text-xs text-neutral-500">
+							No songs found matching your search.
 						</div>
 					{/if}
 				{:else}
@@ -1794,16 +1823,16 @@
 												userScrolledLyrics = false;
 											}
 										}}
-										class="w-full text-left cursor-pointer rounded-2xl px-4 py-2.5 text-[17px] font-semibold leading-relaxed border transition-all duration-200 {isActive
-											? 'text-emerald-300 bg-emerald-950/40 border-emerald-500/40 drop-shadow-[0_0_14px_rgba(16,185,129,0.4)] scale-[1.01]'
+										class="w-full text-left cursor-pointer rounded-2xl px-4 py-2.5 text-[18px] sm:text-[20px] font-semibold leading-relaxed transition-all duration-200 border-0 outline-none {isActive
+											? 'text-emerald-300 bg-neutral-800/40 drop-shadow-[0_0_16px_rgba(16,185,129,0.25)] scale-[1.04] origin-left'
 											: i < activeLyricLineIndex
-											? 'text-neutral-500 border-transparent hover:text-neutral-300 hover:bg-neutral-800/30'
-											: 'text-neutral-300 border-transparent hover:text-white hover:bg-neutral-800/30'}"
+											? 'text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800/30'
+											: 'text-neutral-300 hover:text-white hover:bg-neutral-800/30'}"
 									>
 										{#if isActive && line.words && line.words.length > 0}
 											{#each line.words as w}
 												{@const isWordSung = player.currentTime >= w.time}
-												<span class="transition-colors duration-100 {isWordSung ? 'text-emerald-300 font-bold drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'text-neutral-400 opacity-60'}">
+												<span class="transition-colors duration-100 font-semibold {isWordSung ? 'text-emerald-300 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'text-neutral-400 opacity-60'}">
 													{w.text}
 												</span>
 											{/each}
@@ -1982,12 +2011,12 @@
 								</button>
 
 								<!-- Search in Album -->
-								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-32' : 'w-48'}">
+								<div class="relative ml-auto {showLyricsDrawer ? 'w-28 sm:w-36' : 'w-36 sm:w-48'}">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
 										bind:value={albumTrackSearch}
-										placeholder="Filter..."
+										placeholder="Search songs..."
 										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-7 pr-2.5 py-1 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
 									/>
 								</div>
@@ -2369,12 +2398,12 @@
 								</button>
 
 								<!-- Search in Playlist -->
-								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-32' : 'w-48'}">
+								<div class="relative ml-auto {showLyricsDrawer ? 'w-28 sm:w-36' : 'w-36 sm:w-48'}">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
 										bind:value={albumTrackSearch}
-										placeholder="Filter..."
+										placeholder="Search songs..."
 										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-7 pr-2.5 py-1 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
 									/>
 								</div>
@@ -2771,12 +2800,12 @@
 								{/if}
 
 								<!-- Search in Artist Tracks -->
-								<div class="relative ml-auto hidden md:block {showLyricsDrawer ? 'w-36' : 'w-52'}">
+								<div class="relative ml-auto {showLyricsDrawer ? 'w-28 sm:w-36' : 'w-36 sm:w-52'}">
 									<Search class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
 									<input
 										type="text"
 										bind:value={albumTrackSearch}
-										placeholder="Filter artist songs..."
+										placeholder="Search songs..."
 										class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-xl pl-8 pr-3 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60"
 									/>
 								</div>
@@ -3049,6 +3078,28 @@
 					</button>
 				</div>
 
+				<!-- Queue Search Input -->
+				<div class="px-3.5 py-2 border-b border-neutral-800/40 shrink-0">
+					<div class="relative">
+						<Search class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+						<input
+							type="text"
+							bind:value={queueSearch}
+							placeholder="Search in queue..."
+							class="w-full bg-neutral-950/80 text-xs text-white placeholder-neutral-500 rounded-lg pl-8 pr-3 py-1.5 border border-neutral-800 focus:outline-none focus:border-emerald-500/60 transition"
+						/>
+						{#if queueSearch}
+							<button
+								type="button"
+								onclick={() => (queueSearch = '')}
+								class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white text-xs"
+							>
+								✕
+							</button>
+						{/if}
+					</div>
+				</div>
+
 				<!-- Drawer Scrollable Body -->
 				<div class="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
 					<div class="space-y-2">
@@ -3078,7 +3129,7 @@
 						<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block pt-3 mb-2">
 							Next Up ({Math.max(0, player.activeQueue.length - player.queueIndex - 1)})
 						</span>
-						{#each player.activeQueue.slice(player.queueIndex + 1) as nextTr}
+						{#each filteredQueueTracks as nextTr}
 							<button
 								type="button"
 								onclick={() => player.playTrack(nextTr, player.currentAlbum || undefined, player.activeQueue)}
@@ -3101,6 +3152,12 @@
 								</div>
 							</button>
 						{/each}
+
+						{#if queueSearch.trim() && filteredQueueTracks.length === 0}
+							<div class="p-4 text-center text-xs text-neutral-500">
+								No queued songs match "{queueSearch}".
+							</div>
+						{/if}
 					</div>
 				</div>
 			</aside>

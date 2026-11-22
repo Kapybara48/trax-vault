@@ -300,7 +300,7 @@
 	<!-- Page Header -->
 	<div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 		<div class="flex items-center gap-3">
-			<div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-950/80 border border-emerald-600/40 text-emerald-400 shadow-lg shadow-emerald-950/50">
+			<div class="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-950/80 border border-emerald-600/40 text-emerald-400 shadow-lg shadow-emerald-950/50">
 				<Settings class="h-6 w-6" />
 			</div>
 			<div>
@@ -314,7 +314,7 @@
 
 	<!-- Auth Disabled Warning Banner -->
 	{#if data.authDisabled}
-		<div class="mb-6 rounded-2xl border border-amber-600/40 bg-amber-950/40 p-4 sm:p-5 text-amber-200 shadow-xl backdrop-blur-md">
+		<div class="mb-6 rounded-lg border border-amber-600/40 bg-amber-950/40 p-4 sm:p-5 text-amber-200 shadow-xl backdrop-blur-md">
 			<div class="flex items-start gap-3.5">
 				<AlertTriangle class="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
 				<div class="text-xs leading-relaxed space-y-1">
@@ -339,7 +339,7 @@
 					<button
 						type="button"
 						onclick={() => (activeTab = 'users')}
-						class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'users'
+						class="flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'users'
 							? 'bg-emerald-500 text-neutral-950 shadow-md'
 							: 'bg-neutral-900 border border-neutral-800 text-neutral-300'}"
 					>
@@ -350,7 +350,7 @@
 				<button
 					type="button"
 					onclick={() => (activeTab = 'account')}
-					class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'account'
+					class="flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'account'
 						? 'bg-emerald-500 text-neutral-950 shadow-md'
 						: 'bg-neutral-900 border border-neutral-800 text-neutral-300'}"
 				>
@@ -360,7 +360,7 @@
 				<button
 					type="button"
 					onclick={() => (activeTab = 'subsonic')}
-					class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'subsonic'
+					class="flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'subsonic'
 						? 'bg-emerald-500 text-neutral-950 shadow-md'
 						: 'bg-neutral-900 border border-neutral-800 text-neutral-300'}"
 				>
@@ -370,7 +370,7 @@
 				<button
 					type="button"
 					onclick={() => (activeTab = 'system')}
-					class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'system'
+					class="flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold shrink-0 transition cursor-pointer {activeTab === 'system'
 						? 'bg-emerald-500 text-neutral-950 shadow-md'
 						: 'bg-neutral-900 border border-neutral-800 text-neutral-300'}"
 				>
@@ -380,12 +380,12 @@
 			</div>
 
 			<!-- Desktop Vertical List -->
-			<div class="hidden md:flex flex-col gap-1.5 p-2 rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl">
+			<div class="hidden md:flex flex-col gap-1.5 p-2 rounded-lg border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl">
 				{#if data.account?.role === 'admin'}
 					<button
 						type="button"
 						onclick={() => (activeTab = 'users')}
-						class="w-full flex items-center justify-between p-3 rounded-xl text-left text-xs transition cursor-pointer {activeTab === 'users'
+						class="w-full flex items-center justify-between p-3 rounded-md text-left text-xs transition cursor-pointer {activeTab === 'users'
 							? 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold shadow-md'
 							: 'text-neutral-400 hover:text-white hover:bg-neutral-800/60 border border-transparent font-medium'}"
 					>
@@ -407,7 +407,7 @@
 				<button
 					type="button"
 					onclick={() => (activeTab = 'account')}
-					class="w-full flex items-center justify-between p-3 rounded-xl text-left text-xs transition cursor-pointer {activeTab === 'account'
+					class="w-full flex items-center justify-between p-3 rounded-md text-left text-xs transition cursor-pointer {activeTab === 'account'
 						? 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold shadow-md'
 						: 'text-neutral-400 hover:text-white hover:bg-neutral-800/60 border border-transparent font-medium'}"
 				>
@@ -425,7 +425,7 @@
 				<button
 					type="button"
 					onclick={() => (activeTab = 'subsonic')}
-					class="w-full flex items-center justify-between p-3 rounded-xl text-left text-xs transition cursor-pointer {activeTab === 'subsonic'
+					class="w-full flex items-center justify-between p-3 rounded-md text-left text-xs transition cursor-pointer {activeTab === 'subsonic'
 						? 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold shadow-md'
 						: 'text-neutral-400 hover:text-white hover:bg-neutral-800/60 border border-transparent font-medium'}"
 				>
@@ -443,7 +443,7 @@
 				<button
 					type="button"
 					onclick={() => (activeTab = 'system')}
-					class="w-full flex items-center justify-between p-3 rounded-xl text-left text-xs transition cursor-pointer {activeTab === 'system'
+					class="w-full flex items-center justify-between p-3 rounded-md text-left text-xs transition cursor-pointer {activeTab === 'system'
 						? 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold shadow-md'
 						: 'text-neutral-400 hover:text-white hover:bg-neutral-800/60 border border-transparent font-medium'}"
 				>
@@ -464,10 +464,10 @@
 		<div class="flex-1 min-w-0 w-full space-y-6">
 			<!-- TAB 1: USERS (DEFAULT FOR ADMINS) -->
 			{#if activeTab === 'users' && data.account?.role === 'admin'}
-				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
+				<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
 					<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-neutral-800/80 pb-5 mb-6">
 						<div class="flex items-center gap-3">
-							<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-950/80 border border-purple-600/40 text-purple-400">
+							<div class="flex h-10 w-10 items-center justify-center rounded-md bg-purple-950/80 border border-purple-600/40 text-purple-400">
 								<Users class="h-5 w-5" />
 							</div>
 							<div>
@@ -501,7 +501,7 @@
 							<button
 								type="button"
 								onclick={() => { showAddUserModal = true; addUserError = null; }}
-								class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-950 transition cursor-pointer"
+								class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-950 transition cursor-pointer"
 							>
 								<UserPlus class="h-3.5 w-3.5" />
 								<span>Add User</span>
@@ -512,9 +512,9 @@
 					<!-- Users List -->
 					<div class="space-y-3">
 						{#each usersList as u (u.id)}
-							<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 sm:p-4 rounded-2xl border border-neutral-800/80 bg-neutral-950/50 hover:bg-neutral-950/80 transition gap-3">
+							<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 sm:p-4 rounded-lg border border-neutral-800/80 bg-neutral-950/50 hover:bg-neutral-950/80 transition gap-3">
 								<div class="flex items-center gap-3">
-									<div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-bold text-xs uppercase {u.role === 'admin' ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/40' : 'bg-neutral-800 text-neutral-300 border border-neutral-700'}">
+									<div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md font-bold text-xs uppercase {u.role === 'admin' ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/40' : 'bg-neutral-800 text-neutral-300 border border-neutral-700'}">
 										{u.username.slice(0, 2)}
 									</div>
 									<div>
@@ -587,9 +587,9 @@
 			{:else if activeTab === 'account'}
 				<div class="space-y-6">
 					<!-- Account Profile Card -->
-					<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
+					<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
 						<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-5 mb-6">
-							<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-800 border border-neutral-700 text-emerald-400">
+							<div class="flex h-10 w-10 items-center justify-center rounded-md bg-neutral-800 border border-neutral-700 text-emerald-400">
 								<User class="h-5 w-5" />
 							</div>
 							<div>
@@ -599,7 +599,7 @@
 						</div>
 
 						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-							<div class="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70">
+							<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70">
 								<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-1">Username</span>
 								<div class="flex items-center gap-2">
 									<span class="font-bold text-neutral-100 text-sm">{data.account?.username || 'admin'}</span>
@@ -609,7 +609,7 @@
 								</div>
 							</div>
 
-							<div class="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70">
+							<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70">
 								<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-1">Status</span>
 								<div class="flex items-center gap-1.5 text-emerald-400">
 									<ShieldCheck class="h-4 w-4" />
@@ -619,7 +619,7 @@
 								</div>
 							</div>
 
-							<div class="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70">
+							<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70">
 								<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-1">Active Sessions</span>
 								<span class="font-medium text-neutral-200">
 									{data.activeSessionsCount} active login session{data.activeSessionsCount === 1 ? '' : 's'}
@@ -627,7 +627,7 @@
 							</div>
 
 							{#if data.account?.created_at}
-								<div class="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70">
+								<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70">
 									<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block mb-1">Member Since</span>
 									<span class="font-medium text-neutral-300">
 										{new Date(data.account.created_at).toLocaleDateString()}
@@ -638,9 +638,9 @@
 					</div>
 
 					<!-- Change Password Card -->
-					<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
+					<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
 						<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-5 mb-6">
-							<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-950/80 border border-emerald-600/40 text-emerald-400">
+							<div class="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-950/80 border border-emerald-600/40 text-emerald-400">
 								<KeyRound class="h-5 w-5" />
 							</div>
 							<div>
@@ -651,7 +651,7 @@
 
 						<!-- Success Message -->
 						{#if clientSuccess || form?.success}
-							<div class="mb-6 rounded-2xl border border-emerald-600/40 bg-emerald-950/40 p-4 text-xs text-emerald-200 flex items-center gap-3">
+							<div class="mb-6 rounded-lg border border-emerald-600/40 bg-emerald-950/40 p-4 text-xs text-emerald-200 flex items-center gap-3">
 								<CheckCircle2 class="h-5 w-5 shrink-0 text-emerald-400" />
 								<span>{clientSuccess || form?.message || 'Password changed successfully!'}</span>
 							</div>
@@ -659,7 +659,7 @@
 
 						<!-- Error Message -->
 						{#if clientError || form?.error}
-							<div class="mb-6 rounded-2xl border border-rose-800/80 bg-rose-950/60 p-4 text-xs text-rose-300 flex items-center gap-3">
+							<div class="mb-6 rounded-lg border border-rose-800/80 bg-rose-950/60 p-4 text-xs text-rose-300 flex items-center gap-3">
 								<AlertCircle class="h-5 w-5 shrink-0 text-rose-400" />
 								<span>{clientError || form?.error}</span>
 							</div>
@@ -682,7 +682,7 @@
 										bind:value={currentPassword}
 										placeholder="Enter current password"
 										autocomplete="current-password"
-										class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-10 pr-11 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+										class="w-full rounded-md border border-neutral-700 bg-neutral-950 pl-10 pr-11 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
 									/>
 									<button
 										type="button"
@@ -717,7 +717,7 @@
 										bind:value={newPassword}
 										placeholder="Enter new secure password"
 										autocomplete="new-password"
-										class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-10 pr-11 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+										class="w-full rounded-md border border-neutral-700 bg-neutral-950 pl-10 pr-11 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
 									/>
 									<button
 										type="button"
@@ -752,7 +752,7 @@
 										bind:value={confirmPassword}
 										placeholder="Repeat new password"
 										autocomplete="new-password"
-										class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-10 pr-11 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed {confirmPassword.length > 0 && !passwordsMatch ? 'border-rose-600 focus:border-rose-500 focus:ring-rose-500' : ''}"
+										class="w-full rounded-md border border-neutral-700 bg-neutral-950 pl-10 pr-11 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed {confirmPassword.length > 0 && !passwordsMatch ? 'border-rose-600 focus:border-rose-500 focus:ring-rose-500' : ''}"
 									/>
 									<button
 										type="button"
@@ -778,7 +778,7 @@
 								<button
 									type="submit"
 									disabled={isSubmitting || data.authDisabled || !passwordsMatch || newPassword.length < 6}
-									class="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+									class="w-full sm:w-auto flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-6 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
 								>
 									{#if isSubmitting}
 										<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
@@ -795,9 +795,9 @@
 
 			<!-- TAB 3: SUBSONIC & STREAMING -->
 			{:else if activeTab === 'subsonic'}
-				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl space-y-6">
+				<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl space-y-6">
 					<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-5">
-						<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-950/80 border border-purple-500/40 text-purple-400">
+						<div class="flex h-10 w-10 items-center justify-center rounded-md bg-purple-950/80 border border-purple-500/40 text-purple-400">
 							<Radio class="h-5 w-5" />
 						</div>
 						<div>
@@ -812,12 +812,12 @@
 							<span class="text-xs font-semibold text-neutral-300">Server Connection URL</span>
 							<span class="text-[11px] text-emerald-400 font-medium">Standard Base URL</span>
 						</div>
-						<div class="flex items-center justify-between gap-2 font-mono text-xs sm:text-sm text-neutral-200 bg-neutral-950 p-3 rounded-2xl border border-neutral-800">
+						<div class="flex items-center justify-between gap-2 font-mono text-xs sm:text-sm text-neutral-200 bg-neutral-950 p-3 rounded-lg border border-neutral-800">
 							<span class="truncate select-all">{data.serverBaseUrl}</span>
 							<button
 								type="button"
 								onclick={copyServerUrl}
-								class="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-200 hover:text-white transition cursor-pointer flex items-center gap-1.5 shrink-0"
+								class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-neutral-200 hover:text-white transition cursor-pointer flex items-center gap-1.5 shrink-0"
 								title="Copy Server URL"
 							>
 								{#if copiedServerUrl}
@@ -835,7 +835,7 @@
 					</div>
 
 					<!-- Credentials Notice -->
-					<div class="p-4 rounded-2xl bg-neutral-950/80 border border-neutral-800 space-y-2">
+					<div class="p-4 rounded-lg bg-neutral-950/80 border border-neutral-800 space-y-2">
 						<div class="flex items-center gap-2 text-xs font-semibold text-white">
 							<ShieldCheck class="w-4 h-4 text-emerald-400" />
 							<span>Standard Account Credentials</span>
@@ -847,7 +847,7 @@
 
 					<!-- Streaming Capabilities Grid -->
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-						<div class="p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/70 text-xs">
+						<div class="p-3 rounded-md bg-neutral-950/50 border border-neutral-800/70 text-xs">
 							<div class="font-semibold text-neutral-200 flex items-center gap-2">
 								<Music class="w-3.5 h-3.5 text-emerald-400" />
 								<span>Lossless Audio Streaming</span>
@@ -855,7 +855,7 @@
 							<p class="text-[11px] text-neutral-400 mt-1">FLAC, ALAC, WAV, and MP3 streaming with HTTP 206 byte-seeking</p>
 						</div>
 
-						<div class="p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/70 text-xs">
+						<div class="p-3 rounded-md bg-neutral-950/50 border border-neutral-800/70 text-xs">
 							<div class="font-semibold text-neutral-200 flex items-center gap-2">
 								<Radio class="w-3.5 h-3.5 text-purple-400" />
 								<span>Karaoke Synced Lyrics</span>
@@ -863,7 +863,7 @@
 							<p class="text-[11px] text-neutral-400 mt-1">Millisecond-timed structured lyrics via OpenSubsonic <code class="text-neutral-300">getLyricsBySongId</code></p>
 						</div>
 
-						<div class="p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/70 text-xs">
+						<div class="p-3 rounded-md bg-neutral-950/50 border border-neutral-800/70 text-xs">
 							<div class="font-semibold text-neutral-200 flex items-center gap-2">
 								<Heart class="w-3.5 h-3.5 text-rose-400" />
 								<span>Playlists &amp; Favorites</span>
@@ -871,7 +871,7 @@
 							<p class="text-[11px] text-neutral-400 mt-1">Full 2-way playlist sync and track/album starring</p>
 						</div>
 
-						<div class="p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/70 text-xs">
+						<div class="p-3 rounded-md bg-neutral-950/50 border border-neutral-800/70 text-xs">
 							<div class="font-semibold text-neutral-200 flex items-center gap-2">
 								<User class="w-3.5 h-3.5 text-cyan-400" />
 								<span>Artist Metadata &amp; Artwork</span>
@@ -879,7 +879,7 @@
 							<p class="text-[11px] text-neutral-400 mt-1">Cached Cover Art Archive covers and artist photography</p>
 						</div>
 
-						<div class="p-3 rounded-xl bg-neutral-950/50 border border-neutral-800/70 text-xs sm:col-span-2">
+						<div class="p-3 rounded-md bg-neutral-950/50 border border-neutral-800/70 text-xs sm:col-span-2">
 							<div class="font-semibold text-neutral-200 flex items-center gap-2">
 								<Zap class="w-3.5 h-3.5 text-amber-400" />
 								<span>On-the-Fly Audio Transcoding</span>
@@ -903,7 +903,7 @@
 						</button>
 
 						{#if showSubsonicCacheTips}
-							<div class="mt-2 rounded-2xl bg-neutral-950/90 border border-neutral-800 p-4 space-y-3 text-xs text-neutral-400 animate-in fade-in duration-150">
+							<div class="mt-2 rounded-lg bg-neutral-950/90 border border-neutral-800 p-4 space-y-3 text-xs text-neutral-400 animate-in fade-in duration-150">
 								<div>
 									<p class="font-semibold text-neutral-200 mb-1">🎵 Updating Synced Lyrics (.lrc) &amp; Tags</p>
 									<p class="leading-relaxed text-[11px]">
@@ -946,9 +946,9 @@
 
 			<!-- TAB 4: SYSTEM INFORMATION -->
 			{:else if activeTab === 'system'}
-				<div class="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl space-y-5">
+				<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl space-y-5">
 					<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-5">
-						<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-800 border border-neutral-700 text-emerald-400">
+						<div class="flex h-10 w-10 items-center justify-center rounded-md bg-neutral-800 border border-neutral-700 text-emerald-400">
 							<HardDrive class="h-5 w-5" />
 						</div>
 						<div>
@@ -958,7 +958,7 @@
 					</div>
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-						<div class="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70 space-y-1">
+						<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-1">
 							<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block">Application Version</span>
 							<div class="flex items-center gap-2 font-mono">
 								<span class="rounded-md bg-emerald-950/80 border border-emerald-600/40 px-2 py-0.5 text-xs font-bold text-emerald-300">
@@ -968,12 +968,12 @@
 							</div>
 						</div>
 
-						<div class="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70 space-y-1">
+						<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-1">
 							<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block">Environment</span>
 							<span class="font-mono text-neutral-200 uppercase text-xs">{data.env.nodeEnv}</span>
 						</div>
 
-						<div class="sm:col-span-2 p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70 space-y-1">
+						<div class="sm:col-span-2 p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-1">
 							<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block">Database Storage</span>
 							<div class="flex items-center gap-2 font-mono text-xs text-neutral-300 break-all">
 								<Layers class="h-4 w-4 shrink-0 text-emerald-400" />
@@ -981,7 +981,7 @@
 							</div>
 						</div>
 
-						<div class="sm:col-span-2 p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70 space-y-1">
+						<div class="sm:col-span-2 p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-1">
 							<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block">Music Library Folder</span>
 							<div class="flex items-center gap-2 font-mono text-xs text-neutral-300 break-all">
 								<Folder class="h-4 w-4 shrink-0 text-emerald-400" />
@@ -990,7 +990,7 @@
 						</div>
 
 						{#if data.versionInfo.metadata.migrated_from}
-							<div class="sm:col-span-2 p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800/70 space-y-1">
+							<div class="sm:col-span-2 p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-1">
 								<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block">Migration Bridge</span>
 								<span class="font-mono text-emerald-400 text-xs">Upgraded from v{data.versionInfo.metadata.migrated_from}</span>
 							</div>
@@ -1004,10 +1004,10 @@
 	<!-- Add User Modal -->
 	{#if showAddUserModal}
 		<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-			<div class="w-full max-w-md rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+			<div class="w-full max-w-md rounded-lg border border-neutral-800 bg-neutral-900 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
 				<div class="flex items-center justify-between border-b border-neutral-800 pb-4">
 					<div class="flex items-center gap-2.5">
-						<div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-950 border border-emerald-600/40 text-emerald-400">
+						<div class="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-950 border border-emerald-600/40 text-emerald-400">
 							<UserPlus class="h-5 w-5" />
 						</div>
 						<h3 class="text-base font-bold text-white">Create User Account</h3>
@@ -1022,7 +1022,7 @@
 				</div>
 
 				{#if addUserError}
-					<div class="rounded-xl border border-rose-800/80 bg-rose-950/60 p-3 text-xs text-rose-300 flex items-center gap-2">
+					<div class="rounded-md border border-rose-800/80 bg-rose-950/60 p-3 text-xs text-rose-300 flex items-center gap-2">
 						<AlertCircle class="h-4 w-4 shrink-0 text-rose-400" />
 						<span>{addUserError}</span>
 					</div>
@@ -1041,7 +1041,7 @@
 							maxlength="32"
 							bind:value={newUsername}
 							placeholder="e.g. listener42"
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							class="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
 						<p class="mt-1 text-[11px] text-neutral-500">3-32 characters (letters, numbers, underscores, hyphens)</p>
 					</div>
@@ -1057,7 +1057,7 @@
 							minlength="6"
 							bind:value={newUserPassword}
 							placeholder="Minimum 6 characters"
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							class="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
 					</div>
 
@@ -1068,7 +1068,7 @@
 						<select
 							id="modalRole"
 							bind:value={newUserRole}
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs sm:text-sm text-neutral-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+							class="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs sm:text-sm text-neutral-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
 						>
 							<option value="user">User (Standard streaming &amp; personal playlists)</option>
 							<option value="admin">Administrator (Full settings &amp; tagging management)</option>
@@ -1079,14 +1079,14 @@
 						<button
 							type="button"
 							onclick={() => (showAddUserModal = false)}
-							class="rounded-xl px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+							class="rounded-md px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
 						>
 							Cancel
 						</button>
 						<button
 							type="submit"
 							disabled={isAddingUser || newUsername.trim().length < 3 || newUserPassword.length < 6}
-							class="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500 disabled:opacity-50 transition cursor-pointer"
+							class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-emerald-950 hover:bg-emerald-500 disabled:opacity-50 transition cursor-pointer"
 						>
 							{#if isAddingUser}
 								<div class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
@@ -1105,10 +1105,10 @@
 	<!-- Admin Reset Password Modal -->
 	{#if showResetPwModal && resetTargetUser}
 		<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-			<div class="w-full max-w-md rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+			<div class="w-full max-w-md rounded-lg border border-neutral-800 bg-neutral-900 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
 				<div class="flex items-center justify-between border-b border-neutral-800 pb-4">
 					<div class="flex items-center gap-2.5">
-						<div class="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-950 border border-purple-600/40 text-purple-400">
+						<div class="flex h-9 w-9 items-center justify-center rounded-md bg-purple-950 border border-purple-600/40 text-purple-400">
 							<KeyRound class="h-5 w-5" />
 						</div>
 						<div>
@@ -1126,14 +1126,14 @@
 				</div>
 
 				{#if resetPwError}
-					<div class="rounded-xl border border-rose-800/80 bg-rose-950/60 p-3 text-xs text-rose-300 flex items-center gap-2">
+					<div class="rounded-md border border-rose-800/80 bg-rose-950/60 p-3 text-xs text-rose-300 flex items-center gap-2">
 						<AlertCircle class="h-4 w-4 shrink-0 text-rose-400" />
 						<span>{resetPwError}</span>
 					</div>
 				{/if}
 
 				{#if resetPwSuccess}
-					<div class="rounded-xl border border-emerald-600/40 bg-emerald-950/60 p-3 text-xs text-emerald-300 flex items-center gap-2">
+					<div class="rounded-md border border-emerald-600/40 bg-emerald-950/60 p-3 text-xs text-emerald-300 flex items-center gap-2">
 						<CheckCircle2 class="h-4 w-4 shrink-0 text-emerald-400" />
 						<span>{resetPwSuccess}</span>
 					</div>
@@ -1151,7 +1151,7 @@
 							minlength="6"
 							bind:value={adminResetNewPw}
 							placeholder="Enter new password"
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+							class="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
 						/>
 					</div>
 
@@ -1166,7 +1166,7 @@
 							minlength="6"
 							bind:value={adminResetConfirmPw}
 							placeholder="Confirm new password"
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 {adminResetConfirmPw.length > 0 && adminResetNewPw !== adminResetConfirmPw ? 'border-rose-600' : ''}"
+							class="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3.5 py-2 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 {adminResetConfirmPw.length > 0 && adminResetNewPw !== adminResetConfirmPw ? 'border-rose-600' : ''}"
 						/>
 						{#if adminResetConfirmPw.length > 0 && adminResetNewPw !== adminResetConfirmPw}
 							<p class="mt-1 text-[11px] text-rose-400">Passwords do not match</p>
@@ -1177,14 +1177,14 @@
 						<button
 							type="button"
 							onclick={() => (showResetPwModal = false)}
-							class="rounded-xl px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+							class="rounded-md px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
 						>
 							Cancel
 						</button>
 						<button
 							type="submit"
 							disabled={isResettingPw || adminResetNewPw.length < 6 || adminResetNewPw !== adminResetConfirmPw}
-							class="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-purple-950 hover:bg-purple-500 disabled:opacity-50 transition cursor-pointer"
+							class="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-purple-950 hover:bg-purple-500 disabled:opacity-50 transition cursor-pointer"
 						>
 							{#if isResettingPw}
 								<div class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
