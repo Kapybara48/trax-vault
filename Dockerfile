@@ -27,11 +27,6 @@ ARG APP_VERSION=1.7.18
 
 WORKDIR /app
 
-# Install ffmpeg for real-time audio transcoding
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
 ENV NODE_ENV=production \
     PORT=3000 \
     DATA_DIR=/app/data \
