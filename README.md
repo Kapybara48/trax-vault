@@ -2,21 +2,33 @@
 
 [![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](LICENSE.md)
 
-**Trax Vault** is a modern, self-hosted web application, audiophile player studio, and Subsonic/OpenSubsonic streaming server built for music collectors. Audit audio fidelity, track censorship, create synchronized lyrics, tag files directly with MusicBrainz, and stream your lossless music library anywhere.
+**Trax Vault** is a modern, self-hosted web application, audiophile player studio, and Subsonic/OpenSubsonic streaming server built for music collectors. Audit audio fidelity, track censorship, create synchronized lyrics, tag files directly with MusicBrainz, sync playback across devices in real time, and stream your lossless music library anywhere.
 
 ---
 
 ## 🚀 Key Features
 
 ### 🎧 Audiophile Player Studio (`/player`)
-* **Spotify-Inspired Studio Experience**: Beautiful obsidian glassmorphic interface with reactive library drawer, album/playlist switcher, and responsive desktop/mobile views.
+* **Spotify-Inspired Studio Experience**: Beautiful obsidian glassmorphic interface with reactive library drawer, album/artist/playlist switcher, and responsive desktop/mobile views.
 * **Persistent Background Audio**: Centralized singleton audio engine mounted at the root layout. Music continues playing seamlessly as you navigate between pages (`/`, `/issues`, `/tagger`, `/scan`, `/settings`) or browse other tabs.
 * **Floating Global Mini-Player Dock**: Compact dock on non-player pages with vinyl artwork, title, playback controls, scrubber, volume, and fidelity indicators.
 * **Real-Time Synced Karaoke Lyrics**: Studio teleprompter panel with smooth vertical auto-scroll, glowing active line focus, and timestamp click-to-seek.
 * **Exact Bitrate & Audio Fidelity Extraction**: Differentiates standard CD lossless (16-bit / 44.1kHz) from Studio Hi-Res lossless (24-bit / 48–96kHz+). Displays exact bitrate extraction (e.g. `FLAC • 893 kbps • 16-bit / 48.0 kHz`).
+* **Persistent Session & Exact-Second Resume**: Refreshing your browser or opening a new tab automatically restores your exact song, queue, and playback second without unexpected auto-play jumpscares.
 * **Multi-Disc Separators & CD Management**: Automatic multi-disc detection with sticky headers (`Disc 1`, `Disc 2`) and 1-click "Play Disc" shortcuts.
 * **Integrated Playlists Hub**: Create, edit, reorder, and delete playlists directly inside the player without navigating away.
 * **Keyboard Shortcuts & OS Integration**: Control playback with hotkeys (`Space`, `J`, `K`, `M`, arrow keys) and native MediaSession OS lockscreen integration.
+
+---
+
+### 📻 Real-Time Multi-Device Playback Sync & "Listen Together" Jam Sessions
+* **Server-Sent Events (SSE) Sync Engine**: Real-time server-coordinated playback across all your open phones, tablets, laptops, and desktop browsers.
+* **Independent Playback by Default**: Each device plays its own music independently on its own by default without unexpected interruptions or hijacking.
+* **1-Click Live Device Sync**:
+  * **Companion Display & Synced Lyrics Remote (Muted Here)**: Mutes local audio while displaying live album art, track progress, and real-time synchronized karaoke lyrics, acting as a remote control for an active speaker.
+  * **Play Here Only (Transfer Audio)**: Seamlessly transfers exclusive sound output to your current device.
+  * **Play on Multiple (Simultaneous Audio)**: Plays synchronized audio across multiple devices simultaneously with sub-second clock drift correction.
+* **Cross-Account "Listen Together" Rooms**: Create private or public 6-character room codes (e.g., `VAULT7`), copy shareable invite links, and listen to music simultaneously with friends across different user accounts on your server.
 
 ---
 
@@ -55,11 +67,12 @@ Turn Trax Vault into a full-featured alternative to Navidrome, Airsonic, or Goni
 
 ---
 
-### 🛡️ Audio Quality, Censorship & The Fixer
+### 🛡️ Audio Quality, Censorship & Global Fixer Rules (`/issues`)
+* **Global Fixer Rules Studio**: Configure vault-wide audit rules for minimum bitrates, allowed audio formats (lossless vs lossy), acceptable quality grades, lyrics presence, and censorship tolerances with 1-click presets (`Balanced Default`, `High-Bitrate ≥ 256k`, `Strict Lossless Only`, `Relaxed`).
 * **Format & Fidelity Auditing**: Classify tracks as lossless (**FLAC**, **ALAC**, **WAV**, **AIFF**) or lossy (**MP3 320**, **MP3 V0**, **MP3 128**, **AAC**, **OGG**).
 * **Encode Quality Ratings**: Grade encodes as *Perfect (Studio Lossless)*, *Good (Clean / 320)*, *Acceptable*, *Bad / Distorted*, or *Needs Upgrade*.
 * **Censorship Tracking**: Tag tracks as **Explicit / Uncensored Original**, **Clean Original**, **Censored / Radio Edit**, or **Instrumental**.
-* **The Fixer Dashboard (`/issues`)**: High-level **Vault Health Score** highlighting low-bitrate rips, censored edits, and missing lyrics with 1-click batch upgrades.
+* **The Fixer Dashboard**: High-level **Vault Health Score** highlighting low-bitrate rips, censored edits, and missing lyrics with 1-click batch upgrades.
 
 ---
 
@@ -70,11 +83,13 @@ Turn Trax Vault into a full-featured alternative to Navidrome, Airsonic, or Goni
 * **1-Click Unvault / Remove**: Remove any album or track from the Vault back to the Scanner with a single click. Audio files on disk in `./music` remain completely untouched!
 * **Filter Pills**: Filter discovered albums by *All*, *In Vault*, *Not In Vault*, *Censored*, *Missing Lyrics*, *Unsynced LRC*, or *Bad Quality*.
 
-### 👥 Multi-User Experience & Responsive Mobile Design
+---
+
+### 👥 Multi-User Architecture & Mobile Design
 * **Multi-User Architecture**: Independent user accounts with custom roles (`admin` vs `user`), personal playlists, favorites, and Subsonic streaming credentials.
-* **Configurable Registration Policy**: Public account registration enabled by default (`/register`), or toggleable via `DISABLE_REGISTRATION=true` (or `DISABLE_ACCOUNT_CREATION=true`) so only administrators can provision accounts.
+* **Configurable Registration Policy**: Public account registration enabled by default (`/register`), or toggleable via `DISABLE_REGISTRATION=true` so only administrators can provision accounts.
 * **Admin Management Console**: Dedicated User Management hub in `/settings` for administrators to create, edit, change roles, update passwords, and delete accounts.
-* **Responsive 3-Tier Layout**: Fluid breakpoints (`<640px` compact mobile, `640px–1024px` tablet, `>1024px` desktop) across the studio player, album details, and navigation bars.
+* **Responsive 3-Tier Layout**: Fluid breakpoints tailored for Phone (`< 640px`), Tablet (`640px – 1024px`), and Desktop (`> 1024px`), featuring compact touch-friendly navigation and zero horizontal scrolling.
 
 ---
 
@@ -84,37 +99,64 @@ Turn Trax Vault into a full-featured alternative to Navidrome, Airsonic, or Goni
 * **1-Click Audio Replacement**: Replace low-quality or corrupt audio files with high-resolution rips directly from the song row with automatic fixer re-evaluation.
 * **Safe Deletion with Disk Option**: Clear confirmation modal allows administrators to choose between removing a song from Trax Vault only or permanently unlinking the audio file and companion `.lrc` from storage.
 * **Direct Download & Re-scan**: Download original audio tracks with 1 click or re-scan metadata and exact bitrates from storage on demand.
-* **Administrator Control Center**: Built-in account management in `/settings` to list users, create accounts, assign roles, reset passwords, and manage profiles.
-* **Responsive Breakpoints**: Seamless UX tailored across Phone (`< 640px`), Tablet (`640px – 1024px`), and Desktop (`> 1024px`), featuring a top segment switcher in the Studio Player (`Library`, `Tracks`, `Lyrics`, `Queue`), compact touch-friendly mobile bottom navigation, and zero horizontal scrolling.
 
 ---
 
-## 🐳 Self-Hosting with Docker
+## 📦 Installation & Deployment
 
-Trax Vault publishes automated Docker container images to the Forgejo Container Registry (`forgejo.kapyhub.cz/kapybara/trax-vault:latest`) on every push to `main`.
+### Method 1: Docker Compose with Forgejo Image (Recommended & Fastest)
 
-### Quick Start (No Git Clone Required)
+Trax Vault publishes automated, production-ready multi-arch Docker container images to the Forgejo Container Registry:
+`forgejo.kapyhub.cz/kapybara/trax-vault:latest`
 
-On your server, you do not need to clone the repository or install Node.js. All you need is a single `docker-compose.yml` file:
+**You do NOT need to clone the git repository or install Node.js.** You only need a single directory and a `docker-compose.yml` file.
 
+#### 1. Create a project directory:
 ```bash
-# 1. Create a directory for Trax Vault
 mkdir -p trax-vault && cd trax-vault
-
-# 2. Download the ready-to-run compose file
-curl -fsSL https://forgejo.kapyhub.cz/kapybara/trax-vault/raw/branch/main/docker-compose.server.yml -o docker-compose.yml
-
-# 3. Edit paths if your music is stored outside ./music (optional)
-# MUSIC_PATH=/path/to/your/music docker compose up -d
-
-# 4. Start Trax Vault
-docker compose up -d
 ```
 
-### Updating to the Latest Version
+#### 2. Create `docker-compose.yml`:
+Create `docker-compose.yml` with the following contents (or run `curl -fsSL https://forgejo.kapyhub.cz/kapybara/trax-vault/raw/branch/main/docker-compose.server.yml -o docker-compose.yml`):
 
-To update your server when a new version is published:
+```yaml
+services:
+  trax-vault:
+    image: forgejo.kapyhub.cz/kapybara/trax-vault:latest
+    container_name: trax-vault
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - MUSIC_DIR=/music
+      - NODE_OPTIONS=--no-network-family-autoselection
+      # Set to your server URL or IP address (used for SvelteKit CSRF form validation)
+      - ORIGIN=http://localhost:3000
+      # Set to true to automatically import all albums found in /music on boot (default: false)
+      # - AUTO_SYNC_LIBRARY=false
+      # Set to true to disable public account signups (admin creates accounts in /settings)
+      # - DISABLE_REGISTRATION=false
+    volumes:
+      # Persistent SQLite database & album covers
+      - ./data:/app/data
+      # Path to your music library (must be read-write :rw for lyrics editing & tagger)
+      - /path/to/your/music:/music:rw
+```
 
+> [!IMPORTANT]
+> Change `/path/to/your/music` to the actual directory where your music collection is stored on the host. Ensure the volume is mounted read-write (`:rw`) so Trax Vault can save companion `.lrc` lyrics files and write audio tags.
+
+#### 3. Start Trax Vault:
+```bash
+docker compose up -d
+```
+Access the web interface at `http://<your-server-ip>:3000`. On the first launch, you will be prompted to create your primary administrator account.
+
+#### 4. Updating to the Latest Version:
+To update Trax Vault when a new version is released:
 ```bash
 cd trax-vault
 docker compose pull
@@ -123,65 +165,33 @@ docker compose up -d
 
 ---
 
-### Alternative: Build from Source with Docker
+### Method 2: Clone Repository & Build with Docker Compose
 
-To build directly from source using HTTPS:
+If you prefer to build the container directly from source:
 
 ```bash
-# Clone the repository via HTTPS
+# 1. Clone repository via HTTPS
 git clone https://forgejo.kapyhub.cz/kapybara/trax-vault.git
 cd trax-vault
 
-# Build and start container
+# 2. Configure music path (defaults to ./music)
+# Edit docker-compose.yml or set MUSIC_PATH:
+export MUSIC_PATH="/path/to/your/music"
+
+# 3. Build and launch container
 docker compose up -d --build
 ```
 
 ---
 
-## 📱 Subsonic Mobile & Desktop Setup
+### Method 3: Bare Metal / Local Development (Node.js)
 
-Connect your favorite music player to Trax Vault using the Subsonic / OpenSubsonic protocol:
+To run Trax Vault natively on Linux, macOS, or Windows without Docker:
 
-| Setting | Value |
-| :--- | :--- |
-| **Server URL** | `http://<your-server-ip>:3000` (or `https://your-domain.com`) |
-| **Username** | Your Trax Vault username (e.g. `kapybara` or `admin`) |
-| **Password** | Your Trax Vault password |
-
-### Client Highlights:
-* **Symfonium (Android)**:
-  1. Add provider → select **Subsonic / OpenSubsonic**.
-  2. Enter your server URL and credentials.
-  3. Symfonium performs an efficient fast sync and pulls structured karaoke lyrics for offline playback.
-* **Feishin (Desktop - Linux / macOS / Windows)**:
-  1. Add server → select **Subsonic / OpenSubsonic**.
-  2. Enter server URL, username, and password.
-  3. Enjoy high-fidelity desktop playback and playlist synchronization.
-
----
-
-## ⚙️ Configuration & Environment Variables
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `PORT` | `3000` | Port on which Trax Vault listens |
-| `DATA_DIR` | `/app/data` (or `./data`) | Directory storing SQLite database (`traxvault.db`) and secrets |
-| `MUSIC_DIR` | `/music` (or `./music`) | Directory containing your music library (read-write for tagger & lyrics) |
-| `AUTO_SYNC_LIBRARY` | `false` | When set to `true`, automatically imports all albums found in `/music` on boot |
-| `ORIGIN` | `http://localhost:3000` | Public URL or IP address for CSRF form handling |
-| `AUTH_DISABLED` | `false` | Set to `true` to bypass login on private local networks (warns on startup) |
-| `DISABLE_REGISTRATION` | `false` | Set to `true` (or `DISABLE_ACCOUNT_CREATION=true`) to disable public sign-ups so only admins can create accounts |
-| `COOKIE_SECURE` | Auto (`production`/HTTPS) | Enforces HTTPS-only session cookies when behind a reverse proxy |
-
----
-
-## 🛠️ Local Development (Without Docker)
-
-### Prerequisites
+#### Prerequisites
 * **Node.js**: v20+, v22+, or v24+
 * **npm**: v10+
 
-### Setup & Run
 ```bash
 # 1. Clone repository via HTTPS
 git clone https://forgejo.kapyhub.cz/kapybara/trax-vault.git
@@ -190,14 +200,66 @@ cd trax-vault
 # 2. Install dependencies
 npm install
 
-# 3. Start development server with live reload
+# 3. Run development server with live reload
 npm run dev
 
-# 4. Type-check & Production build
+# 4. Or build and run production server:
 npm run check
 npm run build
-PORT=3000 MUSIC_DIR=/path/to/music node build
+
+PORT=3000 \
+DATA_DIR=./data \
+MUSIC_DIR=/path/to/your/music \
+ORIGIN=http://localhost:3000 \
+node build
 ```
+
+---
+
+## ⚙️ Configuration & Environment Variables
+
+Trax Vault is configured entirely through standard environment variables. You can provide these in your `docker-compose.yml`, a `.env` file, or your shell environment:
+
+| Variable | Default | Required | Description |
+| :--- | :--- | :---: | :--- |
+| `PORT` | `3000` | No | Port on which the Trax Vault HTTP server listens. |
+| `DATA_DIR` | `/app/data` (Docker)<br>`./data` (Local) | No | Filesystem directory storing the SQLite database (`traxvault.db`), session keys, artist avatars, and cache files. |
+| `MUSIC_DIR`<br>*(or `MUSIC_PATH`)* | `/music` (Docker)<br>`./music` (Local) | Yes | Filesystem path to your music collection. Must be mounted read-write (`:rw`) to allow writing companion `.lrc` lyrics files and updating audio tags. |
+| `ORIGIN` | `http://localhost:3000` | Recommended | The public web URL or IP address of your Trax Vault instance (e.g. `http://192.168.1.50:3000` or `https://music.example.com`). Required by SvelteKit to validate CSRF tokens for web form actions. |
+| `NODE_ENV` | `production` | No | Runtime environment (`production` or `development`). In production, security safeguards like secure cookies and authentication bypass protection are active. |
+| `AUTO_SYNC_LIBRARY` | `false` | No | When set to `true`, Trax Vault automatically scans and imports all detected music folders in `MUSIC_DIR` into the Vault database on server startup. When `false`, discovered albums appear in `/scan` for manual, curated import. |
+| `DISABLE_REGISTRATION`<br>*(or `DISABLE_ACCOUNT_CREATION`)* | `false` | No | When set to `true`, disables the public `/register` form. Only logged-in administrators can create new user accounts in the `/settings` user management panel. |
+| `ALLOW_REGISTRATION`<br>*(or `ALLOW_ACCOUNT_CREATION`)* | `true` | No | Explicit override to allow public self-registration if enabled. |
+| `AUTH_DISABLED`<br>*(or `DISABLE_AUTH`)* | `false` | No | When set to `true`, bypasses all authentication and automatically logs in as a synthetic administrator (useful for isolated local networks). **Safety:** In `NODE_ENV=production`, this is blocked unless `ALLOW_INSECURE_AUTH_BYPASS=true` is also specified. |
+| `ALLOW_INSECURE_AUTH_BYPASS` | `false` | No | Confirms and allows `AUTH_DISABLED=true` to function even when running in `production` mode. |
+| `COOKIE_SECURE` | Auto (`production` / HTTPS) | No | Controls the `Secure` flag on the `vault_session` cookie (`true` or `false`). Set to `false` if accessing your server over plain HTTP on a local network while in production mode. |
+| `SUBSONIC_SECRET_KEY` | Auto-generated | No | Custom secret passphrase used to derive AES-256-GCM encryption for Subsonic passwords in SQLite. If omitted, Trax Vault automatically generates and securely persists a key in `${DATA_DIR}/subsonic.key`. |
+| `BODY_SIZE_LIMIT` | `Infinity` | No | Maximum allowed HTTP request body size for uploads (audio files and album covers). Default is set to `Infinity` by Trax Vault postbuild. |
+| `NODE_OPTIONS` | None | No | Node.js CLI runtime flags (e.g. `--no-network-family-autoselection` to prevent dual-stack IPv6 DNS delays inside Docker containers). |
+
+---
+
+## 📱 Subsonic & OpenSubsonic Mobile Setup
+
+Connect your favorite mobile or desktop music player to Trax Vault using the Subsonic / OpenSubsonic protocol:
+
+| Setting | Recommended Value |
+| :--- | :--- |
+| **Server URL** | `http://<your-server-ip>:3000` (or `https://your-domain.com`) |
+| **Username** | Your Trax Vault username (e.g. `kapybara` or `admin`) |
+| **Password** | Your Trax Vault password |
+
+### Tested Clients:
+* **Symfonium (Android)**:
+  1. Add provider → select **Subsonic / OpenSubsonic**.
+  2. Enter server URL, username, and password.
+  3. Symfonium performs fast catalog sync via `search3` and downloads structured millisecond karaoke lyrics via OpenSubsonic `getLyricsBySongId`.
+* **Feishin (Desktop - Linux / macOS / Windows)**:
+  1. Add server → select **Subsonic / OpenSubsonic**.
+  2. Enter server URL, username, and password.
+  3. Enjoy high-fidelity desktop streaming, schema-validated browsing, and playlist synchronization.
+* **DSub / Ultrasonic / Audinaut**:
+  Connect using standard Subsonic credentials for streaming and caching on older Android devices.
 
 ---
 

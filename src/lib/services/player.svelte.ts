@@ -90,7 +90,7 @@ class GlobalPlayer {
 	deviceId = $state<string>('');
 	deviceName = $state<string>('Web Player');
 	syncConnected = $state<boolean>(false);
-	standaloneMode = $state<boolean>(false);
+	standaloneMode = $state<boolean>(true);
 	localAudioEnabled = $state<boolean>(true);
 	audioUnlockRequired = $state<boolean>(false);
 	activeRoom = $state<SyncRoomSummary | null>(null);
@@ -156,7 +156,9 @@ class GlobalPlayer {
 				}
 
 				const savedStandalone = localStorage.getItem('traxvault_standalone_mode');
-				if (savedStandalone === 'true') {
+				if (savedStandalone === 'false') {
+					this.standaloneMode = false;
+				} else {
 					this.standaloneMode = true;
 					this.localAudioEnabled = true;
 				}
@@ -846,6 +848,10 @@ class GlobalPlayer {
 		} catch (err) {
 			console.warn('[Sync] Failed to set device audio mode:', err);
 		}
+	}
+
+	setLiveSync(enabled: boolean, targetDeviceId?: string) {
+		return this.setStandaloneMode(!enabled, targetDeviceId);
 	}
 
 	async setStandaloneMode(isStandalone: boolean, targetDeviceId?: string) {

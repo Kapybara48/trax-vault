@@ -355,149 +355,150 @@
 							</form>
 						{/if}
 
-						<!-- 4 Playback & Sync Mode Cards for This Device -->
-						<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
-							<!-- Mode 1: Standalone (On Its Own) -->
-							<button
-								type="button"
-								onclick={() => player.setStandaloneMode(true)}
-								class="text-left p-3 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2 {player.standaloneMode
-									? 'bg-amber-950/50 border-amber-500/60 ring-1 ring-amber-500/40 shadow-lg'
-									: 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'}"
+						<!-- Live Sync Toggle & Audio Modes -->
+						{#if player.standaloneMode}
+							<div
+								class="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5"
 							>
-								<div class="flex items-center justify-between">
-									<div
-										class="w-7 h-7 rounded-lg flex items-center justify-center {player.standaloneMode
-											? 'bg-amber-500 text-neutral-950'
-											: 'bg-neutral-800 text-neutral-400'}"
-									>
-										<Headphones class="w-4 h-4" />
-									</div>
-									{#if player.standaloneMode}
-										<span
-											class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40"
-										>
-											Active
-										</span>
-									{/if}
-								</div>
 								<div>
-									<div class="text-xs font-bold text-white">On Its Own (Solo)</div>
-									<p class="text-[10px] text-neutral-400 leading-relaxed mt-0.5">
-										Plays different songs independently on this device without affecting or syncing
-										with other devices.
+									<div class="text-xs font-bold text-white flex items-center gap-2">
+										<span class="w-2 h-2 rounded-full bg-neutral-500"></span>
+										<span>Live Device Sync is Off</span>
+									</div>
+									<p class="text-[11px] text-neutral-400 mt-1 max-w-lg leading-relaxed">
+										Music plays independently on this device without syncing with or disturbing your other devices. Turn on Live Sync to mirror playback, use this device as a karaoke lyrics remote, or play music across multiple devices.
 									</p>
 								</div>
-							</button>
-
-							<!-- Mode 2: Companion / Lyrics Remote (Muted Here) -->
-							<button
-								type="button"
-								onclick={() => player.setLocalAudioMode(false, false)}
-								class="text-left p-3 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2 {!player.standaloneMode &&
-								!player.localAudioEnabled
-									? 'bg-cyan-950/50 border-cyan-500/60 ring-1 ring-cyan-500/40 shadow-lg'
-									: 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'}"
-							>
-								<div class="flex items-center justify-between">
-									<div
-										class="w-7 h-7 rounded-lg flex items-center justify-center {!player.standaloneMode &&
-										!player.localAudioEnabled
-											? 'bg-cyan-500 text-neutral-950'
-											: 'bg-neutral-800 text-neutral-400'}"
-									>
-										<Mic class="w-4 h-4" />
+								<button
+									type="button"
+									onclick={() => player.setStandaloneMode(false)}
+									class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-2 shadow-lg shadow-emerald-950/40"
+								>
+									<Radio class="w-4 h-4" />
+									<span>Turn On Live Sync</span>
+								</button>
+							</div>
+						{:else}
+							<div class="space-y-3 pt-1">
+								<div class="flex items-center justify-between pb-1 border-b border-neutral-800/60">
+									<div class="flex items-center gap-2">
+										<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+										<span class="text-xs font-bold text-emerald-300">Live Device Sync is Active</span>
 									</div>
-									{#if !player.standaloneMode && !player.localAudioEnabled}
-										<span
-											class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-										>
-											Active
-										</span>
-									{/if}
+									<button
+										type="button"
+										onclick={() => player.setStandaloneMode(true)}
+										class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 text-[11px] font-medium transition cursor-pointer"
+										title="Turn off sync so this device plays independently"
+									>
+										Turn Off Live Sync
+									</button>
 								</div>
-								<div>
-									<div class="text-xs font-bold text-white">Companion &amp; Lyrics</div>
-									<p class="text-[10px] text-neutral-400 leading-relaxed mt-0.5">
-										Mutes audio here. Follows your synced device, scrolls live lyrics &amp; acts as
-										remote.
-									</p>
-								</div>
-							</button>
 
-							<!-- Mode 3: Transfer Audio Here Only -->
-							<button
-								type="button"
-								onclick={() => player.setLocalAudioMode(true, true)}
-								class="text-left p-3 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2 {!player.standaloneMode &&
-								player.localAudioEnabled &&
-								syncedAudioCount === 1
-									? 'bg-emerald-950/50 border-emerald-500/60 ring-1 ring-emerald-500/40 shadow-lg'
-									: 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'}"
-							>
-								<div class="flex items-center justify-between">
-									<div
-										class="w-7 h-7 rounded-lg flex items-center justify-center {!player.standaloneMode &&
-										player.localAudioEnabled &&
+								<!-- 3 Sync Audio Mode Cards -->
+								<div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+									<!-- Mode 1: Companion / Lyrics Remote (Muted Here) -->
+									<button
+										type="button"
+										onclick={() => player.setLocalAudioMode(false, false)}
+										class="text-left p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2.5 {!player.localAudioEnabled
+											? 'bg-cyan-950/50 border-cyan-500/60 ring-1 ring-cyan-500/40 shadow-lg'
+											: 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'}"
+									>
+										<div class="flex items-center justify-between">
+											<div
+												class="w-7 h-7 rounded-lg flex items-center justify-center {!player.localAudioEnabled
+													? 'bg-cyan-500 text-neutral-950'
+													: 'bg-neutral-800 text-neutral-400'}"
+											>
+												<Mic class="w-4 h-4" />
+											</div>
+											{#if !player.localAudioEnabled}
+												<span
+													class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+												>
+													Active
+												</span>
+											{/if}
+										</div>
+										<div>
+											<div class="text-xs font-bold text-white">Companion &amp; Lyrics</div>
+											<p class="text-[10px] text-neutral-400 leading-relaxed mt-0.5">
+												Mutes audio here. Follows your synced device, scrolls live lyrics &amp; acts as remote.
+											</p>
+										</div>
+									</button>
+
+									<!-- Mode 2: Transfer Audio Here Only -->
+									<button
+										type="button"
+										onclick={() => player.setLocalAudioMode(true, true)}
+										class="text-left p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2.5 {player.localAudioEnabled &&
 										syncedAudioCount === 1
-											? 'bg-emerald-500 text-neutral-950'
-											: 'bg-neutral-800 text-neutral-400'}"
+											? 'bg-emerald-950/50 border-emerald-500/60 ring-1 ring-emerald-500/40 shadow-lg'
+											: 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'}"
 									>
-										<Speaker class="w-4 h-4" />
-									</div>
-									{#if !player.standaloneMode && player.localAudioEnabled && syncedAudioCount === 1}
-										<span
-											class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-										>
-											Active
-										</span>
-									{/if}
-								</div>
-								<div>
-									<div class="text-xs font-bold text-white">Play Here Only</div>
-									<p class="text-[10px] text-neutral-400 leading-relaxed mt-0.5">
-										Synced group speaker. Switches your other synced devices into Companion mode.
-									</p>
-								</div>
-							</button>
+										<div class="flex items-center justify-between">
+											<div
+												class="w-7 h-7 rounded-lg flex items-center justify-center {player.localAudioEnabled &&
+												syncedAudioCount === 1
+													? 'bg-emerald-500 text-neutral-950'
+													: 'bg-neutral-800 text-neutral-400'}"
+											>
+												<Speaker class="w-4 h-4" />
+											</div>
+											{#if player.localAudioEnabled && syncedAudioCount === 1}
+												<span
+													class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+												>
+													Active
+												</span>
+											{/if}
+										</div>
+										<div>
+											<div class="text-xs font-bold text-white">Play Here Only</div>
+											<p class="text-[10px] text-neutral-400 leading-relaxed mt-0.5">
+												Primary speaker. Switches your other synced devices into Companion mode.
+											</p>
+										</div>
+									</button>
 
-							<!-- Mode 4: Play Audio Here Too (Simultaneous Multi-Device) -->
-							<button
-								type="button"
-								onclick={() => player.setLocalAudioMode(true, false)}
-								class="text-left p-3 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2 {!player.standaloneMode &&
-								player.localAudioEnabled &&
-								syncedAudioCount > 1
-									? 'bg-emerald-950/50 border-emerald-500/60 ring-1 ring-emerald-500/40 shadow-lg'
-									: 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'}"
-							>
-								<div class="flex items-center justify-between">
-									<div
-										class="w-7 h-7 rounded-lg flex items-center justify-center {!player.standaloneMode &&
-										player.localAudioEnabled &&
+									<!-- Mode 3: Play Audio Here Too (Simultaneous Multi-Device) -->
+									<button
+										type="button"
+										onclick={() => player.setLocalAudioMode(true, false)}
+										class="text-left p-3.5 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2.5 {player.localAudioEnabled &&
 										syncedAudioCount > 1
-											? 'bg-emerald-500 text-neutral-950'
-											: 'bg-neutral-800 text-neutral-400'}"
+											? 'bg-emerald-950/50 border-emerald-500/60 ring-1 ring-emerald-500/40 shadow-lg'
+											: 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'}"
 									>
-										<Volume2 class="w-4 h-4" />
-									</div>
-									{#if !player.standaloneMode && player.localAudioEnabled && syncedAudioCount > 1}
-										<span
-											class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-										>
-											Multi-Speaker
-										</span>
-									{/if}
+										<div class="flex items-center justify-between">
+											<div
+												class="w-7 h-7 rounded-lg flex items-center justify-center {player.localAudioEnabled &&
+												syncedAudioCount > 1
+													? 'bg-emerald-500 text-neutral-950'
+													: 'bg-neutral-800 text-neutral-400'}"
+											>
+												<Volume2 class="w-4 h-4" />
+											</div>
+											{#if player.localAudioEnabled && syncedAudioCount > 1}
+												<span
+													class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+												>
+													Multi-Speaker
+												</span>
+											{/if}
+										</div>
+										<div>
+											<div class="text-xs font-bold text-white">Play on Multiple</div>
+											<p class="text-[10px] text-neutral-400 leading-relaxed mt-0.5">
+												Plays synchronized audio on this device simultaneously alongside other synced speakers.
+											</p>
+										</div>
+									</button>
 								</div>
-								<div>
-									<div class="text-xs font-bold text-white">Play on Multiple</div>
-									<p class="text-[10px] text-neutral-400 leading-relaxed mt-0.5">
-										Plays synchronized audio on this device simultaneously alongside other synced
-										speakers.
-									</p>
-								</div>
-							</button>
-						</div>
+							</div>
+						{/if}
 					</div>
 
 					<!-- SECTION 2: ALL CONNECTED DEVICES IN SESSION -->
@@ -549,9 +550,9 @@
 											</div>
 											<div class="flex items-center gap-2 mt-0.5 text-[11px] flex-wrap">
 												{#if dev.isStandalone}
-													<span class="text-amber-400 flex items-center gap-1 font-medium">
-														<Headphones class="w-3 h-3" />
-														<span>On Its Own (Independent Playback)</span>
+													<span class="text-neutral-400 flex items-center gap-1 font-medium">
+														<Radio class="w-3 h-3 text-neutral-500" />
+														<span>Sync Off (Independent)</span>
 													</span>
 													{#if dev.standaloneTrackTitle}
 														<span class="text-neutral-400 truncate max-w-[220px]">
@@ -583,7 +584,7 @@
 													class="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-neutral-950 border border-cyan-500/40 text-[11px] font-bold transition cursor-pointer"
 													title="Sync your device with this device's current song in Companion & Lyrics mode"
 												>
-													Sync Lyrics With This
+													Sync Lyrics
 												</button>
 												<button
 													type="button"
@@ -594,14 +595,6 @@
 													Listen Together
 												</button>
 											{/if}
-											<button
-												type="button"
-												onclick={() => player.setStandaloneMode(false, dev.deviceId)}
-												class="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
-												title="Bring this device back into the synced group"
-											>
-												Join Sync Group
-											</button>
 										{:else}
 											{#if !isSelf && player.standaloneMode}
 												<button
@@ -610,7 +603,7 @@
 													class="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-neutral-950 border border-cyan-500/40 text-[11px] font-bold transition cursor-pointer"
 													title="Sync your device with this device in Companion & Lyrics mode"
 												>
-													Sync Lyrics With This
+													Sync Lyrics
 												</button>
 												<button
 													type="button"
@@ -618,7 +611,7 @@
 													class="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-neutral-950 border border-emerald-500/40 text-[11px] font-bold transition cursor-pointer"
 													title="Sync and play audio together with this device"
 												>
-													Sync Audio With This
+													Sync Audio
 												</button>
 											{:else if !dev.isAudioOutput}
 												<button
