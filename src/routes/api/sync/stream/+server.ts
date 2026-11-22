@@ -14,6 +14,8 @@ export const GET = async ({ url, locals, request }: RequestEvent) => {
 
 	const deviceName = (url.searchParams.get('deviceName') || '').trim() || `${user.username}'s Device`;
 	const roomCode = url.searchParams.get('roomCode');
+	const standaloneParam = url.searchParams.get('standalone');
+	const standalone = standaloneParam === 'true' ? true : standaloneParam === 'false' ? false : undefined;
 
 	let cleanupFn: (() => void) | null = null;
 	let cleanedUp = false;
@@ -39,6 +41,7 @@ export const GET = async ({ url, locals, request }: RequestEvent) => {
 				userId: user.id,
 				username: user.username,
 				roomCode,
+				standalone,
 				controller
 			});
 

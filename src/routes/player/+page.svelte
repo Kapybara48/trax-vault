@@ -1122,16 +1122,26 @@
 				</button>
 			</div>
 		</div>
-	{:else if player.activeRoom?.type === 'shared' || !player.localAudioEnabled || player.connectedDevices.length > 1}
+	{:else if player.standaloneMode || player.activeRoom?.type === 'shared' || !player.localAudioEnabled || player.connectedDevices.length > 1}
 		<div
-			class="mx-2 sm:mx-3 mt-2 px-3.5 py-1.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 {player.activeRoom?.type === 'shared'
-				? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
-				: !player.localAudioEnabled
-					? 'bg-cyan-950/60 border-cyan-500/40 text-cyan-200'
-					: 'bg-neutral-900/90 border-neutral-800 text-neutral-300'}"
+			class="mx-2 sm:mx-3 mt-2 px-3.5 py-1.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 {player.standaloneMode
+				? 'bg-amber-950/60 border-amber-500/40 text-amber-200'
+				: player.activeRoom?.type === 'shared'
+					? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+					: !player.localAudioEnabled
+						? 'bg-cyan-950/60 border-cyan-500/40 text-cyan-200'
+						: 'bg-neutral-900/90 border-neutral-800 text-neutral-300'}"
 		>
 			<div class="flex items-center gap-2 min-w-0">
-				{#if player.activeRoom?.type === 'shared'}
+				{#if player.standaloneMode}
+					<Radio class="w-3.5 h-3.5 text-amber-400 shrink-0" />
+					<span class="truncate">
+						<strong>On Its Own (Independent Mode)</strong>
+						<span class="hidden sm:inline text-amber-300/80">
+							&bull; Playing independently without affecting your other devices
+						</span>
+					</span>
+				{:else if player.activeRoom?.type === 'shared'}
 					<Users class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
 					<span class="truncate">
 						Listening Together in <strong class="text-white">{player.activeRoom.name}</strong>
@@ -1153,13 +1163,22 @@
 				{:else}
 					<Radio class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
 					<span class="truncate">
-						Synced across <strong class="text-white">{player.connectedDevices.length} devices</strong>
+						Synced across <strong class="text-white">{player.connectedDevices.filter((d) => !d.isStandalone).length} devices</strong>
 					</span>
 				{/if}
 			</div>
 
 			<div class="flex items-center gap-1.5 shrink-0">
-				{#if !player.localAudioEnabled}
+				{#if player.standaloneMode}
+					<button
+						type="button"
+						onclick={() => player.setStandaloneMode(false)}
+						class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-neutral-950 border border-emerald-500/40 text-[11px] font-bold transition cursor-pointer"
+						title="Rejoin your synced device group"
+					>
+						Rejoin Sync
+					</button>
+				{:else if !player.localAudioEnabled}
 					<button
 						type="button"
 						onclick={() => player.setLocalAudioMode(true, true)}
@@ -1176,6 +1195,14 @@
 					>
 						Play on Both
 					</button>
+					<button
+						type="button"
+						onclick={() => player.setStandaloneMode(true)}
+						class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-amber-950/80 text-amber-300 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
+						title="Detach this device so it plays its own music independently"
+					>
+						On Its Own
+					</button>
 				{:else if player.connectedDevices.length > 1}
 					<button
 						type="button"
@@ -1183,7 +1210,15 @@
 						class="px-2.5 py-1 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-cyan-300 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
 						title="Mute local audio and use this device as a live synced lyrics & remote control display"
 					>
-						Switch to Lyrics Companion
+						Lyrics Companion
+					</button>
+					<button
+						type="button"
+						onclick={() => player.setStandaloneMode(true)}
+						class="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-amber-950/80 text-amber-300 border border-neutral-700 text-[11px] font-semibold transition cursor-pointer"
+						title="Detach this device so it plays its own music independently"
+					>
+						On Its Own
 					</button>
 				{/if}
 
@@ -3038,16 +3073,21 @@
 			<button
 				type="button"
 				onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
-				class="px-2.5 py-2 rounded-xl transition cursor-pointer border flex items-center gap-1.5 text-xs font-bold {player.activeRoom?.type === 'shared'
-					? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-md'
-					: !player.localAudioEnabled
-						? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md'
-						: player.connectedDevices.length > 1
-							? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
-							: 'bg-neutral-800/80 text-neutral-400 border-neutral-700/60 hover:text-white hover:bg-neutral-700'}"
+				class="px-2.5 py-2 rounded-xl transition cursor-pointer border flex items-center gap-1.5 text-xs font-bold {player.standaloneMode
+					? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md'
+					: player.activeRoom?.type === 'shared'
+						? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-md'
+						: !player.localAudioEnabled
+							? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md'
+							: player.connectedDevices.length > 1
+								? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+								: 'bg-neutral-800/80 text-neutral-400 border-neutral-700/60 hover:text-white hover:bg-neutral-700'}"
 				title="Sync Devices & Listen Together"
 			>
-				{#if player.activeRoom?.type === 'shared'}
+				{#if player.standaloneMode}
+					<Radio class="w-4 h-4 text-amber-400" />
+					<span class="hidden lg:inline text-[10px]">Solo</span>
+				{:else if player.activeRoom?.type === 'shared'}
 					<Users class="w-4 h-4 text-emerald-400" />
 					<span class="hidden lg:inline font-mono text-[11px]">{player.activeRoom.code}</span>
 				{:else}

@@ -28,6 +28,10 @@ export interface SyncDeviceInfo {
 	userId: number;
 	username: string;
 	isAudioOutput: boolean;
+	isStandalone: boolean;
+	standaloneTrackTitle: string | null;
+	standaloneTrackArtist: string | null;
+	standaloneIsPlaying: boolean;
 	connectedAtMs: number;
 	lastSeenMs: number;
 }
@@ -86,6 +90,7 @@ class GlobalPlayer {
 	deviceId = $state<string>('');
 	deviceName = $state<string>('Web Player');
 	syncConnected = $state<boolean>(false);
+	standaloneMode = $state<boolean>(false);
 	localAudioEnabled = $state<boolean>(true);
 	audioUnlockRequired = $state<boolean>(false);
 	activeRoom = $state<SyncRoomSummary | null>(null);
@@ -131,6 +136,12 @@ class GlobalPlayer {
 				} else {
 					this.deviceName = detectFriendlyDeviceName();
 					localStorage.setItem('traxvault_device_name', this.deviceName);
+				}
+
+				const savedStandalone = localStorage.getItem('traxvault_standalone_mode');
+				if (savedStandalone === 'true') {
+					this.standaloneMode = true;
+					this.localAudioEnabled = true;
 				}
 			} catch {
 				this.deviceId = 'dev_' + Math.random().toString(36).slice(2);
@@ -306,6 +317,7 @@ class GlobalPlayer {
 	private sendPeriodicSpeakerCheckpoint() {
 		if (
 			!this.syncConnected ||
+			this.standaloneMode ||
 			!this.localAudioEnabled ||
 			!this.isPlaying ||
 			!this.currentTrack ||
@@ -315,12 +327,12 @@ class GlobalPlayer {
 			return;
 		}
 
-		// Only send periodic checkpoints if there is at least 1 other device in the room
-		if (this.connectedDevices.length <= 1) return;
+		// Only send periodic checkpoints if there is at least 1 other synced device in the room
+		const syncedDevices = this.connectedDevices.filter((d) => !d.isStandalone);
+		if (syncedDevices.length <= 1) return;
 
-		// To avoid multiple speakers broadcasting simultaneously, only the device that last
-		// updated state or the first active audio device in the room sends the checkpoint
-		const audioDevices = this.connectedDevices.filter((d) => d.isAudioOutput);
+		// To avoid multiple speakers broadcasting simultaneously, only the first active audio device in the synced group sends the checkpoint
+		const audioDevices = syncedDevices.filter((d) => d.isAudioOutput);
 		if (audioDevices.length > 0 && audioDevices[0].deviceId !== this.deviceId) {
 			return;
 		}
@@ -357,7 +369,8 @@ class GlobalPlayer {
 
 		const params = new URLSearchParams({
 			deviceId: this.deviceId,
-			deviceName: this.deviceName
+			deviceName: this.deviceName,
+			standalone: this.standaloneMode ? 'true' : 'false'
 		});
 		if (effectiveRoomCode) {
 			params.set('roomCode', effectiveRoomCode);
@@ -380,8 +393,22 @@ class GlobalPlayer {
 				if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
 				if (Array.isArray(data.publicRooms)) this.publicRooms = data.publicRooms;
 
+				if (typeof data.myStandalone === 'boolean') {
+					this.standaloneMode = data.myStandalone;
+					try {
+						localStorage.setItem('traxvault_standalone_mode', data.myStandalone ? 'true' : 'false');
+					} catch {}
+				}
+
 				if (typeof data.myAudioOutput === 'boolean') {
-					this.applyLocalAudioOutputMode(data.myAudioOutput, data.state);
+					this.applyLocalAudioOutputMode(this.standaloneMode ? true : data.myAudioOutput, data.state);
+				}
+
+				if (this.standaloneMode) {
+					if (this.currentTrack) {
+						this.broadcastPlaybackState(false);
+					}
+					return;
 				}
 
 				if (data.state && data.state.currentTrack) {
@@ -400,6 +427,7 @@ class GlobalPlayer {
 				const data = JSON.parse(ev.data);
 				this.updateServerClockOffset(data.serverNowMs);
 				if (data.room) this.activeRoom = data.room;
+				if (this.standaloneMode) return;
 				if (data.state) {
 					this.applyRemotePlaybackState(data.state);
 				}
@@ -416,8 +444,19 @@ class GlobalPlayer {
 				if (Array.isArray(data.devices)) {
 					this.connectedDevices = data.devices;
 					const myDev = data.devices.find((d: SyncDeviceInfo) => d.deviceId === this.deviceId);
-					if (myDev && myDev.isAudioOutput !== this.localAudioEnabled) {
-						this.applyLocalAudioOutputMode(myDev.isAudioOutput, data.state);
+					if (myDev) {
+						const wasStandalone = this.standaloneMode;
+						if (typeof myDev.isStandalone === 'boolean' && myDev.isStandalone !== this.standaloneMode) {
+							this.standaloneMode = myDev.isStandalone;
+							try {
+								localStorage.setItem('traxvault_standalone_mode', myDev.isStandalone ? 'true' : 'false');
+							} catch {}
+						}
+						if (myDev.isAudioOutput !== this.localAudioEnabled) {
+							this.applyLocalAudioOutputMode(myDev.isAudioOutput, data.state);
+						} else if (wasStandalone && !this.standaloneMode && data.state) {
+							this.applyRemotePlaybackState(data.state, true);
+						}
 					}
 				}
 			} catch (err) {
@@ -707,6 +746,10 @@ class GlobalPlayer {
 	async setLocalAudioMode(enableAudio: boolean, exclusive = false, targetDeviceId?: string) {
 		const targetId = targetDeviceId || this.deviceId;
 		if (targetId === this.deviceId) {
+			this.standaloneMode = false;
+			try {
+				localStorage.setItem('traxvault_standalone_mode', 'false');
+			} catch {}
 			this.applyLocalAudioOutputMode(enableAudio);
 		}
 
@@ -727,9 +770,83 @@ class GlobalPlayer {
 				this.updateServerClockOffset(data.serverNowMs);
 				if (data.room) this.activeRoom = data.room;
 				if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+				if (!this.standaloneMode && data.state && data.state.currentTrack) {
+					this.applyRemotePlaybackState(data.state, true);
+				}
 			}
 		} catch (err) {
 			console.warn('[Sync] Failed to set device audio mode:', err);
+		}
+	}
+
+	async setStandaloneMode(isStandalone: boolean, targetDeviceId?: string) {
+		const targetId = targetDeviceId || this.deviceId;
+		if (targetId === this.deviceId) {
+			this.standaloneMode = isStandalone;
+			try {
+				localStorage.setItem('traxvault_standalone_mode', isStandalone ? 'true' : 'false');
+			} catch {}
+			if (isStandalone) {
+				this.applyLocalAudioOutputMode(true);
+			}
+		}
+
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'set_device_standalone',
+					deviceId: this.deviceId,
+					targetDeviceId: targetId,
+					isStandalone
+				})
+			});
+			const data = await res.json();
+			if (res.ok) {
+				this.updateServerClockOffset(data.serverNowMs);
+				if (data.room) this.activeRoom = data.room;
+				if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+				if (!isStandalone && targetId === this.deviceId && data.state && data.state.currentTrack) {
+					this.applyRemotePlaybackState(data.state, true);
+				}
+			}
+		} catch (err) {
+			console.warn('[Sync] Failed to set standalone mode:', err);
+		}
+	}
+
+	async syncWithDevice(targetDeviceId: string, audioOutputOnCaller?: boolean) {
+		this.standaloneMode = false;
+		try {
+			localStorage.setItem('traxvault_standalone_mode', 'false');
+		} catch {}
+		if (typeof audioOutputOnCaller === 'boolean') {
+			this.localAudioEnabled = audioOutputOnCaller;
+		}
+
+		try {
+			const res = await fetch('/api/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'sync_with_device',
+					deviceId: this.deviceId,
+					targetDeviceId,
+					audioOutputOnCaller
+				})
+			});
+			const data = await res.json();
+			if (res.ok) {
+				this.updateServerClockOffset(data.serverNowMs);
+				if (data.room) this.activeRoom = data.room;
+				if (Array.isArray(data.devices)) this.connectedDevices = data.devices;
+				if (data.state && data.state.currentTrack) {
+					this.applyRemotePlaybackState(data.state, true);
+				}
+			}
+		} catch (err) {
+			console.warn('[Sync] Failed to sync with target device:', err);
 		}
 	}
 

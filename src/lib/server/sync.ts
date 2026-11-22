@@ -29,6 +29,10 @@ export interface SyncDeviceInfo {
 	userId: number;
 	username: string;
 	isAudioOutput: boolean;
+	isStandalone: boolean;
+	standaloneTrackTitle: string | null;
+	standaloneTrackArtist: string | null;
+	standaloneIsPlaying: boolean;
 	connectedAtMs: number;
 	lastSeenMs: number;
 }
@@ -71,6 +75,8 @@ interface SyncRoom {
 	state: SyncPlaybackState;
 	devices: Map<string, SyncDeviceInfo>;
 	deviceAudioPrefs: Map<string, boolean>;
+	deviceStandalonePrefs: Map<string, boolean>;
+	deviceLastStates: Map<string, SyncPlaybackState>;
 	connections: Map<string, SseConnection>;
 }
 
@@ -106,7 +112,7 @@ function createEmptyPlaybackState(): SyncPlaybackState {
 }
 
 /**
- * Computes the live playback position of a room accounting for elapsed time while playing.
+ * Computes the live playback position of a playback state accounting for elapsed time while playing.
  */
 export function getEffectivePositionSec(state: SyncPlaybackState, nowMs = Date.now()): number {
 	if (!state.currentTrack) return 0;
@@ -152,6 +158,8 @@ export function getOrCreatePersonalRoom(userId: number, username: string): SyncR
 			state: createEmptyPlaybackState(),
 			devices: new Map(),
 			deviceAudioPrefs: new Map(),
+			deviceStandalonePrefs: new Map(),
+			deviceLastStates: new Map(),
 			connections: new Map()
 		};
 		rooms.set(roomId, room);
@@ -218,11 +226,23 @@ function sendSseEvent(
 	}
 }
 
-function broadcastToRoom(room: SyncRoom, event: string, data: unknown): void {
+function broadcastToRoom(
+	room: SyncRoom,
+	event: string,
+	data: unknown,
+	options?: { skipStandaloneDevices?: boolean }
+): void {
 	const nowMs = Date.now();
 	const deadConnectionIds: string[] = [];
 
 	for (const [connId, conn] of room.connections.entries()) {
+		if (options?.skipStandaloneDevices) {
+			const dev = room.devices.get(conn.deviceId);
+			if (dev?.isStandalone) {
+				continue;
+			}
+		}
+
 		const payload = {
 			...(typeof data === 'object' && data !== null ? data : { value: data }),
 			serverNowMs: nowMs
@@ -253,18 +273,23 @@ function broadcastLobbyUpdateToAll(): void {
 
 function sendWelcomeToConnection(room: SyncRoom, conn: SseConnection): void {
 	const device = room.devices.get(conn.deviceId);
+	const isStandalone = device ? device.isStandalone : false;
 	sendSseEvent(conn.controller, 'welcome', {
 		serverNowMs: Date.now(),
 		room: serializeRoomSummary(room),
-		state: room.state,
+		state: isStandalone ? null : room.state,
 		devices: serializeDevices(room),
 		myDeviceId: conn.deviceId,
 		myAudioOutput: device ? device.isAudioOutput : true,
+		myStandalone: isStandalone,
 		publicRooms: listPublicRooms()
 	});
 }
 
-function determineDefaultAudioOutput(room: SyncRoom, deviceId: string): boolean {
+function determineDefaultAudioOutput(room: SyncRoom, deviceId: string, isStandalone: boolean): boolean {
+	if (isStandalone) {
+		return true;
+	}
 	if (room.deviceAudioPrefs.has(deviceId)) {
 		return room.deviceAudioPrefs.get(deviceId)!;
 	}
@@ -272,16 +297,16 @@ function determineDefaultAudioOutput(room: SyncRoom, deviceId: string): boolean 
 	if (room.type === 'shared') {
 		return true;
 	}
-	// In a personal room, if another connected device is already acting as an active speaker
+	// In a personal room, if another connected non-standalone device is already acting as an active speaker
 	// with a loaded/playing track, default this secondary device to Companion / Lyrics Remote mode.
-	let anotherDeviceHasAudio = false;
+	let anotherSyncedDeviceHasAudio = false;
 	for (const [otherId, dev] of room.devices.entries()) {
-		if (otherId !== deviceId && dev.isAudioOutput) {
-			anotherDeviceHasAudio = true;
+		if (otherId !== deviceId && !dev.isStandalone && dev.isAudioOutput) {
+			anotherSyncedDeviceHasAudio = true;
 			break;
 		}
 	}
-	if (anotherDeviceHasAudio && room.state.currentTrack !== null) {
+	if (anotherSyncedDeviceHasAudio && room.state.currentTrack !== null) {
 		return false;
 	}
 	return true;
@@ -292,23 +317,37 @@ function ensureDeviceInRoom(
 	deviceId: string,
 	deviceName: string,
 	userId: number,
-	username: string
+	username: string,
+	initialStandalone?: boolean
 ): SyncDeviceInfo {
 	const cleanName =
 		deviceName.trim() || deviceNameRegistry.get(deviceId) || `${username}'s Device`;
 	deviceNameRegistry.set(deviceId, cleanName);
 
+	if (typeof initialStandalone === 'boolean' && !room.deviceStandalonePrefs.has(deviceId)) {
+		room.deviceStandalonePrefs.set(deviceId, initialStandalone);
+	}
+
+	const isStandalone =
+		room.type === 'shared' ? false : (room.deviceStandalonePrefs.get(deviceId) ?? false);
+
 	const nowMs = Date.now();
 	let device = room.devices.get(deviceId);
 	if (!device) {
-		const isAudioOutput = determineDefaultAudioOutput(room, deviceId);
+		const isAudioOutput = determineDefaultAudioOutput(room, deviceId, isStandalone);
 		room.deviceAudioPrefs.set(deviceId, isAudioOutput);
+		const lastDevState = room.deviceLastStates.get(deviceId);
 		device = {
 			deviceId,
 			deviceName: cleanName,
 			userId,
 			username,
 			isAudioOutput,
+			isStandalone,
+			standaloneTrackTitle: lastDevState?.currentTrack?.title ?? null,
+			standaloneTrackArtist:
+				lastDevState?.currentTrack?.artist ?? lastDevState?.currentAlbum?.artist ?? null,
+			standaloneIsPlaying: lastDevState?.isPlaying ?? false,
 			connectedAtMs: nowMs,
 			lastSeenMs: nowMs
 		};
@@ -317,6 +356,7 @@ function ensureDeviceInRoom(
 		device.deviceName = cleanName;
 		device.userId = userId;
 		device.username = username;
+		device.isStandalone = isStandalone;
 		device.lastSeenMs = nowMs;
 	}
 	return device;
@@ -354,9 +394,10 @@ export function registerDeviceStream(params: {
 	userId: number;
 	username: string;
 	roomCode?: string | null;
+	standalone?: boolean;
 	controller: ReadableStreamDefaultController<Uint8Array>;
 }): () => void {
-	const { deviceId, deviceName, userId, username, roomCode, controller } = params;
+	const { deviceId, deviceName, userId, username, roomCode, standalone, controller } = params;
 
 	if (roomCode) {
 		const normalizedCode = roomCode.trim().toUpperCase();
@@ -367,7 +408,7 @@ export function registerDeviceStream(params: {
 	}
 
 	const room = getActiveRoomForDevice(deviceId, userId, username);
-	ensureDeviceInRoom(room, deviceId, deviceName, userId, username);
+	ensureDeviceInRoom(room, deviceId, deviceName, userId, username, standalone);
 
 	const connectionId = crypto.randomUUID();
 	const conn: SseConnection = {
@@ -430,9 +471,11 @@ function moveDeviceToRoom(
 		devices: serializeDevices(oldRoom)
 	});
 
-	// Set audio preference in newRoom if specified
 	if (typeof defaultAudioOutput === 'boolean') {
 		newRoom.deviceAudioPrefs.set(deviceId, defaultAudioOutput);
+	}
+	if (newRoom.type === 'shared') {
+		newRoom.deviceStandalonePrefs.set(deviceId, false);
 	}
 
 	ensureDeviceInRoom(newRoom, deviceId, deviceName, userId, username);
@@ -467,8 +510,89 @@ export function updateRoomPlaybackState(params: {
 		params;
 	const room = getActiveRoomForDevice(deviceId, userId, username);
 
-	if (deviceName) {
-		ensureDeviceInRoom(room, deviceId, deviceName, userId, username);
+	const dev = ensureDeviceInRoom(
+		room,
+		deviceId,
+		deviceName || deviceNameRegistry.get(deviceId) || `${username}'s Device`,
+		userId,
+		username
+	);
+
+	const nowMs = Date.now();
+	const prevDevState = room.deviceLastStates.get(deviceId) || room.state;
+
+	let devPositionSec =
+		typeof partialState.positionSec === 'number'
+			? Math.max(0, partialState.positionSec)
+			: getEffectivePositionSec(prevDevState, nowMs);
+
+	if (
+		partialState.currentTrack !== undefined &&
+		partialState.currentTrack?.id !== prevDevState.currentTrack?.id &&
+		typeof partialState.positionSec !== 'number'
+	) {
+		devPositionSec = 0;
+	}
+
+	const nextDevState: SyncPlaybackState = {
+		currentTrack:
+			partialState.currentTrack !== undefined
+				? partialState.currentTrack
+				: prevDevState.currentTrack,
+		currentAlbum:
+			partialState.currentAlbum !== undefined
+				? partialState.currentAlbum
+				: prevDevState.currentAlbum,
+		activeQueue:
+			partialState.activeQueue !== undefined ? partialState.activeQueue : prevDevState.activeQueue,
+		queueIndex:
+			typeof partialState.queueIndex === 'number'
+				? partialState.queueIndex
+				: prevDevState.queueIndex,
+		isPlaying:
+			typeof partialState.isPlaying === 'boolean'
+				? partialState.isPlaying
+				: prevDevState.isPlaying,
+		positionSec: devPositionSec,
+		durationSec:
+			typeof partialState.durationSec === 'number'
+				? partialState.durationSec
+				: prevDevState.durationSec,
+		shuffleEnabled:
+			typeof partialState.shuffleEnabled === 'boolean'
+				? partialState.shuffleEnabled
+				: prevDevState.shuffleEnabled,
+		repeatMode:
+			partialState.repeatMode !== undefined ? partialState.repeatMode : prevDevState.repeatMode,
+		updatedAtServerMs: nowMs,
+		updatedByDeviceId: deviceId,
+		updatedByUsername: username
+	};
+
+	room.deviceLastStates.set(deviceId, nextDevState);
+
+	const prevTrackTitle = dev.standaloneTrackTitle;
+	const prevIsPlaying = dev.standaloneIsPlaying;
+	dev.standaloneTrackTitle = nextDevState.currentTrack?.title ?? null;
+	dev.standaloneTrackArtist =
+		nextDevState.currentTrack?.artist ?? nextDevState.currentAlbum?.artist ?? null;
+	dev.standaloneIsPlaying = nextDevState.isPlaying;
+
+	// If this device is in Standalone ("On Its Own") mode, do NOT overwrite room.state
+	// or broadcast playback state to other synced devices!
+	if (dev.isStandalone) {
+		if (prevTrackTitle !== dev.standaloneTrackTitle || prevIsPlaying !== dev.standaloneIsPlaying) {
+			broadcastToRoom(room, 'devices_updated', {
+				room: serializeRoomSummary(room),
+				devices: serializeDevices(room)
+			});
+		}
+		return {
+			ok: true,
+			room: serializeRoomSummary(room),
+			state: nextDevState,
+			devices: serializeDevices(room)
+		};
 	}
 
 	if (room.type === 'shared' && !room.allowGuestControl && room.hostUserId !== userId) {
@@ -481,17 +605,13 @@ export function updateRoomPlaybackState(params: {
 		};
 	}
 
-	const nowMs = Date.now();
 	const prevState = room.state;
 
-	// If positionSec was not explicitly provided in partialState, compute effective position
-	// before applying play/pause or metadata transitions
 	let nextPositionSec =
 		typeof partialState.positionSec === 'number'
 			? Math.max(0, partialState.positionSec)
 			: getEffectivePositionSec(prevState, nowMs);
 
-	// If changing to a different track and positionSec wasn't explicitly specified, start at 0
 	if (
 		partialState.currentTrack !== undefined &&
 		partialState.currentTrack?.id !== prevState.currentTrack?.id &&
@@ -528,33 +648,35 @@ export function updateRoomPlaybackState(params: {
 	};
 	room.lastActivityMs = nowMs;
 
-	// In a personal room, if playback starts and NO connected device has isAudioOutput=true,
+	// If playback starts in the synced group and NO synced device has isAudioOutput=true,
 	// enable audio output on the device that triggered playback so music is audible.
 	if (room.state.isPlaying && activateLocalAudioIfNone !== false) {
-		let anyAudioOutput = false;
-		for (const dev of room.devices.values()) {
-			if (dev.isAudioOutput) {
-				anyAudioOutput = true;
+		let anySyncedAudioOutput = false;
+		for (const d of room.devices.values()) {
+			if (!d.isStandalone && d.isAudioOutput) {
+				anySyncedAudioOutput = true;
 				break;
 			}
 		}
-		if (!anyAudioOutput) {
-			const senderDev = room.devices.get(deviceId);
-			if (senderDev) {
-				senderDev.isAudioOutput = true;
-				room.deviceAudioPrefs.set(deviceId, true);
-				broadcastToRoom(room, 'devices_updated', {
-					room: serializeRoomSummary(room),
-					devices: serializeDevices(room)
-				});
-			}
+		if (!anySyncedAudioOutput) {
+			dev.isAudioOutput = true;
+			room.deviceAudioPrefs.set(deviceId, true);
+			broadcastToRoom(room, 'devices_updated', {
+				room: serializeRoomSummary(room),
+				devices: serializeDevices(room)
+			});
 		}
 	}
 
-	broadcastToRoom(room, 'state_updated', {
-		room: serializeRoomSummary(room),
-		state: room.state
-	});
+	broadcastToRoom(
+		room,
+		'state_updated',
+		{
+			room: serializeRoomSummary(room),
+			state: room.state
+		},
+		{ skipStandaloneDevices: true }
+	);
 
 	if (room.type === 'shared' && room.isPublic) {
 		broadcastLobbyUpdateToAll();
@@ -579,14 +701,38 @@ export function setDeviceAudioMode(params: {
 	ok: boolean;
 	room: SyncRoomSummary;
 	devices: SyncDeviceInfo[];
+	state: SyncPlaybackState;
 } {
 	const { deviceId, targetDeviceId, userId, username, isAudioOutput, exclusive } = params;
 	const room = getActiveRoomForDevice(deviceId, userId, username);
 	const effectiveTargetId = targetDeviceId || deviceId;
 
+	// Selecting a synced audio mode (Companion, Transfer Here, or Play on Multiple)
+	// ensures the target device is in the Synced Group (isStandalone = false)
+	const targetDev = room.devices.get(effectiveTargetId);
+	const wasStandalone = targetDev?.isStandalone ?? false;
+	if (targetDev) {
+		targetDev.isStandalone = false;
+	}
+	room.deviceStandalonePrefs.set(effectiveTargetId, false);
+
+	// If the synced room had no active track yet, or if the user transferred playback to a device
+	// that was playing its own standalone track, adopt its track if room is empty
+	if (wasStandalone && !room.state.currentTrack) {
+		const devState = room.deviceLastStates.get(effectiveTargetId);
+		if (devState && devState.currentTrack) {
+			room.state = {
+				...devState,
+				positionSec: getEffectivePositionSec(devState),
+				updatedAtServerMs: Date.now()
+			};
+		}
+	}
+
 	if (exclusive && isAudioOutput) {
-		// Transfer playback exclusively to effectiveTargetId (mute other devices of this user / in personal room)
+		// Transfer playback exclusively to effectiveTargetId among non-standalone devices
 		for (const [id, dev] of room.devices.entries()) {
+			if (dev.isStandalone) continue;
 			if (room.type === 'personal' || dev.userId === userId) {
 				const shouldPlay = id === effectiveTargetId;
 				dev.isAudioOutput = shouldPlay;
@@ -594,27 +740,184 @@ export function setDeviceAudioMode(params: {
 			}
 		}
 	} else {
-		const targetDev = room.devices.get(effectiveTargetId);
 		if (targetDev) {
 			targetDev.isAudioOutput = isAudioOutput;
 		}
 		room.deviceAudioPrefs.set(effectiveTargetId, isAudioOutput);
 	}
 
+	const freshState: SyncPlaybackState = {
+		...room.state,
+		positionSec: getEffectivePositionSec(room.state),
+		updatedAtServerMs: Date.now()
+	};
+	room.state = freshState;
+
 	broadcastToRoom(room, 'devices_updated', {
 		room: serializeRoomSummary(room),
 		devices: serializeDevices(room),
-		state: {
-			...room.state,
-			positionSec: getEffectivePositionSec(room.state),
-			updatedAtServerMs: Date.now()
-		}
+		state: freshState
 	});
 
 	return {
 		ok: true,
 		room: serializeRoomSummary(room),
-		devices: serializeDevices(room)
+		devices: serializeDevices(room),
+		state: freshState
+	};
+}
+
+export function setDeviceStandaloneMode(params: {
+	deviceId: string;
+	targetDeviceId?: string;
+	userId: number;
+	username: string;
+	isStandalone: boolean;
+}): {
+	ok: boolean;
+	room: SyncRoomSummary;
+	devices: SyncDeviceInfo[];
+	state: SyncPlaybackState;
+} {
+	const { deviceId, targetDeviceId, userId, username, isStandalone } = params;
+	const room = getActiveRoomForDevice(deviceId, userId, username);
+	const effectiveTargetId = targetDeviceId || deviceId;
+
+	room.deviceStandalonePrefs.set(effectiveTargetId, isStandalone);
+	const targetDev = room.devices.get(effectiveTargetId);
+	if (targetDev) {
+		targetDev.isStandalone = isStandalone;
+		if (isStandalone) {
+			// When a device is on its own (Standalone), its local audio is always enabled
+			targetDev.isAudioOutput = true;
+			room.deviceAudioPrefs.set(effectiveTargetId, true);
+		}
+	}
+
+	const freshState: SyncPlaybackState = {
+		...room.state,
+		positionSec: getEffectivePositionSec(room.state),
+		updatedAtServerMs: Date.now()
+	};
+	room.state = freshState;
+
+	// If bringing the device back into sync and room.state has no track, seed from device's last state
+	if (!isStandalone && !room.state.currentTrack) {
+		const devState = room.deviceLastStates.get(effectiveTargetId);
+		if (devState && devState.currentTrack) {
+			room.state = {
+				...devState,
+				positionSec: getEffectivePositionSec(devState),
+				updatedAtServerMs: Date.now()
+			};
+		}
+	}
+
+	broadcastToRoom(room, 'devices_updated', {
+		room: serializeRoomSummary(room),
+		devices: serializeDevices(room),
+		state: room.state
+	});
+
+	if (!isStandalone) {
+		broadcastToRoom(
+			room,
+			'state_updated',
+			{
+				room: serializeRoomSummary(room),
+				state: room.state
+			},
+			{ skipStandaloneDevices: true }
+		);
+	}
+
+	return {
+		ok: true,
+		room: serializeRoomSummary(room),
+		devices: serializeDevices(room),
+		state: room.state
+	};
+}
+
+export function syncWithTargetDevice(params: {
+	deviceId: string;
+	targetDeviceId: string;
+	userId: number;
+	username: string;
+	audioOutputOnCaller?: boolean;
+}): {
+	ok: boolean;
+	room: SyncRoomSummary;
+	devices: SyncDeviceInfo[];
+	state: SyncPlaybackState;
+} {
+	const { deviceId, targetDeviceId, userId, username, audioOutputOnCaller } = params;
+	const room = getActiveRoomForDevice(deviceId, userId, username);
+	const nowMs = Date.now();
+
+	// Bring both the caller device and target device into the Synced Group (isStandalone = false)
+	for (const id of [deviceId, targetDeviceId]) {
+		room.deviceStandalonePrefs.set(id, false);
+		const d = room.devices.get(id);
+		if (d) {
+			d.isStandalone = false;
+		}
+	}
+
+	// Ensure target device outputs audio
+	const targetDev = room.devices.get(targetDeviceId);
+	if (targetDev) {
+		targetDev.isAudioOutput = true;
+		room.deviceAudioPrefs.set(targetDeviceId, true);
+	}
+
+	// Configure caller device audio mode (if specified)
+	if (typeof audioOutputOnCaller === 'boolean' && deviceId !== targetDeviceId) {
+		const callerDev = room.devices.get(deviceId);
+		if (callerDev) {
+			callerDev.isAudioOutput = audioOutputOnCaller;
+		}
+		room.deviceAudioPrefs.set(deviceId, audioOutputOnCaller);
+	}
+
+	// Adopt targetDeviceId's active playback state as the room's synced playback state
+	const targetState = room.deviceLastStates.get(targetDeviceId);
+	if (targetState && targetState.currentTrack) {
+		room.state = {
+			...targetState,
+			positionSec: getEffectivePositionSec(targetState, nowMs),
+			updatedAtServerMs: nowMs,
+			updatedByDeviceId: targetDeviceId
+		};
+	} else {
+		room.state = {
+			...room.state,
+			positionSec: getEffectivePositionSec(room.state, nowMs),
+			updatedAtServerMs: nowMs
+		};
+	}
+
+	broadcastToRoom(room, 'devices_updated', {
+		room: serializeRoomSummary(room),
+		devices: serializeDevices(room),
+		state: room.state
+	});
+
+	broadcastToRoom(
+		room,
+		'state_updated',
+		{
+			room: serializeRoomSummary(room),
+			state: room.state
+		},
+		{ skipStandaloneDevices: true }
+	);
+
+	return {
+		ok: true,
+		room: serializeRoomSummary(room),
+		devices: serializeDevices(room),
+		state: room.state
 	};
 }
 
@@ -679,7 +982,6 @@ export function createSharedRoom(params: {
 	const roomId = `room:${code}`;
 	const nowMs = Date.now();
 
-	// Seed shared room playback state from initialState or the creator's previous personal room state
 	const baseState = oldRoom.state.currentTrack ? { ...oldRoom.state } : createEmptyPlaybackState();
 	const state: SyncPlaybackState = {
 		currentTrack:
@@ -731,6 +1033,8 @@ export function createSharedRoom(params: {
 		state,
 		devices: new Map(),
 		deviceAudioPrefs: new Map(),
+		deviceStandalonePrefs: new Map(),
+		deviceLastStates: new Map(),
 		connections: new Map()
 	};
 
@@ -785,7 +1089,6 @@ export function joinSharedRoom(params: {
 	const oldRoom = getActiveRoomForDevice(deviceId, userId, username);
 	deviceRoomAssignments.set(deviceId, targetRoom.id);
 
-	// Snapshot fresh effective position before welcoming the new participant
 	targetRoom.state = {
 		...targetRoom.state,
 		positionSec: getEffectivePositionSec(targetRoom.state),
@@ -795,13 +1098,16 @@ export function joinSharedRoom(params: {
 	if (oldRoom.id !== targetRoom.id) {
 		moveDeviceToRoom(deviceId, userId, username, oldRoom, targetRoom, true);
 	} else {
-		ensureDeviceInRoom(
+		targetRoom.deviceStandalonePrefs.set(deviceId, false);
+		const d = ensureDeviceInRoom(
 			targetRoom,
 			deviceId,
 			deviceName || `${username}'s Device`,
 			userId,
-			username
+			username,
+			false
 		);
+		d.isStandalone = false;
 	}
 
 	return {
@@ -830,7 +1136,6 @@ export function leaveSharedRoom(params: {
 	if (oldRoom.id !== personalRoom.id) {
 		moveDeviceToRoom(deviceId, userId, username, oldRoom, personalRoom, true);
 
-		// If the shared room is now completely empty, clean it up
 		if (oldRoom.type === 'shared' && oldRoom.devices.size === 0) {
 			if (oldRoom.code) roomCodeIndex.delete(oldRoom.code);
 			rooms.delete(oldRoom.id);
@@ -906,13 +1211,14 @@ export function getSyncSnapshotForDevice(deviceId: string, userId: number, usern
 		devices: serializeDevices(room),
 		myDeviceId: deviceId,
 		myAudioOutput: dev ? dev.isAudioOutput : true,
+		myStandalone: dev ? dev.isStandalone : false,
 		publicRooms: listPublicRooms()
 	};
 }
 
 // Periodic keepalive comment & stale room cleanup every 15 seconds
 const KEEPALIVE_INTERVAL_MS = 15_000;
-const STALE_EMPTY_SHARED_ROOM_MS = 15 * 60 * 1000; // 15 minutes
+const STALE_EMPTY_SHARED_ROOM_MS = 15 * 60 * 1000;
 
 const keepaliveTimer = setInterval(() => {
 	const nowMs = Date.now();
@@ -931,7 +1237,6 @@ const keepaliveTimer = setInterval(() => {
 			removeConnectionFromRoom(room, connId);
 		}
 
-		// Clean up empty shared rooms after 15 minutes of inactivity
 		if (
 			room.type === 'shared' &&
 			room.connections.size === 0 &&

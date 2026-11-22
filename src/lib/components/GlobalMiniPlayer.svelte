@@ -168,16 +168,21 @@
 			<button
 				type="button"
 				onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
-				class="p-1.5 sm:p-2 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold {player.activeRoom?.type === 'shared'
-					? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/30'
-					: !player.localAudioEnabled
-						? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 hover:bg-cyan-500/30'
-						: player.connectedDevices.length > 1
-							? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/70'
-							: 'bg-neutral-800/70 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/60'}"
+				class="p-1.5 sm:p-2 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold {player.standaloneMode
+					? 'bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30'
+					: player.activeRoom?.type === 'shared'
+						? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/30'
+						: !player.localAudioEnabled
+							? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 hover:bg-cyan-500/30'
+							: player.connectedDevices.length > 1
+								? 'bg-emerald-950/70 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/70'
+								: 'bg-neutral-800/70 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/60'}"
 				title="Multi-Device Sync & Listen Together"
 			>
-				{#if player.activeRoom?.type === 'shared'}
+				{#if player.standaloneMode}
+					<Radio class="w-4 h-4 text-amber-400" />
+					<span class="hidden lg:inline text-[10px]">Solo</span>
+				{:else if player.activeRoom?.type === 'shared'}
 					<Users class="w-4 h-4 text-emerald-400" />
 					<span class="hidden lg:inline text-[11px] font-mono">{player.activeRoom.code}</span>
 				{:else}

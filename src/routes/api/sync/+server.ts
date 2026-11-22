@@ -4,6 +4,8 @@ import {
 	listPublicRooms,
 	updateRoomPlaybackState,
 	setDeviceAudioMode,
+	setDeviceStandaloneMode,
+	syncWithTargetDevice,
 	renameDevice,
 	createSharedRoom,
 	joinSharedRoom,
@@ -73,6 +75,33 @@ export const POST = async ({ request, locals }: RequestEvent) => {
 				username: user.username,
 				isAudioOutput: Boolean(body.isAudioOutput),
 				exclusive: Boolean(body.exclusive)
+			});
+			return json({ ...res, serverNowMs: Date.now() });
+		}
+
+		case 'set_device_standalone': {
+			const res = setDeviceStandaloneMode({
+				deviceId,
+				targetDeviceId: typeof body.targetDeviceId === 'string' ? body.targetDeviceId : undefined,
+				userId: user.id,
+				username: user.username,
+				isStandalone: Boolean(body.isStandalone)
+			});
+			return json({ ...res, serverNowMs: Date.now() });
+		}
+
+		case 'sync_with_device': {
+			const targetDeviceId = String(body.targetDeviceId || '').trim();
+			if (!targetDeviceId) {
+				return json({ error: 'Missing targetDeviceId' }, { status: 400 });
+			}
+			const res = syncWithTargetDevice({
+				deviceId,
+				targetDeviceId,
+				userId: user.id,
+				username: user.username,
+				audioOutputOnCaller:
+					typeof body.audioOutputOnCaller === 'boolean' ? body.audioOutputOnCaller : undefined
 			});
 			return json({ ...res, serverNowMs: Date.now() });
 		}
