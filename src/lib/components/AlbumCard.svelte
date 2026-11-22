@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Album } from '$lib/types/index.js';
-	import { Disc, AlertTriangle, CheckCircle2, Music, Trash2 } from '@lucide/svelte';
+	import { Disc, AlertTriangle, Music, Trash2 } from '@lucide/svelte';
 	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -129,30 +129,12 @@
 			</div>
 		{/if}
 
-		<!-- Health Badge on Top Right (pointer-events-none so click passes to link) -->
-		<div class="absolute top-2 right-2 flex flex-col gap-1 items-end pointer-events-none">
-			{#if album.checked_count !== undefined && (album.track_count || 0) > 0 && album.checked_count === album.track_count}
-				<span class="inline-flex items-center gap-1 rounded-full bg-emerald-900/90 px-2 py-0.5 text-[10px] font-semibold text-emerald-200 border border-emerald-500/80 backdrop-blur-md shadow-sm whitespace-nowrap">
-					<CheckCircle2 class="h-3 w-3 text-emerald-300" />
-					Verified
-				</span>
-			{:else if !hasIssues && (album.track_count || 0) > 0}
-				<span class="inline-flex items-center gap-1 rounded-full bg-emerald-950/90 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-700/60 backdrop-blur-md shadow-sm whitespace-nowrap">
-					<CheckCircle2 class="h-3 w-3" />
-					Ready
-				</span>
-			{:else if hasIssues}
+		<!-- Health Badge on Top Right: Only displayed when album has issues / needs attention -->
+		{#if hasIssues}
+			<div class="absolute top-2 right-2 flex flex-col gap-1 items-end pointer-events-none">
 				<span class="inline-flex items-center gap-1 rounded-full bg-amber-950/90 px-2 py-0.5 text-[10px] font-semibold text-amber-300 border border-amber-600/60 backdrop-blur-md shadow-sm whitespace-nowrap">
 					<AlertTriangle class="h-3 w-3" />
 					Needs Fix
-				</span>
-			{/if}
-		</div>
-
-		{#if album.media_type}
-			<div class="absolute bottom-2 left-2 pointer-events-none">
-				<span class="rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-neutral-300 backdrop-blur-sm whitespace-nowrap">
-					{album.media_type}
 				</span>
 			</div>
 		{/if}
@@ -172,13 +154,7 @@
 		<div class="mt-3 flex items-center justify-between border-t border-neutral-800/60 pt-2 text-xs text-neutral-500">
 			<span class="whitespace-nowrap">{album.release_year || '—'}</span>
 			<div class="flex items-center gap-2 whitespace-nowrap">
-				{#if album.checked_count !== undefined && (album.track_count || 0) > 0}
-					<span class="whitespace-nowrap font-medium {album.checked_count === album.track_count ? 'text-emerald-400' : 'text-neutral-400'}">
-						{album.checked_count}/{album.track_count}&nbsp;checked
-					</span>
-				{:else}
-					<span class="whitespace-nowrap">{album.track_count || 0}&nbsp;tracks</span>
-				{/if}
+				<span class="whitespace-nowrap">{album.track_count || 0}&nbsp;tracks</span>
 			</div>
 		</div>
 

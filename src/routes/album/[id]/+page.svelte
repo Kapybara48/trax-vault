@@ -28,10 +28,8 @@
 		Check,
 		FileText,
 		Sparkles,
-		ListPlus,
 		Upload
 	} from '@lucide/svelte';
-	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import LrcLibModal from '$lib/components/LrcLibModal.svelte';
 	import BatchLyricsModal from '$lib/components/BatchLyricsModal.svelte';
 	import UploadTracksModal from '$lib/components/UploadTracksModal.svelte';
@@ -58,19 +56,10 @@
 	});
 
 	// Modals and dialogs
-	let showBatchModal = $state(false);
 	let showEditAlbumModal = $state(false);
-	let showAddTrackModal = $state(false);
+	let editAlbumTab = $state<'album' | 'add_track'>('album');
 	let filterIssuesOnly = $state(false);
 	let trackSearch = $state('');
-
-	// Batch update form state
-	let batchFormat = $state<AudioFormat | ''>('');
-	let batchQuality = $state<QualityRating | ''>('');
-	let batchCensorship = $state<CensorshipStatus | ''>('');
-	let batchLyrics = $state<LyricsStatus | ''>('');
-	let batchManuallyChecked = $state<number | ''>('');
-	let isBatchSubmitting = $state(false);
 
 	// Edit album form state
 	let editTitle = $state(album.title);
@@ -263,52 +252,6 @@
 		}
 	}
 
-	async function submitBatchUpdate() {
-		isBatchSubmitting = true;
-		try {
-			const payload: any = {};
-			if (batchFormat) payload.format = batchFormat;
-			if (batchQuality) payload.quality_rating = batchQuality;
-			if (batchCensorship) payload.censorship = batchCensorship;
-			if (batchLyrics) payload.lyrics = batchLyrics;
-			if (batchManuallyChecked !== '') payload.manually_checked = batchManuallyChecked;
-
-			const res = await fetch(`/api/albums/${album.id}/batch`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload)
-			});
-
-			if (res.ok) {
-				showBatchModal = false;
-				await invalidateAll();
-			}
-		} catch (err) {
-			console.error('Failed to run batch update:', err);
-		} finally {
-			isBatchSubmitting = false;
-		}
-	}
-
-	async function setAllVerified(verified: boolean) {
-		isBatchSubmitting = true;
-		try {
-			const res = await fetch(`/api/albums/${album.id}/batch`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ manually_checked: verified ? 1 : 0 })
-			});
-			if (res.ok) {
-				tracks = tracks.map((t) => ({ ...t, manually_checked: verified ? 1 : 0 }));
-				await invalidateAll();
-			}
-		} catch (err) {
-			console.error('Failed to update verification status:', err);
-		} finally {
-			isBatchSubmitting = false;
-		}
-	}
-
 	async function submitEditAlbum() {
 		try {
 			const yearNum = editYear.trim() ? parseInt(editYear.trim(), 10) : null;
@@ -398,9 +341,10 @@
 			});
 
 			if (res.ok) {
-				showAddTrackModal = false;
+				showEditAlbumModal = false;
 				newTrackTitle = '';
 				newTrackDuration = '';
+				newTrackNumber = tracks.length + 2;
 				await invalidateAll();
 			}
 		} catch (err) {
@@ -425,17 +369,6 @@
 		} catch (err) {
 			console.error('Failed to delete album:', err);
 		}
-	}
-
-	// Add to Playlist Modal State
-	let showPlaylistModal = $state(false);
-	let playlistModalTrackIds = $state<number[]>([]);
-	let playlistModalTitle = $state<string | undefined>(undefined);
-
-	function openAddToPlaylist(trackIds: number[], title?: string) {
-		playlistModalTrackIds = trackIds;
-		playlistModalTitle = title;
-		showPlaylistModal = true;
 	}
 </script>
 
@@ -625,29 +558,15 @@
 
 				<button
 					type="button"
-					onclick={() => (showBatchModal = true)}
-					class="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow shadow-emerald-600/30 hover:bg-emerald-500 transition"
+					onclick={() => {
+						showEditAlbumModal = true;
+						editAlbumTab = 'album';
+					}}
+					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-200 border border-neutral-700 transition cursor-pointer"
+					title="Edit album details and add tracks"
 				>
-					<Layers class="h-4 w-4" />
-					Batch Update Tracks
-				</button>
-
-				<button
-					type="button"
-					onclick={() => (showAddTrackModal = true)}
-					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-200 border border-neutral-700 transition"
-				>
-					<Plus class="h-4 w-4" />
-					Add Track
-				</button>
-
-				<button
-					type="button"
-					onclick={() => (showEditAlbumModal = true)}
-					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-200 border border-neutral-700 transition"
-				>
-					<Pencil class="h-3.5 w-3.5" />
-					Edit Album
+					<Pencil class="h-3.5 w-3.5 text-emerald-400" />
+					<span>Edit Album &amp; Tracks</span>
 				</button>
 
 				<a
@@ -671,18 +590,8 @@
 
 				<button
 					type="button"
-					onclick={() => openAddToPlaylist(tracks.map((t) => t.id), album.title)}
-					class="flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 hover:text-white px-3.5 py-2 text-xs font-semibold text-neutral-300 border border-neutral-700 transition"
-					title="Add entire album to a playlist"
-				>
-					<ListPlus class="h-3.5 w-3.5 text-emerald-400" />
-					<span>Add to Playlist</span>
-				</button>
-
-				<button
-					type="button"
 					onclick={() => (showBatchLyricsModal = true)}
-					class="flex items-center gap-1.5 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 px-3.5 py-2 text-xs font-semibold transition"
+					class="flex items-center gap-1.5 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
 					title="Batch download missing synced lyrics from LRCLIB for this album"
 				>
 					<Mic2 class="h-3.5 w-3.5 text-teal-400" />
@@ -741,98 +650,39 @@
 
 	<!-- Tracklist Section -->
 	<section class="mt-8">
-		<!-- Quick Album-Wide Batch Dropdowns (No Tap-Through) & Search -->
-		<div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-3.5">
-			<div class="flex flex-wrap items-center gap-3">
-				<div class="flex items-center gap-2">
-					<Music class="h-4 w-4 text-emerald-400" />
-					<h2 class="text-sm font-bold text-neutral-100">
-						Tracklist ({displayedTracks.length})
-					</h2>
-				</div>
+		<!-- Tracklist Header & Search -->
+		<div class="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-3.5">
+			<div class="flex items-center gap-2">
+				<Music class="h-4 w-4 text-emerald-400" />
+				<h2 class="text-sm font-bold text-neutral-100">
+					Tracklist ({displayedTracks.length})
+				</h2>
+			</div>
 
+			<div class="flex items-center gap-2.5">
 				<!-- Track Search / Filter in Album -->
-				<div class="relative w-48 sm:w-60">
+				<div class="relative w-full sm:w-64">
 					<Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
 					<input
 						type="text"
 						bind:value={trackSearch}
-						placeholder="Filter tracks: !flac, checked, !checked..."
+						placeholder="Filter tracks..."
 						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 pl-8 pr-2.5 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
 					/>
 				</div>
-			</div>
 
-			<!-- Batch quick-apply to whole album -->
-			<div class="flex flex-wrap items-center gap-2 text-xs">
-				<span class="text-[11px] font-semibold text-neutral-400">Batch album:</span>
-
-				<!-- Batch Verification -->
-				<select
-					onchange={(e) => {
-						if (e.currentTarget.value) {
-							setAllVerified(e.currentTarget.value === '1');
-							e.currentTarget.value = '';
-						}
+				<button
+					type="button"
+					onclick={() => {
+						showEditAlbumModal = true;
+						editAlbumTab = 'add_track';
 					}}
-					class="rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1 text-xs text-neutral-300 focus:outline-none focus:border-emerald-500 font-medium"
-					title="Mark all tracks in this album as verified or unverified"
+					class="flex items-center gap-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-200 border border-neutral-700 transition cursor-pointer shrink-0"
+					title="Add a new track to this album"
 				>
-					<option value="">Set Verification...</option>
-					<option value="1">✓ Mark All as Checked</option>
-					<option value="0">✗ Unmark All</option>
-				</select>
-
-				<select
-					onchange={(e) => {
-						if (e.currentTarget.value) {
-							batchFormat = e.currentTarget.value as AudioFormat;
-							submitBatchUpdate();
-							e.currentTarget.value = '';
-						}
-					}}
-					class="rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1 text-xs text-neutral-300 focus:outline-none focus:border-emerald-500"
-					title="Set format for all tracks in this album"
-				>
-					<option value="">Set Format...</option>
-					{#each FORMAT_OPTIONS as opt}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
-
-				<select
-					onchange={(e) => {
-						if (e.currentTarget.value) {
-							batchCensorship = e.currentTarget.value as CensorshipStatus;
-							submitBatchUpdate();
-							e.currentTarget.value = '';
-						}
-					}}
-					class="rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1 text-xs text-neutral-300 focus:outline-none focus:border-emerald-500"
-					title="Set censorship for all tracks in this album"
-				>
-					<option value="">Set Censorship...</option>
-					{#each CENSORSHIP_OPTIONS as opt}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
-
-				<select
-					onchange={(e) => {
-						if (e.currentTarget.value) {
-							batchLyrics = e.currentTarget.value as LyricsStatus;
-							submitBatchUpdate();
-							e.currentTarget.value = '';
-						}
-					}}
-					class="rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1 text-xs text-neutral-300 focus:outline-none focus:border-emerald-500"
-					title="Set lyrics for all tracks in this album"
-				>
-					<option value="">Set Lyrics...</option>
-					{#each LYRICS_OPTIONS as opt}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+					<Plus class="h-3.5 w-3.5 text-emerald-400" />
+					<span>Add Track</span>
+				</button>
 			</div>
 		</div>
 
@@ -854,7 +704,6 @@
 								onTrackUpdated={handleTrackUpdated}
 								onTrackDeleted={handleTrackDeleted}
 								onOpenLyrics={openLyricsModal}
-								onAddToPlaylist={(t) => openAddToPlaylist([t.id], t.title)}
 							/>
 						{/each}
 					</div>
@@ -880,8 +729,11 @@
 						{/if}
 						<button
 							type="button"
-							onclick={() => (showAddTrackModal = true)}
-							class="inline-flex items-center gap-1 rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-200 hover:bg-neutral-700 transition border border-neutral-700"
+							onclick={() => {
+								showEditAlbumModal = true;
+								editAlbumTab = 'add_track';
+							}}
+							class="inline-flex items-center gap-1 rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-200 hover:bg-neutral-700 transition border border-neutral-700 cursor-pointer"
 						>
 							<Plus class="h-4 w-4" /> Add Track
 						</button>
@@ -892,374 +744,279 @@
 	</section>
 </div>
 
-<!-- Modal: Batch Update Tracks -->
-{#if showBatchModal}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-		<div class="w-full max-w-md rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
-			<div class="flex items-center justify-between border-b border-neutral-800 pb-4">
-				<h3 class="text-base font-bold text-white flex items-center gap-2">
-					<Layers class="h-5 w-5 text-emerald-400" />
-					Batch Update All Tracks
-				</h3>
-				<button type="button" onclick={() => (showBatchModal = false)} class="text-neutral-400 hover:text-white">
-					<X class="h-5 w-5" />
-				</button>
-			</div>
-
-			<p class="mt-3 text-xs text-neutral-400">
-				Apply settings to all {tracks.length} tracks on this album at once. Leave fields unselected to keep their existing values.
-			</p>
-
-			<div class="mt-4 space-y-4">
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Set Audio Format</label>
-					<select
-						bind:value={batchFormat}
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					>
-						<option value="">-- Keep Current Format --</option>
-						{#each FORMAT_OPTIONS as opt}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Set Audio Quality</label>
-					<select
-						bind:value={batchQuality}
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					>
-						<option value="">-- Keep Current Quality --</option>
-						{#each QUALITY_OPTIONS as opt}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Set Censorship Status</label>
-					<select
-						bind:value={batchCensorship}
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					>
-						<option value="">-- Keep Current Censorship --</option>
-						{#each CENSORSHIP_OPTIONS as opt}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Set Lyrics Status</label>
-					<select
-						bind:value={batchLyrics}
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					>
-						<option value="">-- Keep Current Lyrics --</option>
-						{#each LYRICS_OPTIONS as opt}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Set Manual Check Status</label>
-					<select
-						bind:value={batchManuallyChecked}
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					>
-						<option value="">-- Keep Current Status --</option>
-						<option value={1}>✓ Mark as Manually Checked (100% Verified)</option>
-						<option value={0}>✗ Unmark (Unverified)</option>
-					</select>
-				</div>
-			</div>
-
-			<div class="mt-6 flex justify-end gap-3 border-t border-neutral-800 pt-4">
-				<button
-					type="button"
-					onclick={() => (showBatchModal = false)}
-					class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700"
-				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					onclick={submitBatchUpdate}
-					disabled={isBatchSubmitting}
-					class="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 shadow-md shadow-emerald-600/30 transition"
-				>
-					{isBatchSubmitting ? 'Updating...' : 'Apply to All Tracks'}
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-<!-- Modal: Edit Album Metadata -->
+<!-- Modal: Edit Album & Add Track (Unified Modal) -->
 {#if showEditAlbumModal}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-		<div class="w-full max-w-md rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-			<div class="flex items-center justify-between border-b border-neutral-800 pb-4">
-				<h3 class="text-base font-bold text-white flex items-center gap-2">
-					<Pencil class="h-4 w-4 text-emerald-400" />
-					Edit Album Info
-				</h3>
-				<button type="button" onclick={() => (showEditAlbumModal = false)} class="text-neutral-400 hover:text-white">
-					<X class="h-5 w-5" />
-				</button>
-			</div>
-
-			<div class="mt-4 space-y-4">
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Album Title *</label>
-					<input
-						type="text"
-						bind:value={editTitle}
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					/>
+		<div class="w-full max-w-lg rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+			<!-- Header & Tabs -->
+			<div class="flex items-center justify-between border-b border-neutral-800 pb-3">
+				<div class="flex items-center gap-1.5 p-1 rounded-xl bg-neutral-950 border border-neutral-800">
+					<button
+						type="button"
+						onclick={() => (editAlbumTab = 'album')}
+						class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer {editAlbumTab === 'album'
+							? 'bg-emerald-600 text-white shadow-sm'
+							: 'text-neutral-400 hover:text-white'}"
+					>
+						<Pencil class="h-3.5 w-3.5" />
+						<span>Edit Album</span>
+					</button>
+					<button
+						type="button"
+						onclick={() => (editAlbumTab = 'add_track')}
+						class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer {editAlbumTab === 'add_track'
+							? 'bg-emerald-600 text-white shadow-sm'
+							: 'text-neutral-400 hover:text-white'}"
+					>
+						<Plus class="h-3.5 w-3.5" />
+						<span>Add Track</span>
+					</button>
 				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Artist *</label>
-					<input
-						type="text"
-						bind:value={editArtist}
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					/>
-				</div>
-
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Release Year</label>
-						<input
-							type="number"
-							bind:value={editYear}
-							placeholder="e.g. 1994"
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						/>
-					</div>
-
-					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Media Type</label>
-						<select
-							bind:value={editMediaType}
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						>
-							<option value="Digital">Digital / Web</option>
-							<option value="CD">CD</option>
-							<option value="Vinyl">Vinyl</option>
-							<option value="Cassette">Cassette</option>
-						</select>
-					</div>
-				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Genre</label>
-					<input
-						type="text"
-						bind:value={editGenre}
-						placeholder="e.g. Electronic, Synthpop, Rock"
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					/>
-				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Cover Image</label>
-					<div class="flex items-center gap-2">
-						<input
-							type="url"
-							bind:value={editCoverUrl}
-							placeholder="https://... or upload file"
-							class="flex-1 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						/>
-						<label class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-neutral-200 cursor-pointer transition">
-							<Upload class="h-3.5 w-3.5 text-emerald-400" />
-							<span>Upload</span>
-							<input
-								type="file"
-								accept="image/jpeg,image/png,image/webp"
-								onchange={(e) => {
-									const target = e.currentTarget as HTMLInputElement;
-									if (target.files && target.files[0]) {
-										handleAlbumCoverUpload(target.files[0]);
-									}
-								}}
-								class="hidden"
-							/>
-						</label>
-					</div>
-				</div>
-
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Album Notes</label>
-					<textarea
-						bind:value={editNotes}
-						rows="2"
-						placeholder="Notes about release, origin, or rip details..."
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					></textarea>
-				</div>
-			</div>
-
-			<div class="mt-6 flex justify-end gap-3 border-t border-neutral-800 pt-4">
 				<button
 					type="button"
 					onclick={() => (showEditAlbumModal = false)}
-					class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700"
+					class="text-neutral-400 hover:text-white p-1 cursor-pointer"
 				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					onclick={submitEditAlbum}
-					class="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 shadow-md shadow-emerald-600/30 transition"
-				>
-					Save Changes
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-<!-- Modal: Add Single Track -->
-{#if showAddTrackModal}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-		<div class="w-full max-w-md rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-			<div class="flex items-center justify-between border-b border-neutral-800 pb-4">
-				<h3 class="text-base font-bold text-white flex items-center gap-2">
-					<Plus class="h-4 w-4 text-emerald-400" />
-					Add Track
-				</h3>
-				<button type="button" onclick={() => (showAddTrackModal = false)} class="text-neutral-400 hover:text-white">
 					<X class="h-5 w-5" />
 				</button>
 			</div>
 
-			<div class="mt-4 space-y-4">
-				<div>
-					<label class="block text-xs font-semibold text-neutral-300 mb-1">Track Title *</label>
-					<input
-						type="text"
-						bind:value={newTrackTitle}
-						placeholder="Track name"
-						class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					/>
-				</div>
-
-				<div class="grid grid-cols-2 gap-3">
+			{#if editAlbumTab === 'album'}
+				<!-- TAB 1: Edit Album Metadata -->
+				<div class="mt-4 space-y-4">
 					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Track Number</label>
-						<input
-							type="number"
-							bind:value={newTrackNumber}
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						/>
-					</div>
-
-					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Disc Number</label>
-						<input
-							type="number"
-							bind:value={newTrackDisc}
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						/>
-					</div>
-				</div>
-
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Track Artist (optional)</label>
+						<label class="block text-xs font-semibold text-neutral-300 mb-1">Album Title *</label>
 						<input
 							type="text"
-							bind:value={newTrackArtist}
-							placeholder="Leave blank if same as album"
+							bind:value={editTitle}
 							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
 					</div>
 
 					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Duration (mm:ss)</label>
+						<label class="block text-xs font-semibold text-neutral-300 mb-1">Artist *</label>
 						<input
 							type="text"
-							bind:value={newTrackDuration}
-							placeholder="3:45"
+							bind:value={editArtist}
 							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
 					</div>
+
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Release Year</label>
+							<input
+								type="number"
+								bind:value={editYear}
+								placeholder="e.g. 1994"
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Media Type</label>
+							<select
+								bind:value={editMediaType}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							>
+								<option value="Digital">Digital / Web</option>
+								<option value="CD">CD</option>
+								<option value="Vinyl">Vinyl</option>
+								<option value="Cassette">Cassette</option>
+							</select>
+						</div>
+					</div>
+
+					<div>
+						<label class="block text-xs font-semibold text-neutral-300 mb-1">Genre</label>
+						<input
+							type="text"
+							bind:value={editGenre}
+							placeholder="e.g. Electronic, Synthpop, Rock"
+							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+						/>
+					</div>
+
+					<div>
+						<label class="block text-xs font-semibold text-neutral-300 mb-1">Cover Image</label>
+						<div class="flex items-center gap-2">
+							<input
+								type="url"
+								bind:value={editCoverUrl}
+								placeholder="https://... or upload file"
+								class="flex-1 rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							/>
+							<label class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-neutral-200 cursor-pointer transition">
+								<Upload class="h-3.5 w-3.5 text-emerald-400" />
+								<span>Upload</span>
+								<input
+									type="file"
+									accept="image/jpeg,image/png,image/webp"
+									onchange={(e) => {
+										const target = e.currentTarget as HTMLInputElement;
+										if (target.files && target.files[0]) {
+											handleAlbumCoverUpload(target.files[0]);
+										}
+									}}
+									class="hidden"
+								/>
+							</label>
+						</div>
+					</div>
+
+					<div>
+						<label class="block text-xs font-semibold text-neutral-300 mb-1">Album Notes</label>
+						<textarea
+							bind:value={editNotes}
+							rows="2"
+							placeholder="Notes about release, origin, or rip details..."
+							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+						></textarea>
+					</div>
+
+					<div class="mt-6 flex justify-end gap-3 border-t border-neutral-800 pt-4">
+						<button
+							type="button"
+							onclick={() => (showEditAlbumModal = false)}
+							class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 cursor-pointer"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onclick={submitEditAlbum}
+							class="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 shadow-md shadow-emerald-600/30 transition cursor-pointer"
+						>
+							Save Changes
+						</button>
+					</div>
 				</div>
-
-				<div class="grid grid-cols-2 gap-3">
+			{:else}
+				<!-- TAB 2: Add Track to Album -->
+				<div class="mt-4 space-y-4">
 					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Format</label>
-						<select
-							bind:value={newTrackFormat}
+						<label class="block text-xs font-semibold text-neutral-300 mb-1">Track Title *</label>
+						<input
+							type="text"
+							bind:value={newTrackTitle}
+							placeholder="Track name"
 							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						>
-							{#each FORMAT_OPTIONS as opt}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
+						/>
 					</div>
 
-					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Audio Quality</label>
-						<select
-							bind:value={newTrackQuality}
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Track Number</label>
+							<input
+								type="number"
+								bind:value={newTrackNumber}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Disc Number</label>
+							<input
+								type="number"
+								bind:value={newTrackDisc}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Track Artist (optional)</label>
+							<input
+								type="text"
+								bind:value={newTrackArtist}
+								placeholder="Leave blank if same as album"
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Duration (mm:ss)</label>
+							<input
+								type="text"
+								bind:value={newTrackDuration}
+								placeholder="3:45"
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Format</label>
+							<select
+								bind:value={newTrackFormat}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							>
+								{#each FORMAT_OPTIONS as opt}
+									<option value={opt.value}>{opt.label}</option>
+								{/each}
+							</select>
+						</div>
+
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Audio Quality</label>
+							<select
+								bind:value={newTrackQuality}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							>
+								{#each QUALITY_OPTIONS as opt}
+									<option value={opt.value}>{opt.label}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Censorship</label>
+							<select
+								bind:value={newTrackCensorship}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							>
+								{#each CENSORSHIP_OPTIONS as opt}
+									<option value={opt.value}>{opt.label}</option>
+								{/each}
+							</select>
+						</div>
+
+						<div>
+							<label class="block text-xs font-semibold text-neutral-300 mb-1">Lyrics</label>
+							<select
+								bind:value={newTrackLyrics}
+								class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+							>
+								{#each LYRICS_OPTIONS as opt}
+									<option value={opt.value}>{opt.label}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
+
+					<div class="mt-6 flex justify-end gap-3 border-t border-neutral-800 pt-4">
+						<button
+							type="button"
+							onclick={() => (showEditAlbumModal = false)}
+							class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700 cursor-pointer"
 						>
-							{#each QUALITY_OPTIONS as opt}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onclick={submitAddTrack}
+							disabled={!newTrackTitle.trim()}
+							class="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 shadow-md shadow-emerald-600/30 transition cursor-pointer"
+						>
+							Add Track
+						</button>
 					</div>
 				</div>
-
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Censorship</label>
-						<select
-							bind:value={newTrackCensorship}
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						>
-							{#each CENSORSHIP_OPTIONS as opt}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
-					</div>
-
-					<div>
-						<label class="block text-xs font-semibold text-neutral-300 mb-1">Lyrics</label>
-						<select
-							bind:value={newTrackLyrics}
-							class="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						>
-							{#each LYRICS_OPTIONS as opt}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
-					</div>
-				</div>
-			</div>
-
-			<div class="mt-6 flex justify-end gap-3 border-t border-neutral-800 pt-4">
-				<button
-					type="button"
-					onclick={() => (showAddTrackModal = false)}
-					class="rounded-xl bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-neutral-700"
-				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					onclick={submitAddTrack}
-					disabled={!newTrackTitle.trim()}
-					class="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 shadow-md shadow-emerald-600/30 transition"
-				>
-					Add Track
-				</button>
-			</div>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -1437,13 +1194,6 @@
 		onClose={() => (showAlbumLrcLibModal = false)}
 	/>
 {/if}
-
-<AddToPlaylistModal
-	isOpen={showPlaylistModal}
-	trackIds={playlistModalTrackIds}
-	trackTitle={playlistModalTitle}
-	onClose={() => (showPlaylistModal = false)}
-/>
 
 <BatchLyricsModal
 	isOpen={showBatchLyricsModal}

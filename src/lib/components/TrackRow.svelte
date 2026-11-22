@@ -12,7 +12,6 @@
 	import {
 		Trash2,
 		AlertTriangle,
-		CheckCircle2,
 		FileText,
 		Disc,
 		Clock,
@@ -24,9 +23,9 @@
 		Download,
 		RefreshCw,
 		ScanLine,
-		Upload
+		Upload,
+		X
 	} from '@lucide/svelte';
-	import CustomCheckbox from '$lib/components/CustomCheckbox.svelte';
 	import DeleteTrackModal from '$lib/components/DeleteTrackModal.svelte';
 	import { alertAction } from '$lib/services/dialog.svelte.js';
 
@@ -54,8 +53,18 @@
 	let showDeleteModal = $state(false);
 	let showNotes = $state(false);
 	let showDownloadMenu = $state(false);
+	let showIssueMenu = $state(false);
 	let notesValue = $state(track.notes || '');
+	let issueNoteText = $state(track.notes || '');
 	let replaceInputRef = $state<HTMLInputElement | null>(null);
+
+	const hasTrackIssue = $derived(
+		track.is_missing === 1 ||
+		track.censorship === 'censored' ||
+		track.lyrics === 'censored_lrc' ||
+		track.quality_rating === 'bad' ||
+		Boolean(track.needs_attention)
+	);
 
 	async function updateField(field: keyof Track, value: any) {
 		isUpdating = true;
@@ -149,29 +158,179 @@
 </script>
 
 <div
-	class="group relative flex flex-col gap-2 border-b border-neutral-800/60 p-3 transition hover:bg-neutral-900/40 {track.is_missing === 1 ? 'border-l-4 border-l-rose-500 bg-rose-500/[0.03]' : track.needs_attention ? 'border-l-4 border-l-amber-500/80 bg-amber-500/[0.02]' : track.manually_checked === 1 ? 'border-l-4 border-l-emerald-500/60 bg-emerald-500/[0.02]' : ''}"
+	class="group relative flex flex-col gap-2 border-b border-neutral-800/60 p-3 transition hover:bg-neutral-900/40 {track.is_missing === 1 ? 'border-l-4 border-l-rose-500 bg-rose-500/[0.03]' : hasTrackIssue ? 'border-l-4 border-l-amber-500/80 bg-amber-500/[0.02]' : ''}"
 >
 	<!-- LINE 1: Song Info, Title, Artist, Duration & Quality / Bitrate -->
 	<div class="flex items-center justify-between gap-3 min-w-0">
-		<div class="flex items-center gap-2.5 min-w-0 flex-1">
-			<!-- Verification Checkbox -->
-			<div
-				class="flex items-center shrink-0"
-				title={track.is_missing === 1 ? 'Missing song from release' : track.manually_checked === 1 ? 'Marked as verified (Click to uncheck)' : 'Click to mark as verified'}
-			>
-				<CustomCheckbox
-					checked={track.manually_checked === 1}
-					disabled={isUpdating || track.is_missing === 1}
-					onchange={(checked) => updateField('manually_checked', checked ? 1 : 0)}
-				/>
-			</div>
-
+		<div class="flex items-center gap-2.5 min-w-0 flex-1 relative">
+			<!-- Track Number -->
 			<span class="w-6 text-right text-xs font-mono font-medium text-neutral-500 shrink-0">
 				{track.track_number}
 			</span>
 
+			<!-- Flag / Report Error Button (Discrete / Hidden unless hovered or has issue) -->
+			<div class="relative shrink-0">
+				<button
+					type="button"
+					onclick={() => (showIssueMenu = !showIssueMenu)}
+					class="p-1 rounded-lg transition cursor-pointer flex items-center gap-1 {hasTrackIssue
+						? 'bg-amber-950/70 border border-amber-600/70 text-amber-300 hover:bg-amber-900 shadow-sm'
+						: 'text-neutral-500 hover:text-amber-400 hover:bg-neutral-800 opacity-0 group-hover:opacity-100'}"
+					title={hasTrackIssue ? 'Track has flagged issues (Click to view/change)' : 'Flag problem with track (censored, bad audio, etc.)'}
+				>
+					<AlertTriangle class="h-3.5 w-3.5 {hasTrackIssue ? 'text-amber-400' : ''}" />
+					{#if hasTrackIssue && track.is_missing !== 1}
+						<span class="text-[10px] font-bold uppercase hidden xl:inline">
+							{track.censorship === 'censored' ? 'Censored' : track.lyrics === 'censored_lrc' ? 'Censored Lyrics' : track.quality_rating === 'bad' ? 'Bad Quality' : 'Issue'}
+						</span>
+					{/if}
+				</button>
+
+				{#if showIssueMenu}
+					<!-- Backdrop -->
+					<div
+						class="fixed inset-0 z-40"
+						onclick={() => (showIssueMenu = false)}
+					></div>
+					<!-- Issue Menu Popover -->
+					<div
+						class="absolute left-0 top-full mt-1.5 z-50 w-72 rounded-2xl bg-neutral-900/95 border border-neutral-700/80 shadow-2xl p-3 text-xs flex flex-col gap-2.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+					>
+						<div class="flex items-center justify-between border-b border-neutral-800 pb-2">
+							<div class="flex items-center gap-1.5 font-bold text-white text-xs">
+								<AlertTriangle class="h-4 w-4 text-amber-400" />
+								<span>Report / Flag Track Issue</span>
+							</div>
+							<button
+								type="button"
+								onclick={() => (showIssueMenu = false)}
+								class="text-neutral-400 hover:text-white p-0.5 cursor-pointer"
+							>
+								<X class="h-3.5 w-3.5" />
+							</button>
+						</div>
+
+						<p class="text-[11px] text-neutral-400 leading-tight">
+							Specify what is wrong with this song so you can track it in The Fixer:
+						</p>
+
+						<div class="space-y-1.5">
+							<!-- Censored Lyrics Option -->
+							<button
+								type="button"
+								onclick={() => {
+									const next = track.lyrics === 'censored_lrc' ? 'synced_lrc' : 'censored_lrc';
+									updateField('lyrics', next);
+								}}
+								class="w-full flex items-center justify-between p-2 rounded-xl text-left transition cursor-pointer border {track.lyrics === 'censored_lrc' ? 'bg-orange-950/60 border-orange-700/80 text-orange-200' : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:bg-neutral-800'}"
+							>
+								<div>
+									<div class="font-semibold text-xs flex items-center gap-1.5">
+										<span class="text-orange-400">📝</span>
+										<span>Censored Lyrics (.lrc)</span>
+									</div>
+									<div class="text-[10px] text-neutral-400 mt-0.5">Asterisks (f***) or omitted verses</div>
+								</div>
+								<span class="text-[10px] font-bold px-1.5 py-0.5 rounded {track.lyrics === 'censored_lrc' ? 'bg-orange-900 text-orange-200' : 'bg-neutral-800 text-neutral-400'}">
+									{track.lyrics === 'censored_lrc' ? 'FLAGGED' : 'FLAG'}
+								</span>
+							</button>
+
+							<!-- Censored Audio Option -->
+							<button
+								type="button"
+								onclick={() => {
+									const next = track.censorship === 'censored' ? 'explicit' : 'censored';
+									updateField('censorship', next);
+								}}
+								class="w-full flex items-center justify-between p-2 rounded-xl text-left transition cursor-pointer border {track.censorship === 'censored' ? 'bg-rose-950/60 border-rose-700/80 text-rose-200' : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:bg-neutral-800'}"
+							>
+								<div>
+									<div class="font-semibold text-xs flex items-center gap-1.5">
+										<span class="text-rose-400">🚫</span>
+										<span>Censored Audio Track</span>
+									</div>
+									<div class="text-[10px] text-neutral-400 mt-0.5">Radio edit, muted/bleeped curses</div>
+								</div>
+								<span class="text-[10px] font-bold px-1.5 py-0.5 rounded {track.censorship === 'censored' ? 'bg-rose-900 text-rose-200' : 'bg-neutral-800 text-neutral-400'}">
+									{track.censorship === 'censored' ? 'FLAGGED' : 'FLAG'}
+								</span>
+							</button>
+
+							<!-- Bad Quality Option -->
+							<button
+								type="button"
+								onclick={() => {
+									const next = track.quality_rating === 'bad' ? 'good' : 'bad';
+									updateField('quality_rating', next);
+								}}
+								class="w-full flex items-center justify-between p-2 rounded-xl text-left transition cursor-pointer border {track.quality_rating === 'bad' ? 'bg-amber-950/60 border-amber-700/80 text-amber-200' : 'bg-neutral-950/60 border-neutral-800 text-neutral-300 hover:bg-neutral-800'}"
+							>
+								<div>
+									<div class="font-semibold text-xs flex items-center gap-1.5">
+										<span class="text-amber-400">📉</span>
+										<span>Bad Audio Quality</span>
+									</div>
+									<div class="text-[10px] text-neutral-400 mt-0.5">Muffled, low bitrate, bad transcode</div>
+								</div>
+								<span class="text-[10px] font-bold px-1.5 py-0.5 rounded {track.quality_rating === 'bad' ? 'bg-amber-900 text-amber-200' : 'bg-neutral-800 text-neutral-400'}">
+									{track.quality_rating === 'bad' ? 'FLAGGED' : 'FLAG'}
+								</span>
+							</button>
+						</div>
+
+						<!-- Custom Issue Notes Input -->
+						<div class="pt-1 border-t border-neutral-800">
+							<label class="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
+								Issue Description / Note
+							</label>
+							<div class="flex items-center gap-1.5">
+								<input
+									type="text"
+									bind:value={issueNoteText}
+									placeholder="e.g. Muted word at 1:45..."
+									class="flex-1 rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+								/>
+								<button
+									type="button"
+									onclick={() => {
+										updateField('notes', issueNoteText.trim());
+										showIssueMenu = false;
+									}}
+									class="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs cursor-pointer shadow-sm"
+								>
+									Save
+								</button>
+							</div>
+						</div>
+
+						<!-- Clear Issues Button if any are set -->
+						{#if track.censorship === 'censored' || track.lyrics === 'censored_lrc' || track.quality_rating === 'bad' || track.notes}
+							<div class="pt-1 border-t border-neutral-800 flex justify-end">
+								<button
+									type="button"
+									onclick={() => {
+										if (track.censorship === 'censored') updateField('censorship', 'explicit');
+										if (track.lyrics === 'censored_lrc') updateField('lyrics', 'synced_lrc');
+										if (track.quality_rating === 'bad') updateField('quality_rating', 'good');
+										if (track.notes) {
+											issueNoteText = '';
+											updateField('notes', '');
+										}
+										showIssueMenu = false;
+									}}
+									class="text-[10px] text-neutral-400 hover:text-emerald-400 transition cursor-pointer flex items-center gap-1"
+								>
+									<span>✓ Clear all errors for this track</span>
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
 			<div class="flex items-center gap-2 min-w-0 flex-1">
-				<span class="truncate text-sm font-semibold {track.is_missing === 1 ? 'text-rose-200' : track.manually_checked === 1 ? 'text-emerald-100' : 'text-neutral-100'}" title={track.title}>
+				<span class="truncate text-sm font-semibold {track.is_missing === 1 ? 'text-rose-200' : 'text-neutral-100'}" title={track.title}>
 					{track.title}
 				</span>
 
@@ -200,14 +359,7 @@
 							{/if}
 						</button>
 					{/if}
-				{:else if track.manually_checked === 1}
-					<span
-						class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30 shrink-0"
-					>
-						<CheckCircle2 class="h-3 w-3" />
-						Checked
-					</span>
-				{:else if track.needs_attention}
+				{:else if hasTrackIssue}
 					<span
 						class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/30 shrink-0"
 					>

@@ -16,6 +16,7 @@
 		Plus,
 		Search,
 		TriangleAlert,
+		AlertTriangle,
 		CheckCircle2,
 		ShieldAlert,
 		FileText,
@@ -253,7 +254,7 @@
 				></div>
 			</div>
 			<p class="mt-2 text-[11px] text-neutral-400">
-				<strong class="text-emerald-400 font-semibold">{data.stats.checked_tracks_count || 0}/{data.stats.total_tracks}</strong> verified
+				<strong class="text-white font-bold">{data.stats.total_tracks}</strong> total songs
 			</p>
 		</div>
 
@@ -632,20 +633,9 @@
 
 				<div class="rounded-2xl border border-neutral-800 bg-neutral-900/40 divide-y divide-neutral-800/80 overflow-hidden">
 					{#each tracksList as track (track.id)}
-						<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3.5 transition hover:bg-neutral-900/80 {track.needs_attention ? 'border-l-4 border-l-amber-500/80 bg-amber-500/[0.02]' : track.manually_checked === 1 ? 'border-l-4 border-l-emerald-500/60 bg-emerald-500/[0.02]' : ''}">
+						<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3.5 transition hover:bg-neutral-900/80 {track.needs_attention ? 'border-l-4 border-l-amber-500/80 bg-amber-500/[0.02]' : ''}">
 							<!-- Track info with thumbnail -->
 							<div class="flex items-center gap-3 min-w-0 flex-1">
-								<!-- Manual Checkbox -->
-								<div
-									class="flex items-center shrink-0"
-									title={track.manually_checked === 1 ? 'Marked as manually checked & verified (Click to uncheck)' : 'Click to mark as manually checked (100% verified)'}
-								>
-									<CustomCheckbox
-										checked={track.manually_checked === 1}
-										onchange={(checked) => quickFixTrack(track.id, { manually_checked: checked ? 1 : 0 })}
-									/>
-								</div>
-
 								<a
 									href="/album/{track.album_id}"
 									class="relative aspect-square h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-neutral-950 border border-neutral-800 hover:border-emerald-500 transition"
@@ -667,16 +657,16 @@
 
 								<div class="min-w-0 flex-1">
 									<div class="flex items-center gap-2">
-										<span class="truncate font-bold text-sm {track.manually_checked === 1 ? 'text-emerald-100' : 'text-neutral-100'}" title={track.title}>
+										<span class="truncate font-bold text-sm text-neutral-100" title={track.title}>
 											{track.title}
 										</span>
-										{#if track.manually_checked === 1}
+										{#if track.needs_attention}
 											<span
-												class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30"
-												title="Manually checked and verified"
+												class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/30"
+												title="Needs fix"
 											>
-												<CheckCircle2 class="h-3 w-3" />
-												Checked
+												<AlertTriangle class="h-3 w-3" />
+												Needs Fix
 											</span>
 										{/if}
 										<span class="text-xs text-neutral-500 font-mono">

@@ -1113,6 +1113,25 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added multi-quality download dropdowns to `TrackRow.svelte` and Player track tables (Original, 320k MP3, 192k MP3, 128k Data Saver).
       - Added Transcoding capabilities card and Symfonium offline configuration guide to `/settings`.
 
+79. **Vault & Album View UI Declutter & Problem Flagging Studio (v1.7.42)**:
+    - **Discrete Track Problem Flagging**:
+      - Removed the legacy verify checkbox on songs across Vault and Album detail views.
+      - Added a discrete problem flagging button on each track row (`TrackRow.svelte`), displaying a subtle ghost icon when clean and an amber/rose indicator when an issue is detected.
+      - Clicking opens an interactive error-reporting popover allowing users to flag:
+        - 🚫 **Censored Audio** (`clean / radio edit`)
+        - 📝 **Censored Lyrics** (`censored .lrc` with asterisks / omitted verses)
+        - 📉 **Bad Audio Quality** (`lossy, low bitrate, bad transcode`)
+        - 💬 **Custom Problem Description / Note**
+        - 🧹 **Clear All Errors** (Instantly clears issues back to clean / good)
+    - **Album Card Decluttering (`AlbumCard.svelte`)**:
+      - Removed redundant `FLAC` / `Digital` / `media_type` badge from the bottom left of album cover thumbnails.
+      - Removed `Ready` and `Verified` badges from the top right of album covers: badges now ONLY display when an album actually has problems (`Needs Fix`).
+      - Cleaned up album footer count to simply display `{track_count} tracks`.
+    - **Album Detail Page Refinement (`/album/[id]`)**:
+      - Completely removed legacy "Batch Update Tracks" button, modal, and tracklist batch toolbar dropdowns.
+      - Merged "Add Track" and "Edit Album" into a unified modal with clean tab switching (`Album Info` vs `+ Add Track`).
+      - Removed redundant "Add to Playlist" button from `/album/[id]` hero action bar and track rows (playlists are reserved for the Player view).
+
 ---
 
 ## 4. Workflows & Verification
