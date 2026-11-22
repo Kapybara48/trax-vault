@@ -537,42 +537,64 @@ class GlobalPlayer {
 	}
 
 	private applyRemotePlaybackState(state: SyncPlaybackState, forceAudioSync = false) {
+		// If this state update was just broadcast by this exact device and we aren't forcing an audio mode switch,
+		// ignore the echoed SSE packet so we don't mutate reactive object references or jitter currentTime.
+		if (state.updatedByDeviceId === this.deviceId && !forceAudioSync) {
+			return;
+		}
+
 		this.isApplyingRemoteState = true;
 		try {
 			this.lastSyncUpdatedBy = state.updatedByUsername || null;
 			this.remoteRefPositionSec = Math.max(0, state.positionSec || 0);
 			this.remoteRefServerMs = state.updatedAtServerMs || this.getEstimatedServerNowMs();
 
-			const trackChanged = this.currentTrack?.id !== state.currentTrack?.id;
-			this.currentTrack = state.currentTrack;
+			const trackChanged = (this.currentTrack?.id ?? null) !== (state.currentTrack?.id ?? null);
+			if (trackChanged) {
+				this.currentTrack = state.currentTrack;
+			}
 
 			if (state.currentAlbum) {
-				this.currentAlbum = {
-					id: state.currentAlbum.id ?? 0,
-					musicbrainz_id: null,
-					title: state.currentAlbum.title,
-					artist: state.currentAlbum.artist,
-					release_year: null,
-					genre: null,
-					cover_url: state.currentAlbum.cover_url,
-					media_type: null,
-					notes: null,
-					created_at: '',
-					updated_at: '',
-					tracks: state.activeQueue || []
-				};
+				const albumChanged =
+					!this.currentAlbum ||
+					(this.currentAlbum.id ?? 0) !== (state.currentAlbum.id ?? 0) ||
+					this.currentAlbum.title !== state.currentAlbum.title ||
+					this.currentAlbum.cover_url !== state.currentAlbum.cover_url;
+				if (albumChanged) {
+					this.currentAlbum = {
+						id: state.currentAlbum.id ?? 0,
+						musicbrainz_id: null,
+						title: state.currentAlbum.title,
+						artist: state.currentAlbum.artist,
+						release_year: null,
+						genre: null,
+						cover_url: state.currentAlbum.cover_url,
+						media_type: null,
+						notes: null,
+						created_at: '',
+						updated_at: '',
+						tracks: state.activeQueue || []
+					};
+				}
+			} else if (this.currentAlbum !== null && !state.currentTrack) {
+				this.currentAlbum = null;
 			}
 
 			if (Array.isArray(state.activeQueue)) {
-				this.activeQueue = state.activeQueue;
+				const queueChanged =
+					this.activeQueue.length !== state.activeQueue.length ||
+					this.activeQueue.some((t, idx) => t.id !== state.activeQueue[idx]?.id);
+				if (queueChanged) {
+					this.activeQueue = state.activeQueue;
+				}
 			}
-			if (typeof state.queueIndex === 'number') {
+			if (typeof state.queueIndex === 'number' && this.queueIndex !== state.queueIndex) {
 				this.queueIndex = state.queueIndex;
 			}
-			if (typeof state.shuffleEnabled === 'boolean') {
+			if (typeof state.shuffleEnabled === 'boolean' && this.shuffleEnabled !== state.shuffleEnabled) {
 				this.shuffleEnabled = state.shuffleEnabled;
 			}
-			if (state.repeatMode) {
+			if (state.repeatMode && this.repeatMode !== state.repeatMode) {
 				this.repeatMode = state.repeatMode;
 			}
 
@@ -588,25 +610,23 @@ class GlobalPlayer {
 
 			this.isPlaying = Boolean(state.isPlaying);
 			const targetPos = this.computeExpectedRemotePositionSec();
-			this.currentTime = targetPos;
+			if (!this.localAudioEnabled || Math.abs(this.currentTime - targetPos) > 0.35 || trackChanged) {
+				this.currentTime = targetPos;
+			}
 
 			if (state.currentTrack) {
 				if (this.localAudioEnabled) {
-					// If this update did NOT originate from our own device (or forceAudioSync is true),
-					// synchronize our local <audio> element
-					if (state.updatedByDeviceId !== this.deviceId || forceAudioSync) {
-						this.syncLocalAudioElement(
-							state.currentTrack,
-							targetPos,
-							this.isPlaying,
-							trackChanged || forceAudioSync
-						);
-					}
+					this.syncLocalAudioElement(
+						state.currentTrack,
+						targetPos,
+						this.isPlaying,
+						trackChanged || forceAudioSync
+					);
 				} else if (this.audioEl && !this.audioEl.paused) {
 					this.audioEl.pause();
 				}
 
-				if (typeof document !== 'undefined') {
+				if (trackChanged && typeof document !== 'undefined') {
 					const artist =
 						state.currentTrack.artist ||
 						(this.currentAlbum ? this.currentAlbum.artist : 'Trax Vault');
@@ -618,7 +638,9 @@ class GlobalPlayer {
 				}
 			}
 
-			this.updateMediaSession();
+			if (trackChanged) {
+				this.updateMediaSession();
+			}
 		} finally {
 			this.isApplyingRemoteState = false;
 		}

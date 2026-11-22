@@ -1061,7 +1061,7 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added `GET / PUT / POST /api/fixer-rules` endpoint (`src/routes/api/fixer-rules/+server.ts`) that saves global rules and recomputes `needs_attention` across all tracks in a single SQLite transaction.
       - Built the interactive **Global Fixer Rules Control Studio** in [`src/routes/issues/+page.svelte`](file:///home/kapy/Projects/trax-vault/src/routes/issues/+page.svelte) with 1-click presets (`Balanced Default`, `High-Bitrate ≥ 256k`, `Strict Lossless Only`, `Relaxed`) and visual **`✓ Still Good`** vs **`⚠ Counts as Bad`** toggle pills for every quality rating, format, bitrate threshold, lyrics status, and censorship status.
 
-75. **Real-Time Multi-Device Playback Sync & Cross-Account "Listen Together" Jam Sessions (v1.7.35)**:
+75. **Real-Time Multi-Device Playback Sync & Cross-Account "Listen Together" Jam Sessions (v1.7.35 - v1.7.36)**:
     - **Server-Sent Events (SSE) Sync & Listening Room Engine (`src/lib/server/sync.ts`)**:
       - Implemented real-time playback synchronization supporting both **Personal Account Channels** (`user:<userId>`) and **Cross-Account Shared Listening Rooms** (`room:<6-CHAR-CODE>`).
       - Added SSE stream endpoint `GET /api/sync/stream` (`src/routes/api/sync/stream/+server.ts`) and REST command/lobby endpoint `GET / POST /api/sync` (`src/routes/api/sync/+server.ts`).
@@ -1070,6 +1070,7 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added persistent device identity (`traxvault_device_id`) and auto-detected friendly device names (`traxvault_device_name`, customizable by the user).
       - Implemented server clock offset estimation (`serverClockOffsetMs`) and a 50ms companion interpolation clock driving `player.currentTime` in real time so `/player` scrolls and highlights **Studio Synced `.lrc` Karaoke Lyrics** on secondary companion devices while local audio is muted.
       - Implemented automatic drift correction (`> 0.35s` threshold) and 5-second speaker reference checkpoints for tight multi-device simultaneous audio playback, plus graceful browser autoplay unlock prompts (`audioUnlockRequired`).
+      - **Lyrics Scroll Reset Prevention (`v1.7.36`)**: Preserved object identity for `player.currentTrack`, `player.currentAlbum`, and `player.activeQueue` during periodic 5-second sync checkpoints when track IDs have not changed, ignored self-echoed SSE state packets on the sending device, and guarded `loadLyricsForCurrentTrack()` in `src/routes/player/+page.svelte` with `loadedLyricsTrackId` so lyrics never re-fetch or reset scroll position to the top mid-song.
     - **Interactive Sync & "Listen Together" Modal (`src/lib/components/SyncRoomModal.svelte`)**:
       - **My Devices & Audio Mode Tab**: Switch any connected device between **Companion & Lyrics (Muted Here)**, **Play Here Only (Transfer Audio)**, and **Play on Multiple (Simultaneous Audio)**, or rename devices inline.
       - **Listen Together (Cross-Account Rooms) Tab**: Create public or private 6-character code jam sessions, copy shareable invite links (`/player?room=CODE`), browse and join active public sessions on the server in 1 click across different accounts, and toggle collaborative guest controls.

@@ -81,6 +81,7 @@
 
 	// Synced Lyrics State
 	let lyricsLoading = $state(false);
+	let loadedLyricsTrackId = $state<number | null>(null);
 	let lyricsLines = $state<EnhancedLyricLine[]>([]);
 	let isInstrumentalLyrics = $state(false);
 	let instrumentalMarker = $state('♪');
@@ -191,7 +192,13 @@
 
 	// Auto-scroll lyrics smoothly to active line (unless user has manually scrolled)
 	$effect(() => {
-		if (showLyricsDrawer && activeLyricLineIndex >= 0 && lyricsContainerEl && !userScrolledLyrics) {
+		if (
+			(showLyricsDrawer || mobilePlayerTab === 'lyrics') &&
+			!lyricsLoading &&
+			activeLyricLineIndex >= 0 &&
+			lyricsContainerEl &&
+			!userScrolledLyrics
+		) {
 			const el = document.getElementById(`lyrics-line-${activeLyricLineIndex}`);
 			if (el) {
 				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -199,10 +206,18 @@
 		}
 	});
 
-	// Fetch Lyrics for current track
-	async function loadLyricsForCurrentTrack() {
-		userScrolledLyrics = false;
+	// Fetch Lyrics for current track (only when track ID actually changes)
+	async function loadLyricsForCurrentTrack(forceReload = false) {
 		const track = player.currentTrack;
+		const trackId = track?.id ?? null;
+
+		if (!forceReload && trackId === loadedLyricsTrackId) {
+			return;
+		}
+
+		loadedLyricsTrackId = trackId;
+		userScrolledLyrics = false;
+
 		if (!track) {
 			lyricsLines = [];
 			isInstrumentalLyrics = false;
@@ -221,12 +236,15 @@
 		lyricsLoading = true;
 		try {
 			const res = await fetch(`/api/tracks/${track.id}/lyrics`);
+			// Guard against stale response if user switched tracks while fetch was in flight
+			if (player.currentTrack?.id !== track.id) return;
 			if (!res.ok) {
 				lyricsLines = [];
 				isInstrumentalLyrics = false;
 				return;
 			}
 			const data = await res.json();
+			if (player.currentTrack?.id !== track.id) return;
 			if (data.status === 'instrumental' || data.is_instrumental) {
 				isInstrumentalLyrics = true;
 				instrumentalMarker = data.instrumental_marker || '♪';
@@ -240,16 +258,21 @@
 			}
 		} catch (err) {
 			console.error('Failed to load lyrics:', err);
-			lyricsLines = [];
-			isInstrumentalLyrics = false;
+			if (player.currentTrack?.id === track.id) {
+				lyricsLines = [];
+				isInstrumentalLyrics = false;
+			}
 		} finally {
-			lyricsLoading = false;
+			if (player.currentTrack?.id === track.id) {
+				lyricsLoading = false;
+			}
 		}
 	}
 
-	// Reactively re-load lyrics when active track changes
+	// Reactively re-load lyrics only when active track ID changes
 	$effect(() => {
-		if (player.currentTrack?.id) {
+		const trackId = player.currentTrack?.id ?? null;
+		if (trackId !== loadedLyricsTrackId) {
 			loadLyricsForCurrentTrack();
 		}
 	});
