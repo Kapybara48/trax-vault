@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { PageData } from './$types.js';
 	import type { Track, Album } from '$lib/types/index.js';
 	import AlbumCard from '$lib/components/AlbumCard.svelte';
@@ -69,6 +70,13 @@
 		selectedLyrics = data.activeLyrics || 'all';
 		currentView = data.activeView || 'albums';
 		tracksList = [...data.matchingTracks];
+	});
+
+	onMount(() => {
+		// Put mobile users on the player page by default
+		if (typeof window !== 'undefined' && window.innerWidth < 768) {
+			goto('/player', { replaceState: true });
+		}
 	});
 
 	function toggleAlbumSelect(id: number) {

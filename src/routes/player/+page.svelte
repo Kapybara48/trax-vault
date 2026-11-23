@@ -43,7 +43,10 @@
 		Upload,
 		Radio,
 		Users,
-		Download
+		Download,
+		ChevronLeft,
+		ChevronDown,
+		Grid
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -116,7 +119,23 @@
 	// Side Drawers
 	let showLyricsDrawer = $state(false);
 	let showQueueDrawer = $state(false);
-	let mobilePlayerTab = $state<'player' | 'tracks' | 'library' | 'lyrics' | 'queue'>('player');
+	let mobilePlayerTab = $state<'player' | 'search' | 'library' | 'tracks' | 'lyrics' | 'queue'>('player');
+	let mobilePreviousTab = $state<'search' | 'library'>('library');
+	let mobileSearchQuery = $state('');
+	let mobileLibraryTab = $state<'playlists' | 'albums' | 'artists' | 'songs'>('playlists');
+	let mobileLibraryLayout = $state<'list' | 'grid'>('list');
+
+	let mobileFilteredPlaylists = $derived.by(() => {
+		const q = mobileSearchQuery.trim().toLowerCase();
+		if (!q) return playlists;
+		return playlists.filter((p) => p.name.toLowerCase().includes(q) || (p.comment && p.comment.toLowerCase().includes(q)));
+	});
+
+	let mobileFilteredAlbums = $derived.by(() => {
+		const q = mobileSearchQuery.trim().toLowerCase();
+		if (!q) return albums;
+		return albums.filter((a) => a.title.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q));
+	});
 
 	// Synced Lyrics State
 	let lyricsLoading = $state(false);
@@ -1263,65 +1282,32 @@
 		</div>
 	{/if}
 
-	<!-- Mobile View Switcher (Phones & Small Tablets < md) -->
-	<div class="md:hidden flex items-center justify-between p-1 mx-2 sm:mx-3 mt-1.5 mb-1 bg-neutral-900/90 border border-neutral-800 rounded-xl text-xs font-semibold shrink-0 gap-1">
-		<button
-			type="button"
-			onclick={() => { mobilePlayerTab = 'player'; showLyricsDrawer = false; showQueueDrawer = false; }}
-			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'player' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
-		>
-			<Play class="h-3.5 w-3.5 fill-current" />
-			<span>Player</span>
-		</button>
-		<button
-			type="button"
-			onclick={() => { mobilePlayerTab = 'tracks'; showLyricsDrawer = false; showQueueDrawer = false; }}
-			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'tracks' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
-		>
-			<Disc3 class="h-3.5 w-3.5" />
-			<span>Tracks</span>
-		</button>
-		<button
-			type="button"
-			onclick={() => { mobilePlayerTab = 'library'; showLyricsDrawer = false; showQueueDrawer = false; }}
-			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'library' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
-		>
-			<Library class="h-3.5 w-3.5" />
-			<span>Library</span>
-		</button>
-		<button
-			type="button"
-			onclick={() => { mobilePlayerTab = 'lyrics'; showLyricsDrawer = true; showQueueDrawer = false; }}
-			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'lyrics' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
-		>
-			<Mic class="h-3.5 w-3.5" />
-			<span>Lyrics</span>
-		</button>
-		<button
-			type="button"
-			onclick={() => { mobilePlayerTab = 'queue'; showQueueDrawer = true; showLyricsDrawer = false; }}
-			class="flex items-center justify-center gap-1 flex-1 py-1.5 rounded-lg transition {mobilePlayerTab === 'queue' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-400 hover:text-white'}"
-		>
-			<ListMusic class="h-3.5 w-3.5" />
-			<span>Queue</span>
-		</button>
-		<button
-			type="button"
-			onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
-			class="flex items-center justify-center p-1.5 rounded-lg transition shrink-0 {player.activeRoom?.type === 'shared' || player.connectedDevices.length > 1
-				? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-				: 'text-neutral-400 hover:text-white'}"
-			title="Sync Devices & Listen Together"
-		>
-			<Radio class="h-3.5 w-3.5" />
-		</button>
-	</div>
-
 	<!-- Workspace: Side Library + Main Stage + Drawers -->
 	<div class="flex-1 flex overflow-hidden min-h-0 p-1.5 sm:p-3 gap-1.5 sm:gap-3">
 		<!-- DEDICATED FULL-SCREEN MOBILE NOW PLAYING (Phones < md) -->
 		{#if mobilePlayerTab === 'player'}
 			<section class="flex md:hidden order-1 flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto min-h-0 p-4 sm:p-6 shadow-xl justify-between">
+				<!-- Top Collapse Header -->
+				<div class="flex items-center justify-between w-full max-w-sm mx-auto pb-1 shrink-0">
+					<button
+						type="button"
+						onclick={() => (mobilePlayerTab = mobilePreviousTab || 'library')}
+						class="p-1.5 text-neutral-400 hover:text-white rounded-lg cursor-pointer"
+						title="Collapse Player"
+					>
+						<ChevronDown class="w-5 h-5" />
+					</button>
+					<span class="text-[11px] font-bold text-neutral-400 uppercase tracking-widest">Now Playing</span>
+					<button
+						type="button"
+						onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
+						class="p-1.5 text-neutral-400 hover:text-emerald-400 rounded-lg cursor-pointer"
+						title="Sync Devices"
+					>
+						<Radio class="w-4 h-4" />
+					</button>
+				</div>
+
 				{#if player.currentTrack}
 					<div class="flex flex-col items-center justify-center flex-1 w-full max-w-sm mx-auto gap-4 py-2">
 						<!-- Big Album Cover -->
@@ -1597,7 +1583,7 @@
 							</button>
 							<button
 								type="button"
-								onclick={() => { mobilePlayerTab = 'tracks'; showLyricsDrawer = false; showQueueDrawer = false; }}
+								onclick={() => (mobilePlayerTab = 'tracks')}
 								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
 							>
 								<Disc3 class="w-3.5 h-3.5 text-cyan-400" />
@@ -1637,8 +1623,341 @@
 			</section>
 		{/if}
 
-		<!-- LEFT SIDEBAR: Vault Audio Library & Playlists -->
-		<aside class="{mobilePlayerTab === 'library' ? 'flex' : 'hidden'} md:flex order-1 w-full md:w-72 lg:w-80 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden shrink-0 shadow-xl">
+		<!-- DEDICATED MOBILE SEARCH VIEW -->
+		{#if mobilePlayerTab === 'search'}
+			<section class="flex md:hidden flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 shadow-xl">
+				<!-- Search Input Header -->
+				<div class="p-3 pb-2 border-b border-neutral-800/60 shrink-0">
+					<div class="relative">
+						<Search class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+						<input
+							type="text"
+							bind:value={mobileSearchQuery}
+							placeholder="Search playlists & albums..."
+							class="w-full bg-neutral-950/90 border border-neutral-800 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+						/>
+						{#if mobileSearchQuery}
+							<button
+								type="button"
+								onclick={() => (mobileSearchQuery = '')}
+								class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white cursor-pointer"
+							>
+								<X class="w-3.5 h-3.5" />
+							</button>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Scrollable Search Results: Playlists list, then Albums grid -->
+				<div class="flex-1 overflow-y-auto min-h-0 p-3 space-y-5">
+					<!-- Section 1: Playlists -->
+					<div>
+						<div class="flex items-center justify-between mb-2">
+							<h3 class="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+								<ListMusic class="w-3.5 h-3.5 text-emerald-400" />
+								<span>Playlists</span>
+								<span class="text-neutral-500 font-mono text-[10px]">({mobileFilteredPlaylists.length})</span>
+							</h3>
+						</div>
+
+						{#if mobileFilteredPlaylists.length > 0}
+							<div class="space-y-1.5">
+								{#each mobileFilteredPlaylists as pl}
+									<button
+										type="button"
+										onclick={() => { mobilePreviousTab = 'search'; selectPlaylist(pl); mobilePlayerTab = 'tracks'; }}
+										class="w-full flex items-center gap-3 p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+									>
+										<div class="w-12 h-12 rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+											{#if pl.cover_url}
+												<img src={pl.cover_url} alt={pl.name} class="w-full h-full object-cover" />
+											{:else}
+												<ListMusic class="w-5 h-5 text-emerald-400 opacity-60" />
+											{/if}
+										</div>
+										<div class="flex-1 min-w-0">
+											<div class="text-xs font-bold text-white truncate">{pl.name}</div>
+											<div class="text-[11px] text-neutral-400 mt-0.5">{pl.tracks.length} songs &bull; {pl.is_public ? 'Public' : 'Private'}</div>
+										</div>
+										<Play class="w-3.5 h-3.5 text-neutral-500 hover:text-emerald-400 shrink-0" />
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<div class="p-3 text-center text-xs text-neutral-500">No playlists found</div>
+						{/if}
+					</div>
+
+					<!-- Section 2: Albums Grid -->
+					<div>
+						<div class="flex items-center justify-between mb-2">
+							<h3 class="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+								<Disc3 class="w-3.5 h-3.5 text-emerald-400" />
+								<span>Albums</span>
+								<span class="text-neutral-500 font-mono text-[10px]">({mobileFilteredAlbums.length})</span>
+							</h3>
+						</div>
+
+						{#if mobileFilteredAlbums.length > 0}
+							<div class="grid grid-cols-2 gap-2.5">
+								{#each mobileFilteredAlbums as alb}
+									<button
+										type="button"
+										onclick={() => { mobilePreviousTab = 'search'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+										class="flex flex-col p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left group"
+									>
+										<div class="w-full aspect-square rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 relative">
+											{#if alb.cover_url}
+												<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+											{:else}
+												<div class="w-full h-full flex items-center justify-center text-neutral-600">
+													<Music class="w-8 h-8" />
+												</div>
+											{/if}
+										</div>
+										<div class="mt-2 min-w-0">
+											<div class="text-xs font-bold text-white truncate group-hover:text-emerald-400 transition">{alb.title}</div>
+											<div class="text-[11px] text-neutral-400 truncate mt-0.5">{alb.artist}</div>
+										</div>
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<div class="p-3 text-center text-xs text-neutral-500">No albums found</div>
+						{/if}
+					</div>
+				</div>
+			</section>
+		{/if}
+
+		<!-- DEDICATED MOBILE YOUR LIBRARY VIEW -->
+		{#if mobilePlayerTab === 'library'}
+			<section class="flex md:hidden flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 shadow-xl">
+				<!-- Header -->
+				<div class="p-3 pb-2 border-b border-neutral-800/60 flex items-center justify-between shrink-0">
+					<div class="flex items-center gap-2">
+						<Library class="w-4 h-4 text-emerald-400" />
+						<h2 class="text-sm font-bold text-white">Your Library</h2>
+					</div>
+					<button
+						type="button"
+						onclick={() => { createPlaylistError = null; showCreatePlaylistModal = true; }}
+						class="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+					>
+						<Plus class="w-3.5 h-3.5" />
+						<span>New Playlist</span>
+					</button>
+				</div>
+
+				<!-- Scrollable Content -->
+				<div class="flex-1 overflow-y-auto min-h-0 p-3 space-y-2">
+					{#if mobileLibraryTab === 'playlists'}
+						<!-- PLAYLISTS (One below another) -->
+						{#if mobileLibraryLayout === 'list'}
+							<div class="space-y-1.5">
+								{#each playlists as pl}
+									<button
+										type="button"
+										onclick={() => { mobilePreviousTab = 'library'; selectPlaylist(pl); mobilePlayerTab = 'tracks'; }}
+										class="w-full flex items-center gap-3 p-2.5 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+									>
+										<div class="w-14 h-14 rounded-xl bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+											{#if pl.cover_url}
+												<img src={pl.cover_url} alt={pl.name} class="w-full h-full object-cover" />
+											{:else}
+												<ListMusic class="w-6 h-6 text-emerald-400 opacity-60" />
+											{/if}
+										</div>
+										<div class="flex-1 min-w-0">
+											<div class="text-xs font-bold text-white truncate">{pl.name}</div>
+											<div class="text-[11px] text-neutral-400 mt-0.5">Playlist &bull; {pl.tracks.length} songs</div>
+											{#if pl.comment}
+												<div class="text-[10px] text-neutral-500 truncate mt-0.5">{pl.comment}</div>
+											{/if}
+										</div>
+										<Play class="w-3.5 h-3.5 text-neutral-500 hover:text-emerald-400 shrink-0" />
+									</button>
+								{/each}
+								{#if playlists.length === 0}
+									<div class="p-8 text-center text-xs text-neutral-500">
+										No playlists created yet. Tap "New Playlist" or "Create" below!
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<div class="grid grid-cols-2 gap-2.5">
+								{#each playlists as pl}
+									<button
+										type="button"
+										onclick={() => { mobilePreviousTab = 'library'; selectPlaylist(pl); mobilePlayerTab = 'tracks'; }}
+										class="flex flex-col p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+									>
+										<div class="w-full aspect-square rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+											{#if pl.cover_url}
+												<img src={pl.cover_url} alt={pl.name} class="w-full h-full object-cover" />
+											{:else}
+												<ListMusic class="w-8 h-8 text-emerald-400 opacity-60" />
+											{/if}
+										</div>
+										<div class="mt-1.5 min-w-0">
+											<div class="text-xs font-bold text-white truncate">{pl.name}</div>
+											<div class="text-[10px] text-neutral-400 truncate">{pl.tracks.length} songs</div>
+										</div>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					{:else if mobileLibraryTab === 'albums'}
+						{#if mobileLibraryLayout === 'list'}
+							<div class="space-y-1.5">
+								{#each albums as alb}
+									<button
+										type="button"
+										onclick={() => { mobilePreviousTab = 'library'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+										class="w-full flex items-center gap-3 p-2.5 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+									>
+										<div class="w-14 h-14 rounded-xl bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+											{#if alb.cover_url}
+												<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover" />
+											{:else}
+												<Music class="w-6 h-6 text-neutral-600" />
+											{/if}
+										</div>
+										<div class="flex-1 min-w-0">
+											<div class="text-xs font-bold text-white truncate">{alb.title}</div>
+											<div class="text-[11px] text-neutral-400 mt-0.5">{alb.artist} &bull; {alb.tracks.length} tracks</div>
+										</div>
+										<Play class="w-3.5 h-3.5 text-neutral-500 hover:text-emerald-400 shrink-0" />
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<div class="grid grid-cols-2 gap-2.5">
+								{#each albums as alb}
+									<button
+										type="button"
+										onclick={() => { mobilePreviousTab = 'library'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+										class="flex flex-col p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+									>
+										<div class="w-full aspect-square rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800">
+											{#if alb.cover_url}
+												<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover" />
+											{:else}
+												<div class="w-full h-full flex items-center justify-center text-neutral-600">
+													<Music class="w-8 h-8" />
+												</div>
+											{/if}
+										</div>
+										<div class="mt-1.5 min-w-0">
+											<div class="text-xs font-bold text-white truncate">{alb.title}</div>
+											<div class="text-[10px] text-neutral-400 truncate">{alb.artist}</div>
+										</div>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					{:else if mobileLibraryTab === 'artists'}
+						<div class="space-y-1.5">
+							{#each artists as art}
+								<button
+									type="button"
+									onclick={() => { mobilePreviousTab = 'library'; selectArtist(art); mobilePlayerTab = 'tracks'; }}
+									class="w-full flex items-center gap-3 p-2.5 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+								>
+									<div class="w-12 h-12 rounded-full bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+										{#if art.avatar_url || art.cover_url}
+											<img src={art.avatar_url || art.cover_url} alt={art.name} class="w-full h-full object-cover" />
+										{:else}
+											<User class="w-5 h-5 text-neutral-500" />
+										{/if}
+									</div>
+									<div class="flex-1 min-w-0">
+										<div class="text-xs font-bold text-white truncate">{art.name}</div>
+										<div class="text-[10px] text-neutral-400 mt-0.5">{art.album_count} albums &bull; {art.song_count} songs</div>
+									</div>
+								</button>
+							{/each}
+						</div>
+					{:else if mobileLibraryTab === 'songs'}
+						<div class="space-y-1">
+							{#each filteredSongs.slice(0, 100) as track}
+								<button
+									type="button"
+									onclick={() => playLibrarySong(track)}
+									class="w-full flex items-center gap-2.5 p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/50 transition cursor-pointer text-left"
+								>
+									<div class="w-9 h-9 rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+										{#if track.album_cover_url}
+											<img src={track.album_cover_url} alt="Cover" class="w-full h-full object-cover" />
+										{:else}
+											<Music class="w-4 h-4 text-neutral-600" />
+										{/if}
+									</div>
+									<div class="flex-1 min-w-0">
+										<div class="text-xs font-bold text-white truncate">{track.title}</div>
+										<div class="text-[10px] text-neutral-400 truncate">{track.artist || 'Unknown Artist'}</div>
+									</div>
+									<span class="text-[10px] font-mono text-neutral-500">{formatDurationMs(track.duration_ms)}</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- SWITCHER BUTTON RIGHT ON TOP OF THE BOTTOM NAVBAR -->
+				<div class="p-2 border-t border-neutral-800/80 bg-neutral-950/90 backdrop-blur-md flex items-center justify-between gap-1.5 shrink-0">
+					<div class="flex items-center gap-1 overflow-x-auto flex-1">
+						<button
+							type="button"
+							onclick={() => (mobileLibraryTab = 'playlists')}
+							class="px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer {mobileLibraryTab === 'playlists' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-neutral-800/80 text-neutral-400 hover:text-white'}"
+						>
+							Playlists
+						</button>
+						<button
+							type="button"
+							onclick={() => (mobileLibraryTab = 'albums')}
+							class="px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer {mobileLibraryTab === 'albums' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-neutral-800/80 text-neutral-400 hover:text-white'}"
+						>
+							Albums
+						</button>
+						<button
+							type="button"
+							onclick={() => (mobileLibraryTab = 'artists')}
+							class="px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer {mobileLibraryTab === 'artists' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-neutral-800/80 text-neutral-400 hover:text-white'}"
+						>
+							Artists
+						</button>
+						<button
+							type="button"
+							onclick={() => (mobileLibraryTab = 'songs')}
+							class="px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer {mobileLibraryTab === 'songs' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-neutral-800/80 text-neutral-400 hover:text-white'}"
+						>
+							Songs
+						</button>
+					</div>
+
+					<!-- Toggle List vs Grid Button -->
+					<button
+						type="button"
+						onclick={() => (mobileLibraryLayout = mobileLibraryLayout === 'list' ? 'grid' : 'list')}
+						class="px-2 py-1 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 transition cursor-pointer flex items-center gap-1 text-[11px] font-semibold shrink-0"
+						title="Toggle layout between List and Grid"
+					>
+						{#if mobileLibraryLayout === 'list'}
+							<Grid class="w-3.5 h-3.5 text-emerald-400" />
+							<span>Grid</span>
+						{:else}
+							<ListMusic class="w-3.5 h-3.5 text-emerald-400" />
+							<span>List</span>
+						{/if}
+					</button>
+				</div>
+			</section>
+		{/if}
+
+		<!-- LEFT SIDEBAR: Vault Audio Library & Playlists (Desktop) -->
+		<aside class="hidden md:flex order-1 w-full md:w-72 lg:w-80 bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden shrink-0 shadow-xl">
 			<!-- Header & Mode Tabs -->
 			<div class="p-3.5 pb-2 border-b border-neutral-800/60 shrink-0">
 				<div class="flex items-center justify-between mb-2.5">
@@ -2221,6 +2540,21 @@
 
 		<!-- SONGS & HERO PANEL: Main Viewport (Center when lyrics closed, Right when lyrics open) -->
 		<main class="{mobilePlayerTab === 'tracks' ? 'flex' : 'hidden'} md:flex {showLyricsDrawer ? 'order-3 flex-1 min-w-0 md:min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto md:overflow-hidden min-h-0 shadow-xl transition-all duration-200">
+			<!-- Mobile Back Navigation Button (To Library or Search) -->
+			<div class="md:hidden flex items-center justify-between p-2.5 pb-1 border-b border-neutral-800/40 shrink-0">
+				<button
+					type="button"
+					onclick={() => (mobilePlayerTab = mobilePreviousTab || 'library')}
+					class="flex items-center gap-1 text-xs font-semibold text-neutral-300 hover:text-white px-2.5 py-1 rounded-lg bg-neutral-800/80 cursor-pointer active:scale-95 transition"
+				>
+					<ChevronLeft class="w-4 h-4 text-emerald-400" />
+					<span>Back</span>
+				</button>
+				<span class="text-[11px] font-bold text-neutral-400 truncate max-w-[200px]">
+					{selectedType === 'album' ? selectedAlbum?.title : (selectedType === 'playlist' ? selectedPlaylist?.name : selectedArtist?.name)}
+				</span>
+			</div>
+
 			{#if selectedType === 'album' && selectedAlbum}
 				<!-- ALBUM HERO BANNER -->
 				<div class="{showLyricsDrawer ? 'p-3 sm:p-4 pb-2 sm:pb-3' : 'p-3 sm:p-6 pb-3 sm:pb-4'} border-b border-neutral-800/60 shrink-0">
@@ -3504,8 +3838,8 @@
 		{/if}
 	</div>
 
-	<!-- BOTTOM FLOATING AUDIO CONTROL DOCK -->
-	<footer class="{mobilePlayerTab === 'player' ? 'hidden md:flex' : 'flex'} h-20 bg-neutral-900/85 backdrop-blur-2xl border-t border-neutral-800/80 px-2 sm:px-6 items-center justify-between gap-2 sm:gap-4 z-40 shrink-0 shadow-2xl">
+	<!-- BOTTOM FLOATING AUDIO CONTROL DOCK (Desktop) -->
+	<footer class="hidden md:flex h-20 bg-neutral-900/85 backdrop-blur-2xl border-t border-neutral-800/80 px-2 sm:px-6 items-center justify-between gap-2 sm:gap-4 z-40 shrink-0 shadow-2xl">
 		<!-- Track Info Pill -->
 		<div
 			role="button"
@@ -3817,6 +4151,93 @@
 			</div>
 		</div>
 	</footer>
+
+	<!-- MOBILE FLOATING MINI-PLAYER DOCK (When not on full Player view) -->
+	{#if mobilePlayerTab !== 'player'}
+		<div
+			role="button"
+			tabindex="0"
+			onclick={() => (mobilePlayerTab = 'player')}
+			onkeydown={(e) => { if (e.key === 'Enter') mobilePlayerTab = 'player'; }}
+			class="md:hidden mx-2 mb-1 p-2 rounded-xl bg-neutral-900/95 border border-neutral-800/90 shadow-2xl flex items-center justify-between gap-3 shrink-0 cursor-pointer backdrop-blur-xl group hover:border-emerald-500/40 transition z-20"
+		>
+			<div class="flex items-center gap-2.5 min-w-0 flex-1">
+				<div class="w-10 h-10 rounded-lg bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 shadow-sm relative">
+					{#if player.currentAlbum?.cover_url}
+						<img src={player.currentAlbum.cover_url} alt="Cover" class="w-full h-full object-cover" />
+					{:else}
+						<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-500">
+							<Disc3 class="w-5 h-5 {player.isPlaying ? 'animate-spin-slow' : ''}" />
+						</div>
+					{/if}
+				</div>
+				<div class="min-w-0 flex-1">
+					<div class="text-xs font-bold text-white truncate group-hover:text-emerald-400 transition">
+						{player.currentTrack?.title || 'Trax Vault Player'}
+					</div>
+					<div class="text-[10px] text-neutral-400 truncate">
+						{player.currentTrack?.artist || player.currentAlbum?.artist || 'Tap to open player'}
+					</div>
+				</div>
+			</div>
+
+			<div class="flex items-center gap-1 shrink-0" onclick={(e) => e.stopPropagation()}>
+				<button
+					type="button"
+					onclick={() => player.togglePlay()}
+					class="w-8 h-8 rounded-full bg-emerald-500 text-neutral-950 flex items-center justify-center hover:bg-emerald-400 transition cursor-pointer"
+					title={player.isPlaying ? 'Pause' : 'Play'}
+				>
+					{#if player.isPlaying}
+						<Pause class="w-4 h-4 fill-current" />
+					{:else}
+						<Play class="w-4 h-4 fill-current ml-0.5" />
+					{/if}
+				</button>
+				<button
+					type="button"
+					onclick={() => player.nextTrack()}
+					class="p-1.5 text-neutral-400 hover:text-white transition cursor-pointer"
+					title="Next Track"
+				>
+					<SkipForward class="w-4 h-4 fill-current" />
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	<!-- MOBILE BOTTOM NAVBAR (Fixed at bottom on phones < md) -->
+	<nav class="md:hidden h-14 bg-neutral-950/95 backdrop-blur-2xl border-t border-neutral-800/80 px-6 flex items-center justify-between shrink-0 z-30">
+		<button
+			type="button"
+			onclick={() => { mobilePlayerTab = 'search'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			class="flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer flex-1 {mobilePlayerTab === 'search' ? 'text-emerald-400 font-bold' : 'text-neutral-400 hover:text-white'}"
+		>
+			<Search class="w-4 h-4" />
+			<span class="text-[10px]">Search</span>
+		</button>
+
+		<button
+			type="button"
+			onclick={() => { mobilePlayerTab = 'library'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			class="flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer flex-1 {mobilePlayerTab === 'library' || mobilePlayerTab === 'tracks' ? 'text-emerald-400 font-bold' : 'text-neutral-400 hover:text-white'}"
+		>
+			<Library class="w-4 h-4" />
+			<span class="text-[10px]">Your Library</span>
+		</button>
+
+		<button
+			type="button"
+			onclick={() => {
+				createPlaylistError = null;
+				showCreatePlaylistModal = true;
+			}}
+			class="flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer flex-1 text-neutral-400 hover:text-emerald-400 active:scale-95"
+		>
+			<Plus class="w-4 h-4" />
+			<span class="text-[10px]">Create</span>
+		</button>
+	</nav>
 
 	<!-- Global Add To Playlist Modal -->
 	<AddToPlaylistModal

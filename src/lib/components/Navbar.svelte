@@ -30,13 +30,32 @@
 	}: Props = $props();
 
 	const currentPath = $derived(page.url.pathname);
+	let showMobileNavbar = $state(false);
 
 	onMount(() => {
 		// Slowly / asynchronously warm up the scan route in the background on idle
 		const timer = setTimeout(() => {
 			preloadData('/scan').catch(() => {});
 		}, 1200);
-		return () => clearTimeout(timer);
+
+		try {
+			showMobileNavbar = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
+		} catch {}
+
+		const update = () => {
+			try {
+				showMobileNavbar = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
+			} catch {}
+		};
+
+		window.addEventListener('storage', update);
+		window.addEventListener('traxvault:navbar-toggle', update);
+
+		return () => {
+			clearTimeout(timer);
+			window.removeEventListener('storage', update);
+			window.removeEventListener('traxvault:navbar-toggle', update);
+		};
 	});
 
 	async function handleLogout() {
@@ -52,7 +71,7 @@
 	}
 </script>
 
-<header class="sticky top-0 z-50 border-b border-neutral-800 bg-neutral-950/85 backdrop-blur-md">
+<header class="{showMobileNavbar ? 'block' : 'hidden md:block'} sticky top-0 z-50 border-b border-neutral-800 bg-neutral-950/85 backdrop-blur-md">
 	<div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-6">
 		<!-- Brand Logo -->
 		<div class="flex items-center gap-6">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { PageData, ActionData } from './$types.js';
 	import {
 		Settings,
@@ -50,6 +51,23 @@
 	let isSubmitting = $state(false);
 	let clientError = $state<string | null>(null);
 	let clientSuccess = $state<string | null>(null);
+
+	// Mobile UI Preferences
+	let showMobileNavbarSetting = $state(false);
+
+	onMount(() => {
+		try {
+			showMobileNavbarSetting = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
+		} catch {}
+	});
+
+	function handleToggleMobileNavbar(val: boolean) {
+		showMobileNavbarSetting = val;
+		try {
+			localStorage.setItem('traxvault_show_mobile_navbar', val ? 'true' : 'false');
+			window.dispatchEvent(new Event('traxvault:navbar-toggle'));
+		} catch {}
+	}
 
 	// Subsonic State
 	let copiedServerUrl = $state(false);
@@ -791,6 +809,37 @@
 							</div>
 						</form>
 					</div>
+
+					<!-- Mobile Navigation Card -->
+					<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl space-y-4">
+						<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-5">
+							<div class="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-950/80 border border-emerald-600/40 text-emerald-400">
+								<Smartphone class="h-5 w-5" />
+							</div>
+							<div>
+								<h2 class="text-base font-bold text-white">Mobile Interface & Navigation</h2>
+								<p class="text-xs text-neutral-400">Customize the layout and navigation behavior on phone screens</p>
+							</div>
+						</div>
+
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="text-xs font-semibold text-white">Show Top Navbar on Mobile</div>
+								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
+									By default, the top navbar is hidden on phone screens for an app-like experience with bottom navigation. Enable this if you prefer the standard top header on mobile.
+								</div>
+							</div>
+							<label class="relative inline-flex items-center cursor-pointer shrink-0">
+								<input
+									type="checkbox"
+									checked={showMobileNavbarSetting}
+									onchange={(e) => handleToggleMobileNavbar((e.target as HTMLInputElement).checked)}
+									class="sr-only peer"
+								/>
+								<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+							</label>
+						</div>
+					</div>
 				</div>
 
 			<!-- TAB 3: SUBSONIC & STREAMING -->
@@ -995,6 +1044,31 @@
 								<span class="font-mono text-emerald-400 text-xs">Upgraded from v{data.versionInfo.metadata.migrated_from}</span>
 							</div>
 						{/if}
+					</div>
+
+					<!-- Mobile Navigation Preferences (System Tab) -->
+					<div class="pt-5 border-t border-neutral-800/80 space-y-3">
+						<div class="flex items-center gap-2">
+							<Smartphone class="w-4 h-4 text-emerald-400" />
+							<span class="text-xs font-bold text-white uppercase tracking-wider">Mobile Interface</span>
+						</div>
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="text-xs font-semibold text-white">Show Top Navbar on Mobile</div>
+								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
+									By default, the top navbar is hidden on phone screens for an app-like experience with bottom navigation. Enable this if you prefer the standard top header on mobile.
+								</div>
+							</div>
+							<label class="relative inline-flex items-center cursor-pointer shrink-0">
+								<input
+									type="checkbox"
+									checked={showMobileNavbarSetting}
+									onchange={(e) => handleToggleMobileNavbar((e.target as HTMLInputElement).checked)}
+									class="sr-only peer"
+								/>
+								<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+							</label>
+						</div>
 					</div>
 				</div>
 			{/if}
