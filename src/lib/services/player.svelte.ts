@@ -530,6 +530,12 @@ class GlobalPlayer {
 					this.connectedDevices = data.devices;
 					const myDev = data.devices.find((d: SyncDeviceInfo) => d.deviceId === this.deviceId);
 					if (myDev) {
+						// If this device locally turned Live Sync OFF, no remote device can force it ON!
+						if (this.standaloneMode && myDev.isStandalone === false) {
+							this.setStandaloneMode(true);
+							return;
+						}
+
 						const wasStandalone = this.standaloneMode;
 						if (typeof myDev.isStandalone === 'boolean' && myDev.isStandalone !== this.standaloneMode) {
 							this.standaloneMode = myDev.isStandalone;
@@ -537,10 +543,12 @@ class GlobalPlayer {
 								localStorage.setItem('traxvault_standalone_mode', myDev.isStandalone ? 'true' : 'false');
 							} catch {}
 						}
-						if (myDev.isAudioOutput !== this.localAudioEnabled) {
-							this.applyLocalAudioOutputMode(myDev.isAudioOutput, data.state);
-						} else if (wasStandalone && !this.standaloneMode && data.state) {
-							this.applyRemotePlaybackState(data.state, true);
+						if (!this.standaloneMode) {
+							if (myDev.isAudioOutput !== this.localAudioEnabled) {
+								this.applyLocalAudioOutputMode(myDev.isAudioOutput, data.state);
+							} else if (wasStandalone && !this.standaloneMode && data.state) {
+								this.applyRemotePlaybackState(data.state, true);
+							}
 						}
 					}
 				}

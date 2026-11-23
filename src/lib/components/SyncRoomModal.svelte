@@ -580,19 +580,11 @@
 											{#if !isSelf}
 												<button
 													type="button"
-													onclick={() => player.syncWithDevice(dev.deviceId, false)}
-													class="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-neutral-950 border border-cyan-500/40 text-[11px] font-bold transition cursor-pointer"
-													title="Sync your device with this device's current song in Companion & Lyrics mode"
-												>
-													Sync Lyrics
-												</button>
-												<button
-													type="button"
 													onclick={() => player.syncWithDevice(dev.deviceId, true)}
 													class="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-neutral-950 border border-emerald-500/40 text-[11px] font-bold transition cursor-pointer"
-													title="Sync and play this device's song together on both devices"
+													title="Listen to this song on your device (leaves this device in sync-off mode)"
 												>
-													Listen Together
+													Tune In
 												</button>
 											{/if}
 										{:else}
@@ -641,16 +633,6 @@
 													<span>Companion</span>
 												</button>
 											{/if}
-
-											<button
-												type="button"
-												onclick={() => player.setStandaloneMode(true, dev.deviceId)}
-												class="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-amber-950/80 text-neutral-400 hover:text-amber-300 border border-neutral-700 hover:border-amber-700/60 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1"
-												title="Set this device to On Its Own (Solo) mode so it plays independently without syncing"
-											>
-												<Unlink class="w-3 h-3" />
-												<span>On Its Own</span>
-											</button>
 										{/if}
 									</div>
 								</div>

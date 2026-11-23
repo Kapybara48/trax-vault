@@ -699,6 +699,7 @@ export function setDeviceAudioMode(params: {
 	exclusive?: boolean;
 }): {
 	ok: boolean;
+	error?: string;
 	room: SyncRoomSummary;
 	devices: SyncDeviceInfo[];
 	state: SyncPlaybackState;
@@ -708,13 +709,26 @@ export function setDeviceAudioMode(params: {
 	const effectiveTargetId = targetDeviceId || deviceId;
 
 	// Selecting a synced audio mode (Companion, Transfer Here, or Play on Multiple)
-	// ensures the target device is in the Synced Group (isStandalone = false)
+	// ensures this device is in the Synced Group (isStandalone = false).
+	// If targeting another device, ensure the target does NOT have Live Sync turned off!
 	const targetDev = room.devices.get(effectiveTargetId);
-	const wasStandalone = targetDev?.isStandalone ?? false;
-	if (targetDev) {
-		targetDev.isStandalone = false;
+	if (effectiveTargetId !== deviceId && targetDev?.isStandalone) {
+		return {
+			ok: false,
+			error: 'Target device has Live Sync turned off.',
+			room: serializeRoomSummary(room),
+			devices: serializeDevices(room),
+			state: room.state
+		};
 	}
-	room.deviceStandalonePrefs.set(effectiveTargetId, false);
+
+	const wasStandalone = targetDev?.isStandalone ?? false;
+	if (effectiveTargetId === deviceId) {
+		if (targetDev) {
+			targetDev.isStandalone = false;
+		}
+		room.deviceStandalonePrefs.set(effectiveTargetId, false);
+	}
 
 	// If the synced room had no active track yet, or if the user transferred playback to a device
 	// that was playing its own standalone track, adopt its track if room is empty
@@ -775,6 +789,7 @@ export function setDeviceStandaloneMode(params: {
 	isStandalone: boolean;
 }): {
 	ok: boolean;
+	error?: string;
 	room: SyncRoomSummary;
 	devices: SyncDeviceInfo[];
 	state: SyncPlaybackState;
@@ -782,6 +797,16 @@ export function setDeviceStandaloneMode(params: {
 	const { deviceId, targetDeviceId, userId, username, isStandalone } = params;
 	const room = getActiveRoomForDevice(deviceId, userId, username);
 	const effectiveTargetId = targetDeviceId || deviceId;
+
+	if (targetDeviceId && targetDeviceId !== deviceId) {
+		return {
+			ok: false,
+			error: 'A device cannot remotely change the Live Sync state of another device.',
+			room: serializeRoomSummary(room),
+			devices: serializeDevices(room),
+			state: room.state
+		};
+	}
 
 	room.deviceStandalonePrefs.set(effectiveTargetId, isStandalone);
 	const targetDev = room.devices.get(effectiveTargetId);
@@ -855,18 +880,17 @@ export function syncWithTargetDevice(params: {
 	const room = getActiveRoomForDevice(deviceId, userId, username);
 	const nowMs = Date.now();
 
-	// Bring both the caller device and target device into the Synced Group (isStandalone = false)
-	for (const id of [deviceId, targetDeviceId]) {
-		room.deviceStandalonePrefs.set(id, false);
-		const d = room.devices.get(id);
-		if (d) {
-			d.isStandalone = false;
-		}
+	// Turn on sync for the CALLER device (deviceId)
+	room.deviceStandalonePrefs.set(deviceId, false);
+	const callerDev = room.devices.get(deviceId);
+	if (callerDev) {
+		callerDev.isStandalone = false;
 	}
 
-	// Ensure target device outputs audio
+	// Target device: If targetDeviceId has Live Sync turned off (isStandalone),
+	// DO NOT force it into sync! The target device remains in its own mode undisturbed.
 	const targetDev = room.devices.get(targetDeviceId);
-	if (targetDev) {
+	if (targetDev && !targetDev.isStandalone) {
 		targetDev.isAudioOutput = true;
 		room.deviceAudioPrefs.set(targetDeviceId, true);
 	}

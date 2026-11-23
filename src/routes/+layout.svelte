@@ -55,6 +55,20 @@
 <svelte:head>
 	<title>Trax Vault - Music Quality & Lyrics Tracker</title>
 	<meta name="description" content="Self-hosted music quality, censorship, and lyrics tracker" />
+	{#if isPlayerPage}
+		<style>
+			html,
+			body {
+				position: fixed !important;
+				width: 100% !important;
+				height: 100% !important;
+				height: 100svh !important;
+				overflow: hidden !important;
+				overscroll-behavior: none !important;
+				-webkit-overflow-scrolling: touch !important;
+			}
+		</style>
+	{/if}
 </svelte:head>
 
 <!-- Persistent Global HTML5 Audio Element -->

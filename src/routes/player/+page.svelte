@@ -1347,7 +1347,7 @@
 	<div class="flex-1 flex overflow-hidden min-h-0 p-1.5 sm:p-3 gap-1.5 sm:gap-3">
 		<!-- DEDICATED FULL-SCREEN MOBILE NOW PLAYING (Phones < md) -->
 		{#if mobilePlayerTab === 'player'}
-			<section class="flex md:hidden order-1 flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto overscroll-contain min-h-0 p-4 sm:p-6 shadow-xl justify-between">
+			<section class="flex md:hidden order-1 flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 p-3 sm:p-4 shadow-xl justify-between">
 				<!-- Top Collapse Header -->
 				<div class="flex items-center justify-between w-full max-w-sm mx-auto pb-1 shrink-0">
 					<button
@@ -1370,21 +1370,21 @@
 				</div>
 
 				{#if player.currentTrack}
-					<div class="flex flex-col items-center justify-center flex-1 w-full max-w-sm mx-auto gap-4 py-2">
-						<!-- Big Album Cover -->
-						<div class="relative w-full aspect-square max-w-[270px] xs:max-w-[300px] rounded-2xl overflow-hidden bg-neutral-950 shadow-2xl shadow-emerald-950/40 border border-neutral-800/80 group">
+					<div class="flex flex-col items-center justify-between flex-1 w-full max-w-sm mx-auto min-h-0 py-0.5">
+						<!-- Album Cover (Scales dynamically to fit screen without scrolling) -->
+						<div class="relative w-full aspect-square max-h-[26vh] max-w-[190px] xs:max-w-[220px] rounded-2xl overflow-hidden bg-neutral-950 shadow-xl shadow-emerald-950/40 border border-neutral-800/80 group shrink">
 							{#if player.currentAlbum?.cover_url}
 								<img src={player.currentAlbum.cover_url} alt="Cover" class="w-full h-full object-cover" />
 							{:else}
 								<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-600">
-									<Disc3 class="w-20 h-20 animate-spin-slow" />
+									<Disc3 class="w-16 h-16 animate-spin-slow" />
 								</div>
 							{/if}
 						</div>
 
 						<!-- Track Metadata -->
-						<div class="w-full text-center space-y-1 mt-1">
-							<h2 class="text-lg sm:text-xl font-bold text-white tracking-tight line-clamp-1" title={player.currentTrack.title}>
+						<div class="w-full text-center space-y-0.5 mt-1 shrink-0">
+							<h2 class="text-base sm:text-lg font-bold text-white tracking-tight line-clamp-1" title={player.currentTrack.title}>
 								{player.currentTrack.title}
 							</h2>
 							<div class="flex items-center justify-center gap-2 text-xs text-neutral-300">
@@ -1410,7 +1410,7 @@
 												mobilePlayerTab = 'tracks';
 											}
 										}}
-										class="text-neutral-400 hover:text-emerald-400 truncate max-w-[150px] transition cursor-pointer"
+										class="text-neutral-400 hover:text-emerald-400 truncate max-w-[140px] transition cursor-pointer"
 									>
 										{player.currentAlbum.title}
 									</button>
@@ -1418,7 +1418,7 @@
 							</div>
 
 							<!-- Quality Pill -->
-							<div class="flex items-center justify-center gap-2 pt-1 relative">
+							<div class="flex items-center justify-center gap-2 pt-0.5 relative">
 								<button
 									type="button"
 									onclick={() => (showQualityMenu = !showQualityMenu)}
@@ -1520,7 +1520,7 @@
 						</div>
 
 						<!-- Scrubber Slider -->
-						<div class="w-full space-y-1 px-1 pt-1">
+						<div class="w-full space-y-0.5 px-1 shrink-0">
 							<div class="relative flex items-center group">
 								<input
 									type="range"
@@ -1531,45 +1531,45 @@
 									class="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none"
 								/>
 							</div>
-							<div class="flex justify-between text-[11px] font-mono text-neutral-400">
+							<div class="flex justify-between text-[10px] font-mono text-neutral-400">
 								<span>{formatTime(player.currentTime)}</span>
 								<span>{formatTime(player.duration)}</span>
 							</div>
 						</div>
 
 						<!-- Main Playback Controls -->
-						<div class="flex items-center justify-between w-full max-w-[280px] pt-1">
+						<div class="flex items-center justify-between w-full max-w-[270px] shrink-0">
 							<!-- Shuffle -->
 							<button
 								type="button"
 								onclick={() => player.toggleShuffle()}
-								class="p-2.5 rounded-xl transition cursor-pointer {player.shuffleEnabled ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30' : 'text-neutral-400 hover:text-white'}"
+								class="p-2 rounded-xl transition cursor-pointer {player.shuffleEnabled ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30' : 'text-neutral-400 hover:text-white'}"
 								title="Shuffle ({player.shuffleEnabled ? 'On' : 'Off'})"
 							>
-								<Shuffle class="w-5 h-5" />
+								<Shuffle class="w-4 h-4" />
 							</button>
 
 							<!-- Skip Back -->
 							<button
 								type="button"
 								onclick={() => player.previousTrack()}
-								class="p-2.5 rounded-xl text-neutral-200 hover:text-white active:scale-95 transition cursor-pointer"
+								class="p-2 rounded-xl text-neutral-200 hover:text-white active:scale-95 transition cursor-pointer"
 								title="Previous Track"
 							>
-								<SkipBack class="w-6 h-6 fill-current" />
+								<SkipBack class="w-5 h-5 fill-current" />
 							</button>
 
 							<!-- Main Giant Play/Pause -->
 							<button
 								type="button"
 								onclick={() => player.togglePlay()}
-								class="w-16 h-16 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 flex items-center justify-center shadow-xl shadow-emerald-500/30 active:scale-95 transition cursor-pointer"
+								class="w-13 h-13 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 flex items-center justify-center shadow-lg shadow-emerald-500/30 active:scale-95 transition cursor-pointer shrink-0"
 								title={player.isPlaying ? 'Pause' : 'Play'}
 							>
 								{#if player.isPlaying}
-									<Pause class="w-7 h-7 fill-current" />
+									<Pause class="w-6 h-6 fill-current" />
 								{:else}
-									<Play class="w-7 h-7 fill-current ml-1" />
+									<Play class="w-6 h-6 fill-current ml-0.5" />
 								{/if}
 							</button>
 
@@ -1577,40 +1577,40 @@
 							<button
 								type="button"
 								onclick={() => player.nextTrack()}
-								class="p-2.5 rounded-xl text-neutral-200 hover:text-white active:scale-95 transition cursor-pointer"
+								class="p-2 rounded-xl text-neutral-200 hover:text-white active:scale-95 transition cursor-pointer"
 								title="Next Track"
 							>
-								<SkipForward class="w-6 h-6 fill-current" />
+								<SkipForward class="w-5 h-5 fill-current" />
 							</button>
 
 							<!-- Repeat -->
 							<button
 								type="button"
 								onclick={() => player.toggleRepeat()}
-								class="p-2.5 rounded-xl transition cursor-pointer {player.repeatMode !== 'off' ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30' : 'text-neutral-400 hover:text-white'}"
+								class="p-2 rounded-xl transition cursor-pointer {player.repeatMode !== 'off' ? 'text-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-500/30' : 'text-neutral-400 hover:text-white'}"
 								title="Repeat ({player.repeatMode})"
 							>
 								{#if player.repeatMode === 'one'}
-									<Repeat1 class="w-5 h-5" />
+									<Repeat1 class="w-4 h-4" />
 								{:else}
-									<Repeat class="w-5 h-5" />
+									<Repeat class="w-4 h-4" />
 								{/if}
 							</button>
 						</div>
 
 						<!-- Volume Control Slider -->
-						<div class="flex items-center gap-3 w-full max-w-[260px] pt-2">
+						<div class="flex items-center gap-2.5 w-full max-w-[240px] shrink-0">
 							<button
 								type="button"
 								onclick={() => player.toggleMute()}
-								class="text-neutral-400 hover:text-white p-1 cursor-pointer"
+								class="text-neutral-400 hover:text-white p-1 cursor-pointer shrink-0"
 							>
 								{#if player.isMuted || player.volume === 0}
-									<VolumeX class="w-4 h-4 text-rose-400" />
+									<VolumeX class="w-3.5 h-3.5 text-rose-400" />
 								{:else if player.volume < 0.5}
-									<Volume1 class="w-4 h-4" />
+									<Volume1 class="w-3.5 h-3.5" />
 								{:else}
-									<Volume2 class="w-4 h-4 text-emerald-400" />
+									<Volume2 class="w-3.5 h-3.5 text-emerald-400" />
 								{/if}
 							</button>
 							<input
@@ -1620,43 +1620,35 @@
 								step="0.01"
 								value={player.isMuted ? 0 : player.volume}
 								oninput={(e) => player.setVolume(parseFloat(e.currentTarget.value))}
-								class="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+								class="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
 							/>
 						</div>
 
 						<!-- Quick Action Navigation Pills -->
-						<div class="flex flex-wrap items-center justify-center gap-2 w-full pt-3 border-t border-neutral-800/60 mt-1">
+						<div class="flex items-center justify-center gap-1.5 w-full pt-1.5 border-t border-neutral-800/60 shrink-0">
 							<button
 								type="button"
 								onclick={() => { mobilePlayerTab = 'lyrics'; showLyricsDrawer = true; showQueueDrawer = false; }}
-								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
+								class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-[11px] font-semibold border border-neutral-700/60 transition cursor-pointer"
 							>
-								<Mic class="w-3.5 h-3.5 text-emerald-400" />
+								<Mic class="w-3 h-3 text-emerald-400" />
 								<span>Lyrics</span>
 							</button>
 							<button
 								type="button"
 								onclick={() => { mobilePlayerTab = 'queue'; showQueueDrawer = true; showLyricsDrawer = false; }}
-								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
+								class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-[11px] font-semibold border border-neutral-700/60 transition cursor-pointer"
 							>
-								<ListMusic class="w-3.5 h-3.5 text-emerald-400" />
+								<ListMusic class="w-3 h-3 text-emerald-400" />
 								<span>Queue</span>
 							</button>
 							<button
 								type="button"
 								onclick={() => (mobilePlayerTab = 'tracks')}
-								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
+								class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-[11px] font-semibold border border-neutral-700/60 transition cursor-pointer"
 							>
-								<Disc3 class="w-3.5 h-3.5 text-cyan-400" />
+								<Disc3 class="w-3 h-3 text-cyan-400" />
 								<span>Tracks</span>
-							</button>
-							<button
-								type="button"
-								onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
-								class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700/60 transition cursor-pointer"
-							>
-								<Radio class="w-3.5 h-3.5 text-amber-400" />
-								<span>Sync</span>
 							</button>
 						</div>
 					</div>
