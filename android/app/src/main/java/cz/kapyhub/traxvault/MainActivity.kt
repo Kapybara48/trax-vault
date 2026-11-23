@@ -125,12 +125,22 @@ class MainActivity : AppCompatActivity() {
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.55"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.56"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
+
+        // Delegate Service Worker requests to PWA cache
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            val swController = android.webkit.ServiceWorkerController.getInstance()
+            swController.setServiceWorkerClient(object : android.webkit.ServiceWorkerClient() {
+                override fun shouldInterceptRequest(request: WebResourceRequest?): android.webkit.WebResourceResponse? {
+                    return null
+                }
+            })
+        }
 
         // JavaScript interface
         webView.addJavascriptInterface(TraxNativeInterface(), "TraxNative")
@@ -175,6 +185,10 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 // Restore cache mode to default for future navigation
                 view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
+                if (url?.contains("/player") == true) {
+                    // Clear intermediate login/redirect history so back gesture never leaves the player to /login
+                    view?.clearHistory()
+                }
                 errorLayout.visibility = View.GONE
                 webView.visibility = View.VISIBLE
             }
@@ -207,16 +221,46 @@ class MainActivity : AppCompatActivity() {
     private fun setupBackHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.visibility == View.VISIBLE && webView.canGoBack()) {
-                    webView.goBack()
-                } else {
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - backPressedTime < 2000) {
-                        finish()
-                    } else {
-                        backPressedTime = currentTime
-                        Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                // If error screen is displayed, handle double back exit directly
+                if (webView.visibility != View.VISIBLE) {
+                    handleExitDoubleBack()
+                    return
+                }
+
+                // Query web player client whether Svelte UI consumed the back action (dialog, drawer, tab, or now-playing)
+                webView.evaluateJavascript("window.__traxHandleBack ? window.__traxHandleBack() : false") { result ->
+                    val handled = result?.trim()?.equals("true", ignoreCase = true) == true
+                    if (handled) {
+                        return@evaluateJavascript
                     }
+
+                    // Not handled by web player: check if on secondary page or root
+                    val currentUrl = webView.url ?: ""
+                    val isPlayerPage = currentUrl.contains("/player")
+
+                    if (!isPlayerPage && webView.canGoBack()) {
+                        webView.goBack()
+                    } else if (!isPlayerPage) {
+                        val serverUrl = getServerUrl()
+                        if (!serverUrl.isNullOrBlank()) {
+                            loadServerUrl(serverUrl)
+                        } else {
+                            handleExitDoubleBack()
+                        }
+                    } else {
+                        // At root library: require double back press within 2 seconds to exit app
+                        handleExitDoubleBack()
+                    }
+                }
+            }
+
+            private fun handleExitDoubleBack() {
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - backPressedTime < 2000) {
+                    finish()
+                } else {
+                    backPressedTime = currentTime
+                    Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
                 }
             }
         })
@@ -372,7 +416,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.55"
+            return "1.7.56"
         }
 
         @JavascriptInterface

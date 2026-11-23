@@ -55,7 +55,7 @@
 		ArrowDownCircle
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
-	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
+	import { dialogService, confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 	import { parseLrcEnhanced, type EnhancedLyricLine } from '$lib/utils.js';
 	import { offlineStorage } from '$lib/services/offline.svelte.js';
 
@@ -1162,6 +1162,168 @@
 		}
 	}
 
+	// Detect if running inside the native Android wrapper
+	function isNativeApp(): boolean {
+		if (typeof window === 'undefined') return false;
+		return (
+			'TraxNative' in window ||
+			Boolean((window as any).TraxNative) ||
+			navigator.userAgent.includes('TraxVaultAndroid')
+		);
+	}
+
+	// Browser history navigation depth tracking (for mobile web popstate)
+	let historyNavDepth = 0;
+	let isHandlingPopstate = false;
+
+	function pushHistoryState() {
+		if (typeof window === 'undefined' || isNativeApp()) return;
+		try {
+			historyNavDepth++;
+			window.history.pushState({ traxNav: true, depth: historyNavDepth }, '');
+		} catch {}
+	}
+
+	function handleBackNavigation(): boolean {
+		// 1. Dismiss global confirmation / alert dialogs
+		if (dialogService.state.isOpen) {
+			dialogService.handleCancel();
+			return true;
+		}
+
+		// 2. Dismiss device sync / listening room modal
+		if (player.showSyncModal) {
+			player.closeSyncModal();
+			return true;
+		}
+
+		// 3. Dismiss download audio quality menu / options
+		if (activeDownloadTrackId !== null) {
+			activeDownloadTrackId = null;
+			return true;
+		}
+		if (showQualityMenu) {
+			showQualityMenu = false;
+			return true;
+		}
+
+		// 4. Dismiss playlist and artist management modals
+		if (showPlaylistModal) {
+			showPlaylistModal = false;
+			return true;
+		}
+		if (showCreatePlaylistModal) {
+			showCreatePlaylistModal = false;
+			return true;
+		}
+		if (showEditPlaylistModal) {
+			showEditPlaylistModal = false;
+			return true;
+		}
+		if (showDeletePlaylistModal) {
+			showDeletePlaylistModal = false;
+			return true;
+		}
+		if (showEditArtistModal) {
+			showEditArtistModal = false;
+			return true;
+		}
+
+		// 5. Dismiss mobile lyrics or queue views
+		if (mobilePlayerTab === 'lyrics' || mobilePlayerTab === 'queue') {
+			showLyricsDrawer = false;
+			showQueueDrawer = false;
+			mobilePlayerTab = player.currentTrack ? 'player' : 'tracks';
+			return true;
+		}
+
+		// 6. Close desktop side drawers
+		if (showLyricsDrawer || showQueueDrawer) {
+			showLyricsDrawer = false;
+			showQueueDrawer = false;
+			return true;
+		}
+
+		// 7. Collapse full-screen mobile now-playing to previous tab
+		if (mobilePlayerTab === 'player') {
+			mobilePlayerTab = mobilePreviousTab || 'library';
+			return true;
+		}
+
+		// 8. Navigate from tracks (album/playlist/artist) back to library or search
+		if (mobilePlayerTab === 'tracks') {
+			mobilePlayerTab = mobilePreviousTab === 'search' ? 'search' : 'library';
+			return true;
+		}
+
+		// 9. Secondary tabs (studio, profile) collapse back to library
+		if (mobilePlayerTab === 'studio' || mobilePlayerTab === 'profile') {
+			mobilePlayerTab = 'library';
+			return true;
+		}
+
+		// 10. Search tab: clear search query first, or return to library
+		if (mobilePlayerTab === 'search') {
+			if (mobileSearchQuery.trim()) {
+				mobileSearchQuery = '';
+				return true;
+			}
+			mobilePlayerTab = 'library';
+			return true;
+		}
+
+		// 11. Library tab: clear search query or reset tab to playlists before quitting
+		if (mobilePlayerTab === 'library') {
+			if (librarySearch.trim()) {
+				librarySearch = '';
+				return true;
+			}
+			if (mobileLibraryTab !== 'playlists') {
+				mobileLibraryTab = 'playlists';
+				return true;
+			}
+		}
+
+		// Root reached with nothing open
+		return false;
+	}
+
+	function triggerBackNavigation() {
+		if (!isNativeApp() && historyNavDepth > 0) {
+			window.history.back();
+		} else {
+			handleBackNavigation();
+		}
+	}
+
+	let prevNavSignature = '';
+	$effect(() => {
+		const currentNavSignature = JSON.stringify({
+			tab: mobilePlayerTab,
+			libTab: mobilePlayerTab === 'library' ? mobileLibraryTab : null,
+			hasSearch: Boolean(mobileSearchQuery.trim() || librarySearch.trim()),
+			hasModal: [
+				showPlaylistModal,
+				showCreatePlaylistModal,
+				showEditPlaylistModal,
+				showDeletePlaylistModal,
+				showEditArtistModal,
+				showQualityMenu,
+				activeDownloadTrackId !== null,
+				player.showSyncModal,
+				dialogService.state.isOpen
+			].some(Boolean)
+		});
+
+		if (prevNavSignature && prevNavSignature !== currentNavSignature && !isHandlingPopstate) {
+			const isRoot = mobilePlayerTab === 'library' && mobileLibraryTab === 'playlists' && !librarySearch.trim() && !prevNavSignature.includes('"hasModal":true');
+			if (!isRoot) {
+				pushHistoryState();
+			}
+		}
+		prevNavSignature = currentNavSignature;
+	});
+
 	onMount(() => {
 		// Restore saved view state if no explicit URL parameters override it
 		try {
@@ -1338,12 +1500,31 @@
 		window.addEventListener('traxvault:mobile-features-toggle', updateMobileSettings);
 		window.addEventListener('traxvault:navbar-toggle', updateMobileSettings);
 
+		// Expose back navigation handler to Android WebView wrapper
+		(window as any).__traxHandleBack = handleBackNavigation;
+
+		// Listen to popstate for browser navigation (swiping back / browser back button)
+		const onPopState = () => {
+			if (isNativeApp()) return;
+			isHandlingPopstate = true;
+			handleBackNavigation();
+			if (historyNavDepth > 0) {
+				historyNavDepth--;
+			}
+			isHandlingPopstate = false;
+		};
+		window.addEventListener('popstate', onPopState);
+
 		return () => {
 			window.removeEventListener('online', handleOnline);
 			window.removeEventListener('offline', handleOffline);
 			window.removeEventListener('storage', updateMobileSettings);
 			window.removeEventListener('traxvault:mobile-features-toggle', updateMobileSettings);
 			window.removeEventListener('traxvault:navbar-toggle', updateMobileSettings);
+			window.removeEventListener('popstate', onPopState);
+			try {
+				delete (window as any).__traxHandleBack;
+			} catch {}
 		};
 	});
 
@@ -1432,7 +1613,7 @@
 				<div class="flex items-center justify-between w-full max-w-sm mx-auto pb-1 shrink-0">
 					<button
 						type="button"
-						onclick={() => (mobilePlayerTab = mobilePreviousTab || 'library')}
+						onclick={() => triggerBackNavigation()}
 						class="p-1.5 text-neutral-400 hover:text-white rounded-lg cursor-pointer"
 						title="Collapse Player"
 					>
@@ -2195,7 +2376,7 @@
 					</div>
 					<button
 						type="button"
-						onclick={() => (mobilePlayerTab = mobilePreviousTab === 'profile' ? 'library' : mobilePreviousTab)}
+						onclick={() => triggerBackNavigation()}
 						class="p-1.5 text-neutral-400 hover:text-white rounded-lg cursor-pointer"
 						title="Close Profile"
 					>
@@ -2476,7 +2657,7 @@
 					</div>
 					<button
 						type="button"
-						onclick={() => (mobilePlayerTab = mobilePreviousTab === 'studio' ? 'library' : mobilePreviousTab)}
+						onclick={() => triggerBackNavigation()}
 						class="p-1.5 text-neutral-400 hover:text-white rounded-lg cursor-pointer"
 						title="Close Studio"
 					>
@@ -3037,10 +3218,7 @@
 
 						<button
 							type="button"
-							onclick={() => {
-								showLyricsDrawer = false;
-								if (mobilePlayerTab === 'lyrics') mobilePlayerTab = 'tracks';
-							}}
+							onclick={() => triggerBackNavigation()}
 							class="text-neutral-400 hover:text-white p-1.5 rounded-lg hover:bg-neutral-800 cursor-pointer transition"
 							title="Close Lyrics"
 						>
@@ -3158,7 +3336,7 @@
 			<div class="md:hidden flex items-center justify-between p-2.5 pb-1 border-b border-neutral-800/40 shrink-0">
 				<button
 					type="button"
-					onclick={() => (mobilePlayerTab = mobilePreviousTab || 'library')}
+					onclick={() => triggerBackNavigation()}
 					class="flex items-center gap-1 text-xs font-semibold text-neutral-300 hover:text-white px-2.5 py-1 rounded-lg bg-neutral-800/80 cursor-pointer active:scale-95 transition"
 				>
 					<ChevronLeft class="w-4 h-4 text-emerald-400" />
@@ -4509,10 +4687,7 @@
 					</div>
 					<button
 						type="button"
-						onclick={() => {
-							showQueueDrawer = false;
-							if (mobilePlayerTab === 'queue') mobilePlayerTab = 'tracks';
-						}}
+						onclick={() => triggerBackNavigation()}
 						class="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 cursor-pointer"
 						title="Close Queue"
 					>

@@ -1192,6 +1192,29 @@ This document preserves persistent context, architectural conventions, recent ch
       - Updated APK extraction artifact to `app/build/outputs/apk/release/app-release.apk` published as `trax-vault.apk`.
       - Resolved Obtainium `signing certificate mismatch` and Android OS `INSTALL_FAILED_UPDATE_INCOMPATIBLE` / `failureConfict`.
 
+83. **Mobile System Back Navigation & Standalone Native Experience (v1.7.56)**:
+    - **Hierarchical Back Gesture Navigation (`handleBackNavigation`)**:
+      - Implemented strict hierarchical back navigation in `src/routes/player/+page.svelte`:
+        1. Dismiss global confirmation & alert dialogs (`dialogService.handleCancel()`).
+        2. Close listening room / device synchronization modal (`player.closeSyncModal()`).
+        3. Dismiss audio quality selection & download options popup.
+        4. Dismiss playlist management modals (create, edit, delete, add to playlist) & artist editor.
+        5. Dismiss mobile lyrics or queue views back to player or tracks.
+        6. Dismiss desktop slide-out lyrics and queue drawers.
+        7. Collapse full-screen mobile Now Playing (`mobilePlayerTab === 'player'`) back to previous tab (`mobilePreviousTab || 'library'`).
+        8. Navigate from album / playlist tracklist (`mobilePlayerTab === 'tracks'`) back to library or search.
+        9. Collapse secondary mobile tabs (`'studio'`, `'profile'`, `'search'`) back to root library view.
+        10. Reset library search filters and tab back to playlists before reaching exit condition.
+    - **Mobile Web History Synchronization**:
+      - Added reactive nav signature tracking that pushes `window.history.pushState` on mobile browsers when navigating into sub-screens or opening modals.
+      - Intercepted `window.addEventListener('popstate')` to consume system back gestures smoothly within the web app instead of popping browser history or leaving Trax Vault.
+      - Unified on-screen back and collapse buttons (`<ChevronDown>`, `<ChevronLeft>`, `<X>`) to trigger `triggerBackNavigation()`.
+    - **Android Native App Back Handler & Login History Purge (`MainActivity.kt`)**:
+      - In `onPageFinished`, calls `view?.clearHistory()` when loading `/player` so intermediate `/login` or auth redirect URLs are wiped from the WebView backstack.
+      - In `setupBackHandler()`, invokes `window.__traxHandleBack()` via JavaScript evaluation. If consumed, the back event is absorbed.
+      - If at root library, requires a double-press within 2 seconds ("Press back again to exit" Toast) before exiting, completely preventing accidental exits or navigating backwards to `/login`.
+      - Configured Android ServiceWorkerController to delegate all network and asset caching to the PWA Service Worker for seamless offline startup.
+
 ---
 
 ## 4. Workflows & Verification

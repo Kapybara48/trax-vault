@@ -96,5 +96,6 @@ class DialogService {
 }
 
 export const dialog = new DialogService();
+export const dialogService = dialog;
 export const confirmAction = (options: string | DialogOptions) => dialog.confirm(options);
 export const alertAction = (message: string, title?: string) => dialog.alert(message, title);
