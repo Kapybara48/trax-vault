@@ -30,7 +30,8 @@
 		ChevronDown,
 		ChevronLeft,
 		Wrench,
-		Zap
+		Zap,
+		Download
 	} from '@lucide/svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 
@@ -57,8 +58,21 @@
 	// Mobile UI Preferences
 	let showMobileNavbarSetting = $state(false);
 	let showMobileFullFeaturesSetting = $state(false);
+	let isNativeAndroidApp = $state(false);
+	let androidAppVersion = $state<string | null>(null);
 
 	onMount(() => {
+		if (typeof window !== 'undefined') {
+			if ((window as any).TraxNative || navigator.userAgent.includes('TraxVaultAndroid')) {
+				isNativeAndroidApp = true;
+				try {
+					androidAppVersion = (window as any).TraxNative?.getVersion() || '1.7.49';
+				} catch {
+					androidAppVersion = '1.7.49';
+				}
+			}
+		}
+
 		try {
 			showMobileNavbarSetting = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
 			showMobileFullFeaturesSetting = localStorage.getItem('traxvault_mobile_full_features') === 'true';
@@ -902,6 +916,43 @@
 								<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
 							</label>
 						</div>
+
+						<!-- Native Android App Section -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="flex items-center gap-2">
+									<div class="text-xs font-semibold text-white">Trax Vault Android App</div>
+									{#if isNativeAndroidApp}
+										<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Native Client v{androidAppVersion}</span>
+									{/if}
+								</div>
+								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
+									{#if isNativeAndroidApp}
+										You are running inside the official Android app. Edge-to-edge immersion and background playback are active.
+									{:else}
+										Install the native Android app (.apk) for edge-to-edge full screen, zero collapsing browser URL bars, and background playback.
+									{/if}
+								</div>
+							</div>
+							{#if isNativeAndroidApp}
+								<button
+									type="button"
+									onclick={() => (window as any).TraxNative?.changeServerUrl()}
+									class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-emerald-400 border border-emerald-500/30 transition shrink-0"
+								>
+									Server URL
+								</button>
+							{:else}
+								<a
+									href="/api/apk"
+									download="trax-vault.apk"
+									class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-xs font-medium text-white transition shrink-0 shadow-lg shadow-emerald-950/40"
+								>
+									<Download class="w-3.5 h-3.5" />
+									<span>Download APK</span>
+								</a>
+							{/if}
+						</div>
 					</div>
 				</div>
 
@@ -1157,6 +1208,43 @@
 								/>
 								<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
 							</label>
+						</div>
+
+						<!-- Native Android App Section -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="flex items-center gap-2">
+									<div class="text-xs font-semibold text-white">Trax Vault Android App</div>
+									{#if isNativeAndroidApp}
+										<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Native Client v{androidAppVersion}</span>
+									{/if}
+								</div>
+								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
+									{#if isNativeAndroidApp}
+										You are running inside the official Android app. Edge-to-edge immersion and background playback are active.
+									{:else}
+										Install the native Android app (.apk) for edge-to-edge full screen, zero collapsing browser URL bars, and background playback.
+									{/if}
+								</div>
+							</div>
+							{#if isNativeAndroidApp}
+								<button
+									type="button"
+									onclick={() => (window as any).TraxNative?.changeServerUrl()}
+									class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-emerald-400 border border-emerald-500/30 transition shrink-0"
+								>
+									Server URL
+								</button>
+							{:else}
+								<a
+									href="/api/apk"
+									download="trax-vault.apk"
+									class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-xs font-medium text-white transition shrink-0 shadow-lg shadow-emerald-950/40"
+								>
+									<Download class="w-3.5 h-3.5" />
+									<span>Download APK</span>
+								</a>
+							{/if}
 						</div>
 					</div>
 				</div>

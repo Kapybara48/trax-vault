@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_dark">#0a0a0a</color>
+    <color name="surface_dark">#171717</color>
+    <color name="emerald_500">#10b981</color>
+    <color name="emerald_600">#059669</color>
+    <color name="text_primary">#f5f5f5</color>
+    <color name="text_muted">#a3a3a3</color>
+</resources>

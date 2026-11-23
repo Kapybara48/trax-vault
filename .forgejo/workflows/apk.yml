@@ -1,0 +1,124 @@
+name: Build and Publish Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release-apk:
+    name: Build & Release Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure Docker CLI is available
+        run: |
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "Installing Docker CLI..."
+            apt-get update && apt-get install -y --no-install-recommends docker.io curl jq || true
+          fi
+          docker version
+
+      - name: Build Android APK
+        run: |
+          echo "Building Android builder container..."
+          docker build -t trax-vault-android-builder:latest -f android/Dockerfile.build android
+
+          echo "Compiling Android APK with Gradle..."
+          docker run --rm \
+            -v "$PWD":/workspace \
+            -w /workspace/android \
+            -e ANDROID_SDK_ROOT="/opt/android-sdk" \
+            trax-vault-android-builder:latest \
+            gradle assembleDebug --no-daemon --stacktrace
+
+          cp android/app/build/outputs/apk/debug/app-debug.apk trax-vault.apk
+          echo "APK generated successfully:"
+          ls -lh trax-vault.apk
+
+      - name: Publish APK to Forgejo Release
+        run: |
+          RAW_TAG="${{ github.ref_name }}"
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            RAW_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.7.48")
+          fi
+
+          echo "Publishing trax-vault.apk to Forgejo Release for tag: ${RAW_TAG}"
+
+          AUTH_HEADER="Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
+          BASE_URL="${{ github.server_url }}/api/v1/repos/${{ github.repository }}"
+
+          # 1. Check if release already exists for this tag
+          HTTP_STATUS=$(curl -s -o /tmp/release_resp.json -w "%{http_code}" -H "${AUTH_HEADER}" "${BASE_URL}/releases/tags/${RAW_TAG}")
+          RELEASE_ID=""
+
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            RELEASE_ID=$(jq -r '.id // empty' /tmp/release_resp.json)
+            echo "Found existing release with ID: ${RELEASE_ID}"
+          else
+            echo "Release for tag ${RAW_TAG} does not exist yet. Creating release..."
+            CREATE_PAYLOAD=$(jq -n \
+              --arg tag "${RAW_TAG}" \
+              --arg name "Trax Vault ${RAW_TAG}" \
+              --arg body "### Trax Vault ${RAW_TAG} Android Release\n\nDownload \`trax-vault.apk\` below to install Trax Vault directly on your Android phone." \
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
+
+            CREATE_STATUS=$(curl -s -o /tmp/create_resp.json -w "%{http_code}" \
+              -X POST \
+              -H "${AUTH_HEADER}" \
+              -H "Content-Type: application/json" \
+              -d "${CREATE_PAYLOAD}" \
+              "${BASE_URL}/releases")
+
+            if [ "$CREATE_STATUS" -ge 200 ] && [ "$CREATE_STATUS" -lt 300 ]; then
+              RELEASE_ID=$(jq -r '.id // empty' /tmp/create_resp.json)
+              echo "Created new release with ID: ${RELEASE_ID}"
+            else
+              echo "Failed to create release. HTTP ${CREATE_STATUS}"
+              cat /tmp/create_resp.json
+              exit 1
+            fi
+          fi
+
+          if [ -z "${RELEASE_ID}" ] || [ "${RELEASE_ID}" = "null" ]; then
+            echo "ERROR: Invalid Release ID: ${RELEASE_ID}"
+            exit 1
+          fi
+
+          # 2. Check if trax-vault.apk asset already exists on the release; if so, remove it to overwrite
+          ASSETS_RESP=$(curl -s -H "${AUTH_HEADER}" "${BASE_URL}/releases/${RELEASE_ID}/assets")
+          EXISTING_ASSET_ID=$(echo "${ASSETS_RESP}" | jq -r '.[] | select(.name == "trax-vault.apk") | .id' 2>/dev/null || true)
+
+          if [ -n "${EXISTING_ASSET_ID}" ] && [ "${EXISTING_ASSET_ID}" != "null" ]; then
+            echo "Existing asset trax-vault.apk found (ID: ${EXISTING_ASSET_ID}). Deleting old asset..."
+            curl -s -X DELETE -H "${AUTH_HEADER}" "${BASE_URL}/releases/${RELEASE_ID}/assets/${EXISTING_ASSET_ID}"
+          fi
+
+          # 3. Upload new trax-vault.apk
+          echo "Uploading trax-vault.apk to release ${RELEASE_ID}..."
+          UPLOAD_STATUS=$(curl -s -o /tmp/upload_resp.json -w "%{http_code}" \
+            -X POST \
+            -H "${AUTH_HEADER}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "attachment=@trax-vault.apk;filename=trax-vault.apk" \
+            "${BASE_URL}/releases/${RELEASE_ID}/assets?name=trax-vault.apk")
+
+          if [ "$UPLOAD_STATUS" -ge 200 ] && [ "$UPLOAD_STATUS" -lt 300 ]; then
+            echo "SUCCESS: trax-vault.apk published to release ${RAW_TAG} successfully!"
+          else
+            echo "ERROR: Failed to upload trax-vault.apk. HTTP status: ${UPLOAD_STATUS}"
+            cat /tmp/upload_resp.json
+            exit 1
+          fi

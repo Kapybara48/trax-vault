@@ -1132,6 +1132,25 @@ This document preserves persistent context, architectural conventions, recent ch
       - Merged "Add Track" and "Edit Album" into a unified modal with clean tab switching (`Album Info` vs `+ Add Track`).
       - Removed redundant "Add to Playlist" button from `/album/[id]` hero action bar and track rows (playlists are reserved for the Player view).
 
+80. **Native Android App (`cz.kapyhub.traxvault`) & Forgejo CI/CD Release Pipeline (v1.7.49)**:
+    - **Native Android Client (`android/`)**:
+      - Pure Kotlin AndroidX WebKit app (`cz.kapyhub.traxvault`) targeting SDK 34 (Android 14) with min SDK 26 (Android 8.0).
+      - Pure edge-to-edge immersion with `#0a0a0a` status and navigation bar styling, eliminating browser chrome and URL bar collapsing.
+      - First-launch Server URL configuration dialog with persistence in `SharedPreferences`, auto-normalization (`https://`), and offline fallback screen with Retry and Change Server buttons.
+      - Uninterrupted background audio streaming with `FOREGROUND_SERVICE_MEDIA_PLAYBACK` and unconstrained media policies.
+      - Hardware back-button dispatcher navigating WebView history and double-tap prevention against accidental app closure.
+      - File chooser support (`WebChromeClient`) for uploading replacement audio tracks and companion lyrics.
+      - JavaScript interface bridge (`window.TraxNative`) allowing web client awareness, native dialog triggers, and version reporting.
+    - **Dockerized APK Builder (`android/Dockerfile.build` & `scripts/build-apk.sh`)**:
+      - Standalone, containerized Android build environment based on Eclipse Temurin JDK 17, Android command-line tools 34, and Gradle 8.5.
+      - Compiles signed debug APKs (`trax-vault.apk`) locally or in CI without requiring Java or Android Studio on the host.
+    - **Forgejo CI/CD Automated Release Publishing (`.forgejo/workflows/apk.yml`)**:
+      - Automatically triggers on version tag pushes (`v*`) matching `docker-publish.yml`.
+      - Runs inside the runner, builds `trax-vault.apk`, queries/creates the Forgejo release for the tag, and attaches the binary APK asset using the built-in `${{ secrets.GITHUB_TOKEN }}` without requiring manual tokens.
+    - **Web Integration & Direct APK Downloads**:
+      - Added endpoint `GET /api/apk` serving `trax-vault.apk` directly over HTTP.
+      - Updated `/settings` Mobile Navigation card to display connected native client status or provide a 1-click APK download link.
+
 ---
 
 ## 4. Workflows & Verification

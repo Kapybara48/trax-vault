@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Trax Vault</string>
+    <string name="server_url_dialog_title">Trax Vault Server</string>
+    <string name="server_url_dialog_message">Enter your Trax Vault server address (e.g. https://trax.example.com or http://192.168.1.50:3000):</string>
+    <string name="server_url_hint">https://your-server-url.com</string>
+    <string name="save_and_connect">Connect</string>
+    <string name="cancel">Cancel</string>
+    <string name="retry">Retry</string>
+    <string name="change_server">Change Server</string>
+    <string name="connection_error">Unable to connect to Trax Vault server.</string>
+    <string name="check_network_message">Please verify your internet connection or check if your Trax Vault server is online.</string>
+</resources>
