@@ -10,12 +10,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  REGISTRY: forgejo.kapyhub.cz
+  BUILDER_IMAGE: kapybara/trax-vault-android-builder
+
 jobs:
   build-and-release-apk:
     name: Build & Release Android APK
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
 
     steps:
       - name: Checkout repository
@@ -34,7 +39,6 @@ jobs:
           df -h
           docker container prune -f || true
           docker image prune -f || true
-          # If available space is under 3GB, safely prune builder cache
           AVAIL_KB=$(df --output=avail / 2>/dev/null | tail -n 1 || echo 9999999)
           if [ "${AVAIL_KB}" -lt 3000000 ] 2>/dev/null; then
             echo "Disk space is low (${AVAIL_KB} KB). Safely pruning old builder cache..."
@@ -43,16 +47,34 @@ jobs:
           echo "Disk space ready:"
           df -h
 
-      - name: Build Android APK
+      - name: Log in to Forgejo Container Registry
         run: |
-          echo "Building Android APK inside Docker..."
+          AUTH_TOKEN="${{ secrets.PACKAGE_TOKEN || secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}"
+          AUTH_USER="${{ secrets.REGISTRY_USER || github.actor }}"
+          echo "$AUTH_TOKEN" | docker login ${{ env.REGISTRY }} -u "$AUTH_USER" --password-stdin
+
+      - name: Build Android APK with Local Registry Cache
+        run: |
+          BUILDER_TAG="${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE }}:latest"
           export DOCKER_BUILDKIT=1
-          docker build -t trax-vault-android-builder:latest -f android/Dockerfile.build android
+
+          echo "Pulling cached builder from local registry: ${BUILDER_TAG}..."
+          docker pull "${BUILDER_TAG}" 2>/dev/null || true
+
+          echo "Compiling Android APK with Docker BuildKit..."
+          docker build \
+            --cache-from "${BUILDER_TAG}" \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            -t "${BUILDER_TAG}" \
+            -f android/Dockerfile.build android
 
           echo "Extracting compiled APK from Docker image..."
-          CONTAINER_ID=$(docker create trax-vault-android-builder:latest)
+          CONTAINER_ID=$(docker create "${BUILDER_TAG}")
           docker cp "${CONTAINER_ID}:/app/app/build/outputs/apk/debug/app-debug.apk" trax-vault.apk
           docker rm "${CONTAINER_ID}" >/dev/null
+
+          echo "Pushing updated builder cache to local Forgejo registry..."
+          docker push "${BUILDER_TAG}" 2>/dev/null || true
 
           echo "APK generated successfully:"
           ls -lh trax-vault.apk
@@ -61,7 +83,7 @@ jobs:
         run: |
           RAW_TAG="${{ github.ref_name }}"
           if [ "${{ github.ref_type }}" != "tag" ]; then
-            RAW_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.7.48")
+            RAW_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.7.53")
           fi
 
           echo "Publishing trax-vault.apk to Forgejo Release for tag: ${RAW_TAG}"

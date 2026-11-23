@@ -5,8 +5,18 @@ ENV ANDROID_HOME="/opt/android-sdk-linux"
 ENV ANDROID_SDK_ROOT="/opt/android-sdk-linux"
 
 WORKDIR /app
+
+# Pre-cache Gradle wrapper and build configuration
+COPY gradle/ gradle/
+COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY app/build.gradle.kts app/
+
+# Pre-fetch Gradle distribution and dependencies in cached layer
+RUN ./gradlew --version && \
+    ./gradlew :app:dependencies --configuration debugCompileClasspath --no-daemon || true
+
+# Copy full application source code
 COPY . .
 
-RUN --mount=type=cache,target=/root/.gradle/caches \
-    --mount=type=cache,target=/root/.gradle/wrapper \
-    ./gradlew assembleDebug --no-daemon --stacktrace
+# Compile Android APK
+RUN ./gradlew assembleDebug --no-daemon --stacktrace
