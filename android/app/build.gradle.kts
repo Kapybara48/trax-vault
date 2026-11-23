@@ -11,22 +11,34 @@ android {
         applicationId = "cz.kapyhub.traxvault"
         minSdk = 26
         targetSdk = 34
-        versionCode = 100754
-        versionName = "1.7.54"
+        versionCode = 100755
+        versionName = "1.7.55"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("traxvault-release.jks")
+            storePassword = "traxvaultsecret"
+            keyAlias = "traxvault"
+            keyPassword = "traxvaultsecret"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
         debug {
-            applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("release")
             isDebuggable = true
         }
     }

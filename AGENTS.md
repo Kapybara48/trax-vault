@@ -1179,6 +1179,19 @@ This document preserves persistent context, architectural conventions, recent ch
       - Updated WebView client to attempt `LOAD_CACHE_ONLY` before triggering the offline connection error screen, loading the PWA shell seamlessly when disconnected.
       - Added "Play Offline Music" direct action button to the offline error screen.
 
+82. **Permanent Android Release Signing Keystore & Obtainium Compatibility (v1.7.55)**:
+    - **Permanent Release Keystore (`android/app/traxvault-release.jks`)**:
+      - Created permanent 2048-bit RSA release signing certificate valid for 10,000 days (until year 2054) committed to repository.
+      - Eliminates ephemeral `~/.android/debug.keystore` generation in Docker/CI containers that caused certificate fingerprint mismatches between releases.
+    - **Gradle Signing Configuration (`android/app/build.gradle.kts`)**:
+      - Added `signingConfigs.release` configured with `traxvault-release.jks` supporting both v1 (JAR signing) and v2 (Full APK signature scheme).
+      - Configured both `release` and `debug` build types to use the release signing config, ensuring consistent signatures across local development and CI releases.
+      - Removed `applicationIdSuffix = ".debug"` to produce clean production package ID `cz.kapyhub.traxvault`.
+    - **Containerized Release Build Pipeline (`android/Dockerfile.build` & `.forgejo/workflows/apk.yml`)**:
+      - Switched build command from `assembleDebug` to `assembleRelease`.
+      - Updated APK extraction artifact to `app/build/outputs/apk/release/app-release.apk` published as `trax-vault.apk`.
+      - Resolved Obtainium `signing certificate mismatch` and Android OS `INSTALL_FAILED_UPDATE_INCOMPATIBLE` / `failureConfict`.
+
 ---
 
 ## 4. Workflows & Verification

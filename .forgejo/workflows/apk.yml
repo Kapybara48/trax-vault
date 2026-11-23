@@ -70,7 +70,7 @@ jobs:
 
           echo "Extracting compiled APK from Docker image..."
           CONTAINER_ID=$(docker create "${BUILDER_TAG}")
-          docker cp "${CONTAINER_ID}:/app/app/build/outputs/apk/debug/app-debug.apk" trax-vault.apk
+          docker cp "${CONTAINER_ID}:/app/app/build/outputs/apk/release/app-release.apk" trax-vault.apk
           docker rm "${CONTAINER_ID}" >/dev/null
 
           echo "Pushing updated builder cache to local Forgejo registry..."
