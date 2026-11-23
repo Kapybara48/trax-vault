@@ -5,6 +5,8 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +20,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -32,6 +35,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import org.json.JSONTokener
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -62,6 +69,54 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var backPressedTime: Long = 0
+
+    private val offlineShellFileName = "player_offline_cache.html"
+
+    private fun isNetworkConnected(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } else {
+            @Suppress("DEPRECATION")
+            cm.activeNetworkInfo?.isConnected == true
+        }
+    }
+
+    private fun getOfflineShellFile(): File {
+        return File(filesDir, offlineShellFileName)
+    }
+
+    private fun saveOfflineShell(htmlContent: String) {
+        if (htmlContent.isBlank() || htmlContent.length < 500) return
+        Thread {
+            try {
+                val file = getOfflineShellFile()
+                FileOutputStream(file).use { out ->
+                    out.write(htmlContent.toByteArray(Charsets.UTF_8))
+                }
+            } catch (_: Exception) {}
+        }.start()
+    }
+
+    private fun loadOfflineShellDirectly(): Boolean {
+        val file = getOfflineShellFile()
+        if (file.exists() && file.length() > 500) {
+            try {
+                val html = file.readText(Charsets.UTF_8)
+                val serverUrl = getServerUrl() ?: "https://traxvault.local"
+                val baseUrl = if (serverUrl.contains("/player")) serverUrl else "$serverUrl/player"
+                runOnUiThread {
+                    errorLayout.visibility = View.GONE
+                    webView.visibility = View.VISIBLE
+                    webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", baseUrl)
+                }
+                return true
+            } catch (_: Exception) {}
+        }
+        return false
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,7 +180,7 @@ class MainActivity : AppCompatActivity() {
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.56"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.57"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
@@ -165,17 +220,28 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val url = request?.url?.toString() ?: return null
+                // If main frame navigation to player occurs while offline, serve persistent offline shell
+                if (request.isForMainFrame && (url.contains("/player") || url.endsWith("/"))) {
+                    if (!isNetworkConnected()) {
+                        val file = getOfflineShellFile()
+                        if (file.exists() && file.length() > 500) {
+                            try {
+                                return WebResourceResponse("text/html", "UTF-8", FileInputStream(file))
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+                return super.shouldInterceptRequest(view, request)
+            }
+
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
-                    // If network fails, attempt cache-first fallback to load offline PWA shell and songs
-                    if (view?.settings?.cacheMode != WebSettings.LOAD_CACHE_ONLY) {
-                        view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
-                        val targetUrl = request.url?.toString() ?: getServerUrl() ?: ""
-                        if (targetUrl.isNotEmpty()) {
-                            view?.loadUrl(targetUrl)
-                            return
-                        }
+                    // If network fails, boot directly from the persistent offline shell
+                    if (loadOfflineShellDirectly()) {
+                        return
                     }
                     showOfflineError(error?.description?.toString() ?: "Network connection failed")
                 }
@@ -188,6 +254,18 @@ class MainActivity : AppCompatActivity() {
                 if (url?.contains("/player") == true) {
                     // Clear intermediate login/redirect history so back gesture never leaves the player to /login
                     view?.clearHistory()
+
+                    // Cache rendered HTML shell for offline launch
+                    view?.evaluateJavascript("document.documentElement.outerHTML") { result ->
+                        if (result != null && result != "null" && result.length > 500) {
+                            try {
+                                val html = JSONTokener(result).nextValue() as? String ?: result
+                                saveOfflineShell(html)
+                            } catch (_: Exception) {
+                                saveOfflineShell(result)
+                            }
+                        }
+                    }
                 }
                 errorLayout.visibility = View.GONE
                 webView.visibility = View.VISIBLE
@@ -317,13 +395,16 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(Color.parseColor("#065f46"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
-                    val url = getServerUrl()
-                    if (!url.isNullOrBlank()) {
-                        errorLayout.visibility = View.GONE
-                        webView.visibility = View.VISIBLE
-                        webView.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
-                        val targetUrl = if (url.contains("/player")) url else "$url/player"
-                        webView.loadUrl(targetUrl)
+                    if (!loadOfflineShellDirectly()) {
+                        val url = getServerUrl()
+                        if (!url.isNullOrBlank()) {
+                            errorLayout.visibility = View.GONE
+                            webView.visibility = View.VISIBLE
+                            val targetUrl = if (url.contains("/player")) url else "$url/player"
+                            webView.loadUrl(targetUrl)
+                        } else {
+                            Toast.makeText(this@MainActivity, "No offline shell found. Connect once online to download music.", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             })
@@ -388,6 +469,12 @@ class MainActivity : AppCompatActivity() {
         val targetUrl = if (serverUrl.contains("/player")) serverUrl else "$serverUrl/player"
         errorLayout.visibility = View.GONE
         webView.visibility = View.VISIBLE
+
+        // If offline on app launch and cached shell exists, boot directly into offline player
+        if (!isNetworkConnected() && loadOfflineShellDirectly()) {
+            return
+        }
+
         webView.loadUrl(targetUrl)
     }
 
@@ -416,7 +503,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.56"
+            return "1.7.57"
         }
 
         @JavascriptInterface

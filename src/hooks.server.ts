@@ -77,7 +77,11 @@ export async function handle({
 		if (path === '/login' || path === '/setup' || path === '/register') {
 			throw redirect(303, '/');
 		}
-		return resolve(event);
+		const response = await resolve(event);
+		if (path === '/player' && response.status === 200) {
+			response.headers.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+		}
+		return response;
 	}
 
 	// Check if any admin/user exists
@@ -104,7 +108,11 @@ export async function handle({
 		if (path === '/login' || path === '/setup' || path === '/register') {
 			throw redirect(303, '/');
 		}
-		return resolve(event);
+		const response = await resolve(event);
+		if (path === '/player' && response.status === 200) {
+			response.headers.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+		}
+		return response;
 	}
 
 	// If user is NOT logged in

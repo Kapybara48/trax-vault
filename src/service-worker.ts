@@ -11,11 +11,24 @@ const ASSETS = [
 	...prerendered
 ];
 
+const PRECACHE_ROUTES = ['/player', '/'];
+
 self.addEventListener('install', (event: any) => {
 	event.waitUntil(
 		caches
 			.open(CACHE_NAME)
-			.then((cache) => cache.addAll(ASSETS))
+			.then(async (cache) => {
+				await cache.addAll(ASSETS);
+				// Pre-cache application shell routes
+				for (const route of PRECACHE_ROUTES) {
+					try {
+						const res = await fetch(route);
+						if (res && res.status === 200) {
+							await cache.put(route, res);
+						}
+					} catch {}
+				}
+			})
 			.then(() => (self as any).skipWaiting())
 	);
 });
@@ -46,10 +59,14 @@ self.addEventListener('fetch', (event: any) => {
 		(async () => {
 			const cache = await caches.open(CACHE_NAME);
 
-			// 1. Try matching pre-cached assets (JS bundles, CSS, images)
+			// 1. Try matching pre-cached static assets (JS bundles, CSS, icons)
 			const cachedResponse = await cache.match(event.request);
 			if (cachedResponse) {
-				// Return cached asset immediately, but update in background if online
+				// For immutable build chunks, return immediately without network overhead
+				if (url.pathname.includes('/_app/immutable/')) {
+					return cachedResponse;
+				}
+				// For other assets, revalidate in background when online
 				fetch(event.request)
 					.then((networkResponse) => {
 						if (networkResponse && networkResponse.status === 200) {
@@ -64,17 +81,20 @@ self.addEventListener('fetch', (event: any) => {
 			try {
 				const response = await fetch(event.request);
 				if (response.status === 200) {
-					// Cache successful navigation pages for offline opening
-					if (event.request.mode === 'navigate') {
+					// Cache player page and navigation responses for offline opening
+					if (event.request.mode === 'navigate' || url.pathname === '/player') {
+						cache.put('/player', response.clone());
 						cache.put(event.request, response.clone());
 					}
 				}
 				return response;
 			} catch (err) {
-				// 3. Offline fallback
-				if (event.request.mode === 'navigate') {
-					// Return cached player page if available
-					const offlinePlayer = (await cache.match('/player')) || (await cache.match('/'));
+				// 3. Offline fallback for document navigation
+				if (event.request.mode === 'navigate' || url.pathname === '/player') {
+					const offlinePlayer =
+						(await cache.match(event.request, { ignoreSearch: true })) ||
+						(await cache.match('/player', { ignoreSearch: true })) ||
+						(await cache.match('/', { ignoreSearch: true }));
 					if (offlinePlayer) {
 						return offlinePlayer;
 					}

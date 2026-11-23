@@ -1215,6 +1215,19 @@ This document preserves persistent context, architectural conventions, recent ch
       - If at root library, requires a double-press within 2 seconds ("Press back again to exit" Toast) before exiting, completely preventing accidental exits or navigating backwards to `/login`.
       - Configured Android ServiceWorkerController to delegate all network and asset caching to the PWA Service Worker for seamless offline startup.
 
+84. **Offline App Startup & Standalone Resilience (v1.7.57)**:
+    - **Android Persistent Offline HTML Shell (`MainActivity.kt`)**:
+      - Added automatic background persistence of the rendered `/player` HTML shell (`player_offline_cache.html` in `filesDir`) via `document.documentElement.outerHTML` during online sessions.
+      - In `loadServerUrl()`, if the device is offline on app launch (`!isNetworkConnected()`), boots directly into the persistent offline shell via `loadDataWithBaseURL()`.
+      - In `shouldInterceptRequest()`, intercepts main-frame requests to `/player` when offline and serves the local cached shell immediately with standard HTTP 200 headers.
+      - In `onReceivedError()`, automatically falls back to `loadOfflineShellDirectly()` before displaying any network error view, preventing blank screens or failed startups.
+      - Preserves the server's base URL so that phone IndexedDB (`traxvault_offline`), offline songs, and synced lyrics remain accessible in the exact same security origin.
+    - **SvelteKit Server Cache-Control Headers (`src/hooks.server.ts`)**:
+      - Added `Cache-Control: public, max-age=604800, stale-while-revalidate=86400` on authenticated `/player` responses, enabling Chromium's native HTTP cache to store the player shell across app launches.
+    - **PWA Service Worker Offline Pre-Caching (`src/service-worker.ts`)**:
+      - Added `/player` and `/` to pre-cache routes during Service Worker installation.
+      - Enhanced `fetch` event handling with `ignoreSearch: true` fallback matching so navigation requests with query parameters (`?view=playlists`, etc.) resolve to the cached offline player shell when disconnected.
+
 ---
 
 ## 4. Workflows & Verification
