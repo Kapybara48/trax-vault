@@ -1228,6 +1228,18 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added `/player` and `/` to pre-cache routes during Service Worker installation.
       - Enhanced `fetch` event handling with `ignoreSearch: true` fallback matching so navigation requests with query parameters (`?view=playlists`, etc.) resolve to the cached offline player shell when disconnected.
 
+85. **Native Android MediaStyle Lock Screen Notification & Foreground Playback Service (v1.7.58)**:
+    - **Native MediaPlaybackService (`android/app/src/main/java/cz/kapyhub/traxvault/MediaPlaybackService.kt`)**:
+      - Implemented full Android `MediaSessionCompat` and `androidx.media.app.NotificationCompat.MediaStyle` foreground service.
+      - Displays the system lock screen player with album art thumbnail, track title, artist name, album name, and interactive media controls (Previous, Play/Pause, Next, and progress scrubber).
+      - Publishes real-time `PlaybackStateCompat` with position, duration, and playback speed, enabling live scrubber tracking on Android 10+ lock screens.
+      - Runs as `FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK` with `WAKE_LOCK` and `POST_NOTIFICATIONS` permission, ensuring Android Doze never kills or suspends audio playback when the phone is locked or in a pocket.
+      - Asynchronously streams and caches cover art images into notification bitmaps.
+    - **Bidirectional Svelte & Native Android Bridge**:
+      - In `MainActivity.kt`, exposed `TraxNative.updatePlaybackState(...)` and `TraxNative.stopMediaNotification()`.
+      - Implemented `MediaActionListener` in `MainActivity.kt` forwarding lock screen actions (Play/Pause, Next, Previous, Seek) to `window.__traxLockScreenAction(...)`.
+      - In `src/lib/services/player.svelte.ts`, hooked real-time playback state updates (`onplay`, `onpause`, `onseek`, `ontimeupdate`) to dispatch into the native bridge.
+
 ---
 
 ## 4. Workflows & Verification

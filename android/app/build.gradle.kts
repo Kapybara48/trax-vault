@@ -11,8 +11,8 @@ android {
         applicationId = "cz.kapyhub.traxvault"
         minSdk = 26
         targetSdk = 34
-        versionCode = 100757
-        versionName = "1.7.57"
+        versionCode = 100758
+        versionName = "1.7.58"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,6 +61,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.webkit:webkit:1.10.0")
+    implementation("androidx.media:media:1.7.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("com.google.android.material:material:1.11.0")
 }

@@ -107,6 +107,7 @@ class GlobalPlayer {
 
 	private audioEl: HTMLAudioElement | null = null;
 	private lastSavedSessionTime = 0;
+	private lastNativePlaybackUpdateTime = 0;
 
 	private persistSessionSnapshot() {
 		if (typeof localStorage === 'undefined' || !this.currentTrack) return;
@@ -303,6 +304,10 @@ class GlobalPlayer {
 			if (now - this.lastSavedSessionTime > 1000) {
 				this.lastSavedSessionTime = now;
 				this.persistSessionSnapshot();
+			}
+			if (now - this.lastNativePlaybackUpdateTime > 2000) {
+				this.lastNativePlaybackUpdateTime = now;
+				this.updateNativePlaybackState();
 			}
 		};
 
@@ -1215,9 +1220,41 @@ class GlobalPlayer {
 				navigator.mediaSession.playbackState = state;
 			} catch {}
 		}
+		this.updateNativePlaybackState();
 	}
 
 	private setupMediaSession() {
+		if (typeof window !== 'undefined') {
+			(window as any).__traxLockScreenAction = (action: string, param?: any) => {
+				switch (action) {
+					case 'togglePlay':
+						this.togglePlay();
+						break;
+					case 'play':
+						this.play();
+						break;
+					case 'pause':
+						this.pause();
+						break;
+					case 'playNext':
+						this.nextTrack();
+						break;
+					case 'playPrevious':
+						this.previousTrack();
+						break;
+					case 'seekTo':
+						if (typeof param === 'number') {
+							this.seekTo(param);
+						}
+						break;
+					case 'stop':
+						this.pause();
+						break;
+				}
+				return true;
+			};
+		}
+
 		if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
 
 		try {
@@ -1236,14 +1273,56 @@ class GlobalPlayer {
 		}
 	}
 
+	private updateNativePlaybackState() {
+		if (typeof window === 'undefined') return;
+		const native = (window as any).TraxNative;
+		if (!native || typeof native.updatePlaybackState !== 'function') return;
+
+		if (!this.currentTrack) {
+			try {
+				native.stopMediaNotification();
+			} catch {}
+			return;
+		}
+
+		const title = this.currentTrack.title || 'Unknown Title';
+		const artist =
+			this.currentTrack.artist || (this.currentAlbum ? this.currentAlbum.artist : 'Unknown Artist');
+		const album = this.currentAlbum ? this.currentAlbum.title : '';
+
+		let coverUrl = '';
+		if (this.currentAlbum?.cover_url) {
+			coverUrl = this.currentAlbum.cover_url;
+			if (coverUrl.startsWith('/')) {
+				coverUrl = window.location.origin + coverUrl;
+			}
+		}
+
+		const isPlaying = this.isPlaying;
+		const positionMs = Math.round(this.currentTime * 1000);
+		const durationMs = Math.round(
+			(this.duration || (this.currentTrack.duration_ms ? this.currentTrack.duration_ms / 1000 : 0)) * 1000
+		);
+
+		try {
+			native.updatePlaybackState(title, artist, album, coverUrl, isPlaying, positionMs, durationMs);
+		} catch (err) {
+			console.warn('[NativeMedia] Failed to update native playback state:', err);
+		}
+	}
+
 	private updateMediaSession() {
-		if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+		if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+			this.updateNativePlaybackState();
+			return;
+		}
 
 		if (!this.currentTrack) {
 			try {
 				navigator.mediaSession.metadata = null;
 				navigator.mediaSession.playbackState = 'none';
 			} catch {}
+			this.updateNativePlaybackState();
 			return;
 		}
 
@@ -1268,6 +1347,7 @@ class GlobalPlayer {
 		} catch (err) {
 			console.warn('[MediaSession] Failed to update metadata:', err);
 		}
+		this.updateNativePlaybackState();
 	}
 
 	playTrack(track: Track, album?: PlayerAlbum, queue?: Track[]) {
@@ -1431,6 +1511,7 @@ class GlobalPlayer {
 		this.updatePlaybackState('paused');
 		this.persistSessionSnapshot();
 		this.broadcastPlaybackState(false);
+		this.updateNativePlaybackState();
 	}
 
 	togglePlay() {
@@ -1528,6 +1609,7 @@ class GlobalPlayer {
 		this.remoteRefServerMs = this.getEstimatedServerNowMs();
 		this.persistSessionSnapshot();
 		this.broadcastPlaybackState(false);
+		this.updateNativePlaybackState();
 	}
 
 	/**

@@ -40,7 +40,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListener {
 
     private lateinit var rootContainer: FrameLayout
     private lateinit var webView: WebView
@@ -159,6 +159,16 @@ class MainActivity : AppCompatActivity() {
         setupWebViewSettings()
         setupBackHandler()
 
+        // Register listener for lock screen & notification controls
+        MediaPlaybackService.actionListener = this
+
+        // Request notification permission on Android 13+ (API 33)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
         val savedUrl = getServerUrl()
         if (savedUrl.isNullOrBlank()) {
             showServerUrlDialog(isInitial = true)
@@ -180,7 +190,7 @@ class MainActivity : AppCompatActivity() {
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.57"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.58"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
@@ -488,6 +498,43 @@ class MainActivity : AppCompatActivity() {
         prefs.edit().putString(prefServerUrl, url).apply()
     }
 
+    override fun onTogglePlay() {
+        runOnUiThread {
+            webView.evaluateJavascript("window.__traxLockScreenAction ? window.__traxLockScreenAction('togglePlay') : false", null)
+        }
+    }
+
+    override fun onPlayNext() {
+        runOnUiThread {
+            webView.evaluateJavascript("window.__traxLockScreenAction ? window.__traxLockScreenAction('playNext') : false", null)
+        }
+    }
+
+    override fun onPlayPrevious() {
+        runOnUiThread {
+            webView.evaluateJavascript("window.__traxLockScreenAction ? window.__traxLockScreenAction('playPrevious') : false", null)
+        }
+    }
+
+    override fun onSeekTo(positionSeconds: Double) {
+        runOnUiThread {
+            webView.evaluateJavascript("window.__traxLockScreenAction ? window.__traxLockScreenAction('seekTo', $positionSeconds) : false", null)
+        }
+    }
+
+    override fun onStopPlayback() {
+        runOnUiThread {
+            webView.evaluateJavascript("window.__traxLockScreenAction ? window.__traxLockScreenAction('stop') : false", null)
+        }
+    }
+
+    override fun onDestroy() {
+        if (MediaPlaybackService.actionListener === this) {
+            MediaPlaybackService.actionListener = null
+        }
+        super.onDestroy()
+    }
+
     inner class TraxNativeInterface {
         @JavascriptInterface
         fun changeServerUrl() {
@@ -502,8 +549,43 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun updatePlaybackState(
+            title: String,
+            artist: String,
+            album: String,
+            coverUrl: String,
+            isPlaying: Boolean,
+            positionMs: Long,
+            durationMs: Long
+        ) {
+            val intent = Intent(this@MainActivity, MediaPlaybackService::class.java).apply {
+                action = MediaPlaybackService.ACTION_START_OR_UPDATE
+                putExtra(MediaPlaybackService.EXTRA_TITLE, title)
+                putExtra(MediaPlaybackService.EXTRA_ARTIST, artist)
+                putExtra(MediaPlaybackService.EXTRA_ALBUM, album)
+                putExtra(MediaPlaybackService.EXTRA_COVER_URL, coverUrl)
+                putExtra(MediaPlaybackService.EXTRA_IS_PLAYING, isPlaying)
+                putExtra(MediaPlaybackService.EXTRA_POSITION_MS, positionMs)
+                putExtra(MediaPlaybackService.EXTRA_DURATION_MS, durationMs)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        }
+
+        @JavascriptInterface
+        fun stopMediaNotification() {
+            val intent = Intent(this@MainActivity, MediaPlaybackService::class.java).apply {
+                action = MediaPlaybackService.ACTION_STOP
+            }
+            startService(intent)
+        }
+
+        @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.57"
+            return "1.7.58"
         }
 
         @JavascriptInterface
