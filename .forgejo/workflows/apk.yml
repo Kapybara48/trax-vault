@@ -23,19 +23,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure Docker CLI is available & Free Disk Space
+      - name: Ensure Docker CLI is available & Check Disk Space
         run: |
           if ! command -v docker >/dev/null 2>&1; then
             echo "Installing Docker CLI..."
             apt-get update && apt-get install -y --no-install-recommends docker.io curl jq || true
           fi
           docker version
-          echo "Disk space before cleanup:"
+          echo "Disk space before build:"
           df -h
-          echo "Cleaning up dangling Docker images and build cache..."
-          docker builder prune -af || true
-          docker system prune -af || true
-          echo "Disk space after cleanup:"
+          docker container prune -f || true
+          docker image prune -f || true
+          # If available space is under 3GB, safely prune builder cache
+          AVAIL_KB=$(df --output=avail / 2>/dev/null | tail -n 1 || echo 9999999)
+          if [ "${AVAIL_KB}" -lt 3000000 ] 2>/dev/null; then
+            echo "Disk space is low (${AVAIL_KB} KB). Safely pruning old builder cache..."
+            docker builder prune -f --keep-storage 2GB || true
+          fi
+          echo "Disk space ready:"
           df -h
 
       - name: Build Android APK

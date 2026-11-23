@@ -1,34 +1,12 @@
-FROM eclipse-temurin:17-jdk-jammy
+# syntax=docker/dockerfile:1
+FROM ghcr.io/cirruslabs/android-sdk:34
 
-ENV ANDROID_SDK_ROOT="/opt/android-sdk"
-ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools:/opt/gradle-8.5/bin"
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    unzip \
-    git \
-    bash \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Download and install Android command line tools and SDK in a single layer to save space
-ARG CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
-    curl -fsSL ${CMDLINE_TOOLS_URL} -o /tmp/cmdline-tools.zip && \
-    unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools && \
-    mv /tmp/cmdline-tools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/latest && \
-    rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools && \
-    yes | sdkmanager --licenses >/dev/null && \
-    sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-# Install Gradle 8.5
-ENV GRADLE_VERSION="8.5"
-ENV GRADLE_HOME="/opt/gradle-${GRADLE_VERSION}"
-RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip && \
-    unzip -q /tmp/gradle.zip -d /opt && \
-    rm -f /tmp/gradle.zip
+ENV ANDROID_HOME="/opt/android-sdk-linux"
+ENV ANDROID_SDK_ROOT="/opt/android-sdk-linux"
 
 WORKDIR /app
 COPY . .
-RUN gradle assembleDebug --no-daemon --stacktrace
+
+RUN --mount=type=cache,target=/root/.gradle/caches \
+    --mount=type=cache,target=/root/.gradle/wrapper \
+    ./gradlew assembleDebug --no-daemon --stacktrace
