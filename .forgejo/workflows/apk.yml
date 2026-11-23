@@ -23,13 +23,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure Docker CLI is available
+      - name: Ensure Docker CLI is available & Free Disk Space
         run: |
           if ! command -v docker >/dev/null 2>&1; then
             echo "Installing Docker CLI..."
             apt-get update && apt-get install -y --no-install-recommends docker.io curl jq || true
           fi
           docker version
+          echo "Disk space before cleanup:"
+          df -h
+          echo "Cleaning up dangling Docker images and build cache..."
+          docker builder prune -af || true
+          docker system prune -af || true
+          echo "Disk space after cleanup:"
+          df -h
 
       - name: Build Android APK
         run: |

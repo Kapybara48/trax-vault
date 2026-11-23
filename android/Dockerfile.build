@@ -12,20 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install Android command line tools
+# Download and install Android command line tools and SDK in a single layer to save space
 ARG CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
     curl -fsSL ${CMDLINE_TOOLS_URL} -o /tmp/cmdline-tools.zip && \
     unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools && \
     mv /tmp/cmdline-tools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/latest && \
-    rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools
-
-# Accept licenses and install platform 34 and build tools
-RUN yes | sdkmanager --licenses >/dev/null && \
-    sdkmanager --install \
-        "platform-tools" \
-        "platforms;android-34" \
-        "build-tools;34.0.0"
+    rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools && \
+    yes | sdkmanager --licenses >/dev/null && \
+    sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
 # Install Gradle 8.5
 ENV GRADLE_VERSION="8.5"
