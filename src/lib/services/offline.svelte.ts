@@ -37,6 +37,29 @@ export interface OfflinePlaylist {
 	downloaded_at: number;
 }
 
+export interface DownloadQueueItem {
+	id: string;
+	track: Track;
+	album?: { id?: number; title?: string; artist?: string; cover_url?: string | null };
+	playlist?: { id?: number; name?: string };
+	quality: 'original' | '320' | '192' | '128';
+	status: 'pending' | 'downloading' | 'completed' | 'failed';
+	progressPercent: number;
+	error?: string;
+}
+
+export interface QueueSummary {
+	isDownloading: boolean;
+	isPaused: boolean;
+	totalItems: number;
+	completedItems: number;
+	failedItems: number;
+	overallProgressPercent: number;
+	activeTrackTitle: string;
+	activeParentTitle: string;
+	activeTrackPercent: number;
+}
+
 const DB_NAME = 'traxvault_offline_v1';
 const DB_VERSION = 1;
 
@@ -44,6 +67,14 @@ class OfflineStorageManager {
 	downloadedTrackIds = $state<Set<number>>(new Set());
 	downloadedAlbumIds = $state<Set<number>>(new Set());
 	downloadedPlaylistIds = $state<Set<number>>(new Set());
+
+	// Queue State
+	downloadQueue = $state<DownloadQueueItem[]>([]);
+	activeItem = $state<DownloadQueueItem | null>(null);
+	completedCount = $state<number>(0);
+	totalBatchCount = $state<number>(0);
+	failedItems = $state<DownloadQueueItem[]>([]);
+	isPaused = $state<boolean>(false);
 
 	isDownloading = $state(false);
 	downloadProgress = $state<Record<number, number>>({});
@@ -57,6 +88,9 @@ class OfflineStorageManager {
 	private db: IDBDatabase | null = null;
 	private initPromise: Promise<IDBDatabase> | null = null;
 	private activeObjectUrls: Map<number, string> = new Map();
+	private isProcessingQueue = false;
+	private pendingAlbumsMeta: Map<number, { album: any; requiredTrackIds: number[]; coverBlob: Blob | null }> = new Map();
+	private pendingPlaylistsMeta: Map<number, { playlist: any; requiredTrackIds: number[] }> = new Map();
 
 	constructor() {
 		if (typeof window !== 'undefined') {
@@ -123,7 +157,7 @@ class OfflineStorageManager {
 	}
 
 	isDownloadingTrack(trackId: number): boolean {
-		return trackId in this.downloadProgress;
+		return this.activeItem?.track.id === trackId || trackId in this.downloadProgress;
 	}
 
 	isAlbumDownloaded(albumId: number): boolean {
@@ -132,6 +166,45 @@ class OfflineStorageManager {
 
 	isPlaylistDownloaded(playlistId: number): boolean {
 		return this.downloadedPlaylistIds.has(playlistId);
+	}
+
+	isAlbumQueued(albumId: number): boolean {
+		if (this.activeItem?.album?.id === albumId) return true;
+		return this.downloadQueue.some((item) => item.album?.id === albumId);
+	}
+
+	isAlbumDownloading(albumId: number): boolean {
+		return this.activeItem?.album?.id === albumId;
+	}
+
+	getAlbumDownloadProgress(albumId: number, totalTracksCount = 0): { downloaded: number; queued: number; total: number; percent: number } | null {
+		const queuedCount = this.downloadQueue.filter((item) => item.album?.id === albumId).length + (this.activeItem?.album?.id === albumId ? 1 : 0);
+		if (queuedCount === 0 && !this.isAlbumDownloaded(albumId)) return null;
+
+		const total = totalTracksCount > 0 ? totalTracksCount : queuedCount;
+		const downloaded = Math.max(0, total - queuedCount);
+		const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 100;
+		return { downloaded, queued: queuedCount, total, percent };
+	}
+
+	get queueSummary(): QueueSummary {
+		const totalItems = this.totalBatchCount > 0 ? this.totalBatchCount : this.completedCount + this.downloadQueue.length + (this.activeItem ? 1 : 0);
+		const activeTrackPercent = this.activeItem ? (this.downloadProgress[this.activeItem.track.id] ?? this.activeItem.progressPercent) : 0;
+		const overallProgressPercent = totalItems > 0
+			? Math.min(100, Math.round(((this.completedCount + activeTrackPercent / 100) / totalItems) * 100))
+			: 0;
+
+		return {
+			isDownloading: this.isDownloading,
+			isPaused: this.isPaused,
+			totalItems,
+			completedItems: this.completedCount,
+			failedItems: this.failedItems.length,
+			overallProgressPercent,
+			activeTrackTitle: this.activeItem?.track.title || '',
+			activeParentTitle: this.activeItem?.album?.title || this.activeItem?.playlist?.name || '',
+			activeTrackPercent
+		};
 	}
 
 	private async refreshCachedIds() {
@@ -212,17 +285,283 @@ class OfflineStorageManager {
 		}
 	}
 
-	async downloadTrack(
+	/**
+	 * Enqueue a single track for download.
+	 */
+	enqueueTrack(
 		track: Track,
 		album?: { id?: number; title?: string; artist?: string; cover_url?: string | null },
+		playlist?: { id?: number; name?: string },
 		quality?: 'original' | '320' | '192' | '128'
-	): Promise<boolean> {
-		if (this.isDownloaded(track.id)) return true;
+	) {
+		if (this.isDownloaded(track.id)) return;
+		if (this.downloadQueue.some((item) => item.track.id === track.id) || this.activeItem?.track.id === track.id) {
+			return;
+		}
+
+		const item: DownloadQueueItem = {
+			id: `${track.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+			track,
+			album,
+			playlist,
+			quality: quality || this.downloadQuality,
+			status: 'pending',
+			progressPercent: 0
+		};
+
+		this.downloadQueue.push(item);
+		this.downloadQueue = [...this.downloadQueue];
+		this.totalBatchCount = Math.max(this.totalBatchCount, this.completedCount + this.downloadQueue.length + (this.activeItem ? 1 : 0));
+		this.processQueue();
+	}
+
+	/**
+	 * Enqueue an entire album for download.
+	 */
+	async enqueueAlbum(
+		album: { id: number; title: string; artist: string; cover_url?: string | null; tracks: Track[] },
+		quality?: 'original' | '320' | '192' | '128'
+	) {
+		if (!album.tracks || album.tracks.length === 0) return;
 
 		const effQuality = quality || this.downloadQuality;
+		const missingTracks = album.tracks.filter(
+			(t) => !this.isDownloaded(t.id) &&
+				!this.downloadQueue.some((q) => q.track.id === t.id) &&
+				this.activeItem?.track.id !== t.id
+		);
+
+		// If all tracks are already downloaded, ensure album record exists in IDB
+		if (missingTracks.length === 0) {
+			if (!this.isAlbumDownloaded(album.id)) {
+				await this.saveAlbumMetadata(album);
+			}
+			return;
+		}
+
+		// Register pending album metadata for finalization when tracks finish
+		if (!this.pendingAlbumsMeta.has(album.id)) {
+			let coverBlob: Blob | null = null;
+			if (album.cover_url) {
+				try {
+					const res = await fetch(album.cover_url);
+					if (res.ok) coverBlob = await res.blob();
+				} catch {}
+			}
+			this.pendingAlbumsMeta.set(album.id, {
+				album,
+				requiredTrackIds: album.tracks.map((t) => t.id),
+				coverBlob
+			});
+		}
+
+		for (const track of missingTracks) {
+			this.downloadQueue.push({
+				id: `${track.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+				track,
+				album,
+				quality: effQuality,
+				status: 'pending',
+				progressPercent: 0
+			});
+		}
+
+		this.downloadQueue = [...this.downloadQueue];
+		this.totalBatchCount = this.completedCount + this.downloadQueue.length + (this.activeItem ? 1 : 0);
+		this.processQueue();
+	}
+
+	/**
+	 * Bulk enqueue multiple albums for download (e.g. Download All Library).
+	 */
+	async enqueueAlbums(
+		albums: Array<{ id: number; title: string; artist: string; cover_url?: string | null; tracks: Track[] }>,
+		quality?: 'original' | '320' | '192' | '128'
+	) {
+		for (const album of albums) {
+			await this.enqueueAlbum(album, quality);
+		}
+	}
+
+	/**
+	 * Bulk enqueue an artist's entire catalog.
+	 */
+	async enqueueArtist(
+		artistName: string,
+		albums: Array<{ id: number; title: string; artist: string; cover_url?: string | null; tracks: Track[] }>,
+		standaloneTracks?: Track[],
+		quality?: 'original' | '320' | '192' | '128'
+	) {
+		if (albums && albums.length > 0) {
+			await this.enqueueAlbums(albums, quality);
+		}
+		if (standaloneTracks && standaloneTracks.length > 0) {
+			for (const t of standaloneTracks) {
+				this.enqueueTrack(t, undefined, undefined, quality);
+			}
+		}
+	}
+
+	/**
+	 * Enqueue an entire playlist for download.
+	 */
+	async enqueuePlaylist(
+		playlist: { id: number; name: string; tracks?: Track[] },
+		quality?: 'original' | '320' | '192' | '128'
+	) {
+		if (!playlist.tracks || playlist.tracks.length === 0) return;
+		const effQuality = quality || this.downloadQuality;
+
+		const missingTracks = playlist.tracks.filter(
+			(t) => !this.isDownloaded(t.id) &&
+				!this.downloadQueue.some((q) => q.track.id === t.id) &&
+				this.activeItem?.track.id !== t.id
+		);
+
+		if (missingTracks.length === 0) {
+			if (!this.isPlaylistDownloaded(playlist.id)) {
+				await this.savePlaylistMetadata(playlist);
+			}
+			return;
+		}
+
+		if (!this.pendingPlaylistsMeta.has(playlist.id)) {
+			this.pendingPlaylistsMeta.set(playlist.id, {
+				playlist,
+				requiredTrackIds: playlist.tracks.map((t) => t.id)
+			});
+		}
+
+		for (const track of missingTracks) {
+			this.downloadQueue.push({
+				id: `${track.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+				track,
+				playlist,
+				quality: effQuality,
+				status: 'pending',
+				progressPercent: 0
+			});
+		}
+
+		this.downloadQueue = [...this.downloadQueue];
+		this.totalBatchCount = this.completedCount + this.downloadQueue.length + (this.activeItem ? 1 : 0);
+		this.processQueue();
+	}
+
+	pauseQueue() {
+		this.isPaused = true;
+	}
+
+	resumeQueue() {
+		this.isPaused = false;
+		this.processQueue();
+	}
+
+	cancelQueue() {
+		this.downloadQueue = [];
+		this.activeItem = null;
+		this.isDownloading = false;
+		this.currentDownloadLabel = '';
+		this.completedCount = 0;
+		this.totalBatchCount = 0;
+		this.downloadProgress = {};
+	}
+
+	cancelAlbum(albumId: number) {
+		this.downloadQueue = this.downloadQueue.filter((item) => item.album?.id !== albumId);
+		this.pendingAlbumsMeta.delete(albumId);
+		if (this.activeItem?.album?.id === albumId) {
+			// Current track will finish, remaining were purged
+		}
+	}
+
+	retryFailed() {
+		if (this.failedItems.length === 0) return;
+		const toRetry = [...this.failedItems];
+		this.failedItems = [];
+		for (const item of toRetry) {
+			item.status = 'pending';
+			item.error = undefined;
+			this.downloadQueue.push(item);
+		}
+		this.downloadQueue = [...this.downloadQueue];
+		this.totalBatchCount += toRetry.length;
+		this.processQueue();
+	}
+
+	clearFailed() {
+		this.failedItems = [];
+	}
+
+	/**
+	 * Core background queue worker loop.
+	 * Executes sequentially to prevent bandwidth contention and mobile resource limits.
+	 */
+	private async processQueue() {
+		if (this.isProcessingQueue || this.isPaused) return;
+		if (this.downloadQueue.length === 0) {
+			if (!this.activeItem) {
+				this.isDownloading = false;
+				this.currentDownloadLabel = '';
+				// Clean up any completed pending albums
+				await this.checkAllPendingAlbums();
+			}
+			return;
+		}
+
+		this.isProcessingQueue = true;
 		this.isDownloading = true;
-		this.downloadProgress[track.id] = 0;
-		this.currentDownloadLabel = `Downloading "${track.title}"...`;
+
+		while (this.downloadQueue.length > 0 && !this.isPaused) {
+			const item = this.downloadQueue.shift();
+			if (!item) break;
+
+			// Skip if somehow already downloaded
+			if (this.isDownloaded(item.track.id)) {
+				this.completedCount++;
+				await this.checkPendingAlbumsForTrack(item.track.id);
+				continue;
+			}
+
+			this.activeItem = item;
+			item.status = 'downloading';
+			this.downloadProgress[item.track.id] = 0;
+			this.currentDownloadLabel = `Downloading "${item.track.title}"${item.album ? ` • ${item.album.title}` : ''}...`;
+
+			const success = await this.executeTrackDownload(item);
+
+			delete this.downloadProgress[item.track.id];
+			this.downloadProgress = { ...this.downloadProgress };
+
+			if (success) {
+				item.status = 'completed';
+				this.completedCount++;
+				this.downloadedTrackIds.add(item.track.id);
+				this.downloadedTrackIds = new Set(this.downloadedTrackIds);
+				await this.checkPendingAlbumsForTrack(item.track.id);
+				await this.checkPendingPlaylistsForTrack(item.track.id);
+			} else {
+				item.status = 'failed';
+				this.failedItems.push(item);
+				this.failedItems = [...this.failedItems];
+			}
+
+			this.activeItem = null;
+		}
+
+		this.isProcessingQueue = false;
+
+		if (this.downloadQueue.length === 0 && !this.activeItem) {
+			this.isDownloading = false;
+			this.currentDownloadLabel = '';
+			await this.checkAllPendingAlbums();
+			await this.refreshStats();
+		}
+	}
+
+	private async executeTrackDownload(item: DownloadQueueItem): Promise<boolean> {
+		const track = item.track;
+		const effQuality = item.quality;
 
 		try {
 			const audioUrl =
@@ -230,9 +569,9 @@ class OfflineStorageManager {
 					? `/api/tracks/${track.id}/audio?download=true`
 					: `/api/tracks/${track.id}/audio?download=true&bitrate=${effQuality}&format=mp3`;
 
-			// 1. Download audio file with progress tracking
+			// 1. Download audio file with chunked progress
 			const audioRes = await fetch(audioUrl);
-			if (!audioRes.ok) throw new Error(`Audio download failed: HTTP ${audioRes.status}`);
+			if (!audioRes.ok) throw new Error(`HTTP ${audioRes.status}`);
 
 			const contentLength = Number(audioRes.headers.get('content-length') || 0);
 			const contentType = audioRes.headers.get('content-type') || 'audio/mpeg';
@@ -249,7 +588,9 @@ class OfflineStorageManager {
 					if (value) {
 						chunks.push(value);
 						receivedBytes += value.length;
-						this.downloadProgress[track.id] = Math.round((receivedBytes / contentLength) * 90);
+						const pct = Math.round((receivedBytes / contentLength) * 90);
+						this.downloadProgress[track.id] = pct;
+						item.progressPercent = pct;
 					}
 				}
 				audioBlob = new Blob(chunks as BlobPart[], { type: contentType });
@@ -257,7 +598,7 @@ class OfflineStorageManager {
 				audioBlob = await audioRes.blob();
 			}
 
-			this.downloadProgress[track.id] = 92;
+			item.progressPercent = 92;
 
 			// 2. Fetch synchronized lyrics
 			let lyricsText: string | null = null;
@@ -271,11 +612,11 @@ class OfflineStorageManager {
 				}
 			} catch {}
 
-			this.downloadProgress[track.id] = 95;
+			item.progressPercent = 95;
 
 			// 3. Fetch cover artwork blob if available
 			let coverBlob: Blob | null = null;
-			const coverUrl = album?.cover_url || (track as any).cover_url || null;
+			const coverUrl = item.album?.cover_url || (track as any).cover_url || null;
 			if (coverUrl) {
 				try {
 					const coverRes = await fetch(coverUrl);
@@ -289,9 +630,9 @@ class OfflineStorageManager {
 			const offlineTrack: OfflineTrack = {
 				id: track.id,
 				title: track.title,
-				artist: track.artist || album?.artist || 'Unknown Artist',
-				album_title: album?.title || 'Unknown Album',
-				album_id: album?.id || (track as any).album_id || 0,
+				artist: track.artist || item.album?.artist || 'Unknown Artist',
+				album_title: item.album?.title || 'Unknown Album',
+				album_id: item.album?.id || (track as any).album_id || 0,
 				track_number: track.track_number || 1,
 				duration: Math.round((track.duration_ms || 0) / 1000),
 				format: effQuality === 'original' ? track.format || 'Audio' : 'mp3',
@@ -314,23 +655,131 @@ class OfflineStorageManager {
 				tx.onerror = () => reject(tx.error);
 			});
 
-			this.downloadProgress[track.id] = 100;
-			this.downloadedTrackIds.add(track.id);
-			this.downloadedTrackIds = new Set(this.downloadedTrackIds);
-
-			await this.refreshStats();
+			item.progressPercent = 100;
 			return true;
 		} catch (err: any) {
-			console.error(`[OfflineStorage] Failed to download track ${track.id}:`, err);
+			console.error(`[OfflineStorage] Failed to download track ${track.id} (${track.title}):`, err);
+			item.error = err.message || 'Download failed';
 			return false;
-		} finally {
-			delete this.downloadProgress[track.id];
-			this.downloadProgress = { ...this.downloadProgress };
-			if (Object.keys(this.downloadProgress).length === 0) {
-				this.isDownloading = false;
-				this.currentDownloadLabel = '';
+		}
+	}
+
+	private async checkPendingAlbumsForTrack(trackId: number) {
+		for (const [albumId, meta] of this.pendingAlbumsMeta.entries()) {
+			if (meta.requiredTrackIds.includes(trackId)) {
+				const allDone = meta.requiredTrackIds.every((tid) => this.downloadedTrackIds.has(tid));
+				if (allDone) {
+					await this.saveAlbumMetadata(meta.album, meta.coverBlob);
+					this.pendingAlbumsMeta.delete(albumId);
+				}
 			}
 		}
+	}
+
+	private async checkPendingPlaylistsForTrack(trackId: number) {
+		for (const [playlistId, meta] of this.pendingPlaylistsMeta.entries()) {
+			if (meta.requiredTrackIds.includes(trackId)) {
+				const allDone = meta.requiredTrackIds.every((tid) => this.downloadedTrackIds.has(tid));
+				if (allDone) {
+					await this.savePlaylistMetadata(meta.playlist);
+					this.pendingPlaylistsMeta.delete(playlistId);
+				}
+			}
+		}
+	}
+
+	private async checkAllPendingAlbums() {
+		for (const [albumId, meta] of this.pendingAlbumsMeta.entries()) {
+			const allDone = meta.requiredTrackIds.every((tid) => this.downloadedTrackIds.has(tid));
+			if (allDone) {
+				await this.saveAlbumMetadata(meta.album, meta.coverBlob);
+				this.pendingAlbumsMeta.delete(albumId);
+			}
+		}
+	}
+
+	private async saveAlbumMetadata(
+		album: { id: number; title: string; artist: string; cover_url?: string | null; tracks: Track[] },
+		coverBlob?: Blob | null
+	) {
+		try {
+			let effBlob = coverBlob;
+			if (!effBlob && album.cover_url) {
+				try {
+					const res = await fetch(album.cover_url);
+					if (res.ok) effBlob = await res.blob();
+				} catch {}
+			}
+
+			const db = await this.init();
+			const offlineAlbum: OfflineAlbum = {
+				id: album.id,
+				title: album.title,
+				artist: album.artist,
+				cover_url: album.cover_url || null,
+				cover_blob: effBlob || null,
+				track_ids: album.tracks.map((t) => t.id),
+				downloaded_at: Date.now()
+			};
+			await new Promise<void>((resolve, reject) => {
+				const tx = db.transaction('albums', 'readwrite');
+				tx.objectStore('albums').put(offlineAlbum);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error);
+			});
+
+			this.downloadedAlbumIds.add(album.id);
+			this.downloadedAlbumIds = new Set(this.downloadedAlbumIds);
+		} catch (err) {
+			console.warn('[OfflineStorage] Error saving offline album entry:', err);
+		}
+	}
+
+	private async savePlaylistMetadata(playlist: { id: number; name: string; tracks?: Track[] }) {
+		try {
+			const db = await this.init();
+			const offlinePlaylist: OfflinePlaylist = {
+				id: playlist.id,
+				name: playlist.name,
+				track_ids: (playlist.tracks || []).map((t) => t.id),
+				downloaded_at: Date.now()
+			};
+			await new Promise<void>((resolve, reject) => {
+				const tx = db.transaction('playlists', 'readwrite');
+				tx.objectStore('playlists').put(offlinePlaylist);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error);
+			});
+
+			this.downloadedPlaylistIds.add(playlist.id);
+			this.downloadedPlaylistIds = new Set(this.downloadedPlaylistIds);
+		} catch (err) {
+			console.warn('[OfflineStorage] Error saving offline playlist entry:', err);
+		}
+	}
+
+	// Backward-compatible wrappers for existing code
+	async downloadTrack(
+		track: Track,
+		album?: { id?: number; title?: string; artist?: string; cover_url?: string | null },
+		quality?: 'original' | '320' | '192' | '128'
+	): Promise<boolean> {
+		this.enqueueTrack(track, album, undefined, quality);
+		return true;
+	}
+
+	async downloadAlbum(
+		album: { id: number; title: string; artist: string; cover_url?: string | null; tracks: Track[] },
+		quality?: 'original' | '320' | '192' | '128'
+	) {
+		await this.enqueueAlbum(album, quality);
+	}
+
+	async downloadPlaylist(
+		playlist: { id: number; name: string; tracks?: Track[] },
+		quality?: 'original' | '320' | '192' | '128'
+	) {
+		await this.enqueuePlaylist(playlist, quality);
 	}
 
 	async deleteTrack(trackId: number): Promise<boolean> {
@@ -354,57 +803,6 @@ class OfflineStorageManager {
 		} catch (err) {
 			console.error(`[OfflineStorage] Error deleting track ${trackId}:`, err);
 			return false;
-		}
-	}
-
-	async downloadAlbum(
-		album: { id: number; title: string; artist: string; cover_url?: string | null; tracks: Track[] },
-		quality?: 'original' | '320' | '192' | '128'
-	) {
-		if (!album.tracks || album.tracks.length === 0) return;
-		this.isDownloading = true;
-
-		// Fetch album cover blob
-		let coverBlob: Blob | null = null;
-		if (album.cover_url) {
-			try {
-				const res = await fetch(album.cover_url);
-				if (res.ok) coverBlob = await res.blob();
-			} catch {}
-		}
-
-		for (let i = 0; i < album.tracks.length; i++) {
-			const track = album.tracks[i];
-			this.currentDownloadLabel = `Downloading "${album.title}" (${i + 1}/${album.tracks.length})...`;
-			await this.downloadTrack(track, album, quality);
-		}
-
-		// Store album metadata in albums store
-		try {
-			const db = await this.init();
-			const offlineAlbum: OfflineAlbum = {
-				id: album.id,
-				title: album.title,
-				artist: album.artist,
-				cover_url: album.cover_url || null,
-				cover_blob: coverBlob,
-				track_ids: album.tracks.map((t) => t.id),
-				downloaded_at: Date.now()
-			};
-			await new Promise<void>((resolve, reject) => {
-				const tx = db.transaction('albums', 'readwrite');
-				tx.objectStore('albums').put(offlineAlbum);
-				tx.oncomplete = () => resolve();
-				tx.onerror = () => reject(tx.error);
-			});
-
-			this.downloadedAlbumIds.add(album.id);
-			this.downloadedAlbumIds = new Set(this.downloadedAlbumIds);
-		} catch (err) {
-			console.warn('[OfflineStorage] Error saving offline album entry:', err);
-		} finally {
-			this.isDownloading = false;
-			this.currentDownloadLabel = '';
 		}
 	}
 
@@ -438,44 +836,6 @@ class OfflineStorageManager {
 			await this.refreshStats();
 		} catch (err) {
 			console.error(`[OfflineStorage] Error deleting album ${albumId}:`, err);
-		}
-	}
-
-	async downloadPlaylist(
-		playlist: { id: number; name: string; tracks?: Track[] },
-		quality?: 'original' | '320' | '192' | '128'
-	) {
-		if (!playlist.tracks || playlist.tracks.length === 0) return;
-		this.isDownloading = true;
-
-		for (let i = 0; i < playlist.tracks.length; i++) {
-			const track = playlist.tracks[i];
-			this.currentDownloadLabel = `Downloading "${playlist.name}" (${i + 1}/${playlist.tracks.length})...`;
-			await this.downloadTrack(track, undefined, quality);
-		}
-
-		try {
-			const db = await this.init();
-			const offlinePlaylist: OfflinePlaylist = {
-				id: playlist.id,
-				name: playlist.name,
-				track_ids: playlist.tracks.map((t) => t.id),
-				downloaded_at: Date.now()
-			};
-			await new Promise<void>((resolve, reject) => {
-				const tx = db.transaction('playlists', 'readwrite');
-				tx.objectStore('playlists').put(offlinePlaylist);
-				tx.oncomplete = () => resolve();
-				tx.onerror = () => reject(tx.error);
-			});
-
-			this.downloadedPlaylistIds.add(playlist.id);
-			this.downloadedPlaylistIds = new Set(this.downloadedPlaylistIds);
-		} catch (err) {
-			console.warn('[OfflineStorage] Error saving offline playlist entry:', err);
-		} finally {
-			this.isDownloading = false;
-			this.currentDownloadLabel = '';
 		}
 	}
 

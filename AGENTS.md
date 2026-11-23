@@ -1251,6 +1251,29 @@ This document preserves persistent context, architectural conventions, recent ch
       - Exported player instance to `(window as any).player` during initialization so native Android lifecycle callbacks can cleanly pause audio synchronously.
       - Preserves continuous background playback when returning to the Home screen, while guaranteeing audio and notifications cleanly stop whenever the app is closed or dismissed.
 
+87. **Effortless Music Downloads & Background Queue Manager (v1.7.60)**:
+    - **FIFO Background Download Queue Manager (`src/lib/services/offline.svelte.ts`)**:
+      - Replaced fragile ad-hoc loops and flip-flopping `isDownloading` flags with an asynchronous FIFO queue (`downloadQueue: DownloadQueueItem[]`).
+      - Prevents `isDownloading` from resetting to `false` between tracks; maintains a continuous active downloading state and progress percentage across entire batches.
+      - Enqueuing albums, playlists, artists, or individual songs no longer locks or disables download buttons. Additional downloads append smoothly to the queue.
+      - Resilient error handling: if a song fails to download due to a network timeout or glitch, the item is recorded in `failedItems` with error details, and the worker continues with remaining items instead of halting or silently aborting.
+      - Automatically detects when all tracks for an album or playlist are downloaded and writes verified `OfflineAlbum` / `OfflinePlaylist` entries into IndexedDB.
+    - **Persistent Global Download Progress Pill & Modal (`DownloadsManagerModal.svelte`)**:
+      - Added an always-visible floating status bar across all pages when downloads are active, paused, or queued (`Downloading (14/36 tracks • 42%) • "Track Name"`).
+      - Clicking the pill opens the **Downloads Manager Modal**:
+        - Live batch progress bar with track counter and downloaded size.
+        - Active song card with live percentage bar and artwork.
+        - Upcoming queue breakdown with quick cancel controls (`cancelAlbum`, `cancelQueue`).
+        - Failed downloads tab with 1-click **"Retry All"**.
+        - Storage management & quality selector (Original Lossless, 320k, 192k, 128k MP3).
+    - **1-Click Bulk Downloads**:
+      - **"Download Library"** (All Albums): Added to Desktop Left Sidebar header and Mobile Library header with pre-flight un-downloaded tracks counter and storage confirmation.
+      - **"Download Artist"**: Added to Artist Discography header (`selectedType === 'artist'`) queuing all albums and songs by the artist in 1 tap.
+    - **1-Tap Quick Download on Album Cards & Rows**:
+      - Added 1-tap download buttons to: Desktop Sidebar album rows, Mobile Library album list and grid, and Mobile Search album grid.
+      - Displays live status at a glance: `<CircleCheck>` (downloaded), `<Clock>` (queued), `<RefreshCw>` (downloading), or `<ArrowDownCircle>` (tap to queue without opening the album).
+      - Album detail hero download button upgraded to live progress without disabling.
+
 ---
 
 ## 4. Workflows & Verification

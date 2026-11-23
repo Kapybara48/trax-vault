@@ -55,6 +55,7 @@
 		ArrowDownCircle
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
+	import DownloadsManagerModal from '$lib/components/DownloadsManagerModal.svelte';
 	import { dialogService, confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 	import { parseLrcEnhanced, type EnhancedLyricLine } from '$lib/utils.js';
 	import { offlineStorage } from '$lib/services/offline.svelte.js';
@@ -65,6 +66,38 @@
 	let albums = $state<PlayerAlbum[]>([...data.albums]);
 	let playlists = $state<PlayerPlaylist[]>([...data.playlists]);
 	let artists = $state<PlayerArtist[]>([...(data.artists || [])]);
+
+	// Downloads Manager Modal State
+	let showDownloadsManager = $state(false);
+
+	async function handleDownloadEntireLibrary() {
+		const unDownloadedAlbums = albums.filter((a) => !offlineStorage.isAlbumDownloaded(a.id));
+		if (unDownloadedAlbums.length === 0) {
+			await alertAction('All albums in your library are already downloaded for offline playback!', 'Library Downloaded');
+			return;
+		}
+
+		let totalTracks = 0;
+		for (const alb of unDownloadedAlbums) {
+			totalTracks += (alb.tracks || []).filter((t) => !offlineStorage.isDownloaded(t.id)).length;
+		}
+
+		if (totalTracks === 0) {
+			await alertAction('All songs in your library are already downloaded for offline playback!', 'Library Downloaded');
+			return;
+		}
+
+		const confirmed = await confirmAction({
+			title: 'Download Entire Library',
+			message: `Queue ${unDownloadedAlbums.length} albums (${totalTracks} songs) to download directly to this device for offline playback?`,
+			confirmText: 'Download All'
+		});
+
+		if (confirmed) {
+			await offlineStorage.enqueueAlbums(unDownloadedAlbums as any);
+			showDownloadsManager = true;
+		}
+	}
 
 	// Library Switcher Tab: 'albums' vs 'artists' vs 'songs' vs 'playlists'
 	let libraryTab = $state<'albums' | 'artists' | 'songs' | 'playlists'>(
@@ -1604,6 +1637,63 @@
 		</div>
 	{/if}
 
+	<!-- Global Download Queue Floating Progress Pill -->
+	{#if offlineStorage.queueSummary.isDownloading || offlineStorage.queueSummary.totalItems > 0 || offlineStorage.failedItems.length > 0}
+		<div class="mx-2 sm:mx-3 mt-2 px-3.5 py-2 rounded-xl bg-neutral-900/90 border border-emerald-500/50 backdrop-blur-xl flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 shadow-lg shadow-emerald-950/30">
+			<button
+				type="button"
+				onclick={() => (showDownloadsManager = true)}
+				class="flex items-center gap-2.5 text-neutral-200 hover:text-white text-left cursor-pointer min-w-0 flex-1"
+			>
+				{#if offlineStorage.queueSummary.isDownloading}
+					<RefreshCw class="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
+				{:else if offlineStorage.isPaused}
+					<Pause class="w-4 h-4 text-amber-400 shrink-0" />
+				{:else if offlineStorage.failedItems.length > 0}
+					<AlertTriangle class="w-4 h-4 text-red-400 shrink-0" />
+				{:else}
+					<CircleCheck class="w-4 h-4 text-emerald-400 shrink-0" />
+				{/if}
+
+				<div class="min-w-0 flex-1">
+					<div class="flex items-center gap-2">
+						<span class="font-bold text-emerald-300">
+							{#if offlineStorage.queueSummary.isDownloading}
+								Downloading ({offlineStorage.queueSummary.completedItems}/{offlineStorage.queueSummary.totalItems} • {offlineStorage.queueSummary.overallProgressPercent}%)
+							{:else if offlineStorage.isPaused}
+								Downloads Paused ({offlineStorage.queueSummary.completedItems}/{offlineStorage.queueSummary.totalItems})
+							{:else if offlineStorage.failedItems.length > 0}
+								{offlineStorage.failedItems.length} downloads failed
+							{:else}
+								Downloads complete ({offlineStorage.queueSummary.completedItems} songs)
+							{/if}
+						</span>
+						{#if offlineStorage.queueSummary.activeTrackTitle}
+							<span class="text-neutral-400 truncate hidden sm:inline">&bull; "{offlineStorage.queueSummary.activeTrackTitle}"</span>
+						{/if}
+					</div>
+					<!-- Miniature Progress Bar -->
+					<div class="w-full h-1 bg-neutral-800 rounded-full mt-1.5 overflow-hidden">
+						<div
+							class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
+							style="width: {offlineStorage.queueSummary.overallProgressPercent}%"
+						></div>
+					</div>
+				</div>
+			</button>
+
+			<div class="flex items-center gap-2 shrink-0">
+				<button
+					type="button"
+					onclick={() => (showDownloadsManager = true)}
+					class="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+				>
+					<span>Manage</span>
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Workspace: Side Library + Main Stage + Drawers -->
 	<div class="flex-1 flex overflow-hidden min-h-0 p-1.5 sm:p-3 gap-1.5 sm:gap-3">
 		<!-- DEDICATED FULL-SCREEN MOBILE NOW PLAYING (Phones < md) -->
@@ -2015,25 +2105,63 @@
 						{#if mobileFilteredAlbums.length > 0}
 							<div class="grid grid-cols-2 gap-2.5">
 								{#each mobileFilteredAlbums as alb}
-									<button
-										type="button"
-										onclick={() => { mobilePreviousTab = 'search'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
-										class="flex flex-col p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left group"
+									<div
+										class="flex flex-col p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition text-left group relative"
 									>
 										<div class="w-full aspect-square rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 relative">
-											{#if alb.cover_url}
-												<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-											{:else}
-												<div class="w-full h-full flex items-center justify-center text-neutral-600">
-													<Music class="w-8 h-8" />
-												</div>
-											{/if}
+											<button
+												type="button"
+												onclick={() => { mobilePreviousTab = 'search'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+												class="w-full h-full cursor-pointer text-left"
+											>
+												{#if alb.cover_url}
+													<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+												{:else}
+													<div class="w-full h-full flex items-center justify-center text-neutral-600">
+														<Music class="w-8 h-8" />
+													</div>
+												{/if}
+											</button>
+
+											<!-- 1-Tap Quick Download Button on Album Card -->
+											<button
+												type="button"
+												onclick={async (e) => {
+													e.stopPropagation();
+													if (offlineStorage.isAlbumDownloaded(alb.id)) {
+														const confirmed = await confirmAction({
+															title: 'Remove Offline Album',
+															message: `Remove "${alb.title}" from offline downloads?`,
+															confirmText: 'Remove'
+														});
+														if (confirmed) await offlineStorage.deleteAlbum(alb.id);
+													} else {
+														await offlineStorage.enqueueAlbum(alb);
+													}
+												}}
+												class="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/70 backdrop-blur-sm transition z-10 cursor-pointer"
+												title={offlineStorage.isAlbumDownloaded(alb.id) ? 'Downloaded (Tap to remove)' : (offlineStorage.isAlbumQueued(alb.id) ? 'Queued' : 'Download Album')}
+											>
+												{#if offlineStorage.isAlbumDownloading(alb.id)}
+													<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
+												{:else if offlineStorage.isAlbumDownloaded(alb.id)}
+													<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+												{:else if offlineStorage.isAlbumQueued(alb.id)}
+													<Clock class="w-3.5 h-3.5 text-amber-400" />
+												{:else}
+													<ArrowDownCircle class="w-3.5 h-3.5 text-neutral-400 hover:text-white" />
+												{/if}
+											</button>
 										</div>
-										<div class="mt-2 min-w-0">
+										<button
+											type="button"
+											onclick={() => { mobilePreviousTab = 'search'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+											class="mt-2 min-w-0 text-left cursor-pointer"
+										>
 											<div class="text-xs font-bold text-white truncate group-hover:text-emerald-400 transition">{alb.title}</div>
 											<div class="text-[11px] text-neutral-400 truncate mt-0.5">{alb.artist}</div>
-										</div>
-									</button>
+										</button>
+									</div>
 								{/each}
 							</div>
 						{:else}
@@ -2053,14 +2181,25 @@
 						<Library class="w-4 h-4 text-emerald-400" />
 						<h2 class="text-sm font-bold text-white">Your Library</h2>
 					</div>
-					<button
-						type="button"
-						onclick={() => { createPlaylistError = null; showCreatePlaylistModal = true; }}
-						class="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-					>
-						<Plus class="w-3.5 h-3.5" />
-						<span>New Playlist</span>
-					</button>
+					<div class="flex items-center gap-1.5">
+						<button
+							type="button"
+							onclick={handleDownloadEntireLibrary}
+							class="px-2 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+							title="Download All Albums for Offline Playback"
+						>
+							<ArrowDownCircle class="w-3.5 h-3.5 text-emerald-400" />
+							<span>Download All</span>
+						</button>
+						<button
+							type="button"
+							onclick={() => { createPlaylistError = null; showCreatePlaylistModal = true; }}
+							class="px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+						>
+							<Plus class="w-3.5 h-3.5" />
+							<span>New</span>
+						</button>
+					</div>
 				</div>
 
 				<!-- Scrollable Content -->
@@ -2125,48 +2264,117 @@
 						{#if mobileLibraryLayout === 'list'}
 							<div class="space-y-1.5">
 								{#each albums as alb}
-									<button
-										type="button"
-										onclick={() => { mobilePreviousTab = 'library'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
-										class="w-full flex items-center gap-3 p-2.5 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+									<div
+										class="w-full flex items-center gap-3 p-2.5 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition text-left"
 									>
-										<div class="w-14 h-14 rounded-xl bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
-											{#if alb.cover_url}
-												<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover" />
+										<button
+											type="button"
+											onclick={() => { mobilePreviousTab = 'library'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+											class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+										>
+											<div class="w-14 h-14 rounded-xl bg-neutral-950 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+												{#if alb.cover_url}
+													<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover" />
+												{:else}
+													<Music class="w-6 h-6 text-neutral-600" />
+												{/if}
+											</div>
+											<div class="flex-1 min-w-0">
+												<div class="text-xs font-bold text-white truncate">{alb.title}</div>
+												<div class="text-[11px] text-neutral-400 mt-0.5">{alb.artist} &bull; {alb.tracks.length} tracks</div>
+											</div>
+										</button>
+
+										<!-- 1-Tap Offline Download Button -->
+										<button
+											type="button"
+											onclick={async () => {
+												if (offlineStorage.isAlbumDownloaded(alb.id)) {
+													const confirmed = await confirmAction({
+														title: 'Remove Offline Album',
+														message: `Remove "${alb.title}" from offline downloads?`,
+														confirmText: 'Remove'
+													});
+													if (confirmed) await offlineStorage.deleteAlbum(alb.id);
+												} else {
+													await offlineStorage.enqueueAlbum(alb);
+												}
+											}}
+											class="p-2 rounded-xl text-neutral-400 hover:text-white transition shrink-0 cursor-pointer"
+											title={offlineStorage.isAlbumDownloaded(alb.id) ? 'Downloaded (Tap to remove)' : (offlineStorage.isAlbumQueued(alb.id) ? 'Queued' : 'Download Album')}
+										>
+											{#if offlineStorage.isAlbumDownloading(alb.id)}
+												<RefreshCw class="w-4 h-4 animate-spin text-emerald-400" />
+											{:else if offlineStorage.isAlbumDownloaded(alb.id)}
+												<CircleCheck class="w-4 h-4 text-emerald-400" />
+											{:else if offlineStorage.isAlbumQueued(alb.id)}
+												<Clock class="w-4 h-4 text-amber-400" />
 											{:else}
-												<Music class="w-6 h-6 text-neutral-600" />
+												<ArrowDownCircle class="w-4 h-4 text-neutral-500 hover:text-white" />
 											{/if}
-										</div>
-										<div class="flex-1 min-w-0">
-											<div class="text-xs font-bold text-white truncate">{alb.title}</div>
-											<div class="text-[11px] text-neutral-400 mt-0.5">{alb.artist} &bull; {alb.tracks.length} tracks</div>
-										</div>
-										<Play class="w-3.5 h-3.5 text-neutral-500 hover:text-emerald-400 shrink-0" />
-									</button>
+										</button>
+									</div>
 								{/each}
 							</div>
 						{:else}
 							<div class="grid grid-cols-2 gap-2.5">
 								{#each albums as alb}
-									<button
-										type="button"
-										onclick={() => { mobilePreviousTab = 'library'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
-										class="flex flex-col p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition cursor-pointer text-left"
+									<div
+										class="flex flex-col p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition text-left relative"
 									>
-										<div class="w-full aspect-square rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800">
-											{#if alb.cover_url}
-												<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover" />
-											{:else}
-												<div class="w-full h-full flex items-center justify-center text-neutral-600">
-													<Music class="w-8 h-8" />
-												</div>
-											{/if}
+										<div class="w-full aspect-square rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 relative">
+											<button
+												type="button"
+												onclick={() => { mobilePreviousTab = 'library'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+												class="w-full h-full cursor-pointer"
+											>
+												{#if alb.cover_url}
+													<img src={alb.cover_url} alt={alb.title} class="w-full h-full object-cover" />
+												{:else}
+													<div class="w-full h-full flex items-center justify-center text-neutral-600">
+														<Music class="w-8 h-8" />
+													</div>
+												{/if}
+											</button>
+
+											<!-- 1-Tap Offline Download Button on Card -->
+											<button
+												type="button"
+												onclick={async () => {
+													if (offlineStorage.isAlbumDownloaded(alb.id)) {
+														const confirmed = await confirmAction({
+															title: 'Remove Offline Album',
+															message: `Remove "${alb.title}" from offline downloads?`,
+															confirmText: 'Remove'
+														});
+														if (confirmed) await offlineStorage.deleteAlbum(alb.id);
+													} else {
+														await offlineStorage.enqueueAlbum(alb);
+													}
+												}}
+												class="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/70 backdrop-blur-sm transition z-10 cursor-pointer"
+												title={offlineStorage.isAlbumDownloaded(alb.id) ? 'Downloaded (Tap to remove)' : (offlineStorage.isAlbumQueued(alb.id) ? 'Queued' : 'Download Album')}
+											>
+												{#if offlineStorage.isAlbumDownloading(alb.id)}
+													<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
+												{:else if offlineStorage.isAlbumDownloaded(alb.id)}
+													<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+												{:else if offlineStorage.isAlbumQueued(alb.id)}
+													<Clock class="w-3.5 h-3.5 text-amber-400" />
+												{:else}
+													<ArrowDownCircle class="w-3.5 h-3.5 text-neutral-400 hover:text-white" />
+												{/if}
+											</button>
 										</div>
-										<div class="mt-1.5 min-w-0">
+										<button
+											type="button"
+											onclick={() => { mobilePreviousTab = 'library'; selectAlbum(alb); mobilePlayerTab = 'tracks'; }}
+											class="mt-1.5 min-w-0 text-left cursor-pointer"
+										>
 											<div class="text-xs font-bold text-white truncate">{alb.title}</div>
 											<div class="text-[10px] text-neutral-400 truncate">{alb.artist}</div>
-										</div>
-									</button>
+										</button>
+									</div>
 								{/each}
 							</div>
 						{/if}
@@ -2759,7 +2967,18 @@
 						<span>Your Library</span>
 					</div>
 
-					<div class="flex items-center gap-2">
+					<div class="flex items-center gap-1.5">
+						<!-- "Download Library" Button -->
+						<button
+							type="button"
+							onclick={handleDownloadEntireLibrary}
+							class="flex items-center gap-1 rounded-lg bg-neutral-800/90 border border-neutral-700/80 px-2 py-0.5 text-[11px] font-semibold text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer"
+							title="Download All Albums for Offline Playback"
+						>
+							<ArrowDownCircle class="w-3 h-3 text-emerald-400" />
+							<span class="hidden lg:inline">Download All</span>
+						</button>
+
 						<!-- "+ New Playlist" Button -->
 						<button
 							type="button"
@@ -2937,6 +3156,42 @@
 									<span>{album.tracks.length} tracks</span>
 								</div>
 							</div>
+
+							<!-- 1-Tap Offline Download Button -->
+							<button
+								type="button"
+								onclick={async (e) => {
+									e.stopPropagation();
+									if (offlineStorage.isAlbumDownloaded(album.id)) {
+										const confirmed = await confirmAction({
+											title: 'Remove Offline Album',
+											message: `Remove "${album.title}" from offline downloads?`,
+											confirmText: 'Remove'
+										});
+										if (confirmed) {
+											await offlineStorage.deleteAlbum(album.id);
+										}
+									} else {
+										await offlineStorage.enqueueAlbum(album);
+									}
+								}}
+								class="w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 {offlineStorage.isAlbumDownloaded(album.id)
+									? 'text-emerald-400 bg-emerald-500/10'
+									: (offlineStorage.isAlbumQueued(album.id)
+										? 'text-amber-400 bg-amber-500/10'
+										: 'text-neutral-500 hover:text-white hover:bg-neutral-800 opacity-0 group-hover:opacity-100')}"
+								title={offlineStorage.isAlbumDownloaded(album.id) ? 'Downloaded (Tap to remove)' : (offlineStorage.isAlbumQueued(album.id) ? 'Queued / Downloading' : 'Download Album')}
+							>
+								{#if offlineStorage.isAlbumDownloading(album.id)}
+									<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
+								{:else if offlineStorage.isAlbumDownloaded(album.id)}
+									<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+								{:else if offlineStorage.isAlbumQueued(album.id)}
+									<Clock class="w-3.5 h-3.5 text-amber-400" />
+								{:else}
+									<ArrowDownCircle class="w-3.5 h-3.5" />
+								{/if}
+							</button>
 
 							<!-- Instant Play Trigger on Hover -->
 							<button
@@ -3491,18 +3746,25 @@
 												await offlineStorage.deleteAlbum(selectedAlbum.id);
 											}
 										} else {
-											await offlineStorage.downloadAlbum(selectedAlbum);
+											await offlineStorage.enqueueAlbum(selectedAlbum);
 										}
 									}}
-									disabled={offlineStorage.isDownloading}
 									class="p-1 sm:p-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1 cursor-pointer {selectedAlbum && offlineStorage.isAlbumDownloaded(selectedAlbum.id)
 										? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-										: 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
-									title={selectedAlbum && offlineStorage.isAlbumDownloaded(selectedAlbum.id) ? 'Downloaded to phone (Tap to remove)' : 'Download entire album to phone for offline playback'}
+										: (selectedAlbum && offlineStorage.isAlbumQueued(selectedAlbum.id)
+											? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+											: 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700')}"
+									title={selectedAlbum && offlineStorage.isAlbumDownloaded(selectedAlbum.id) ? 'Downloaded to phone (Tap to remove)' : (selectedAlbum && offlineStorage.isAlbumQueued(selectedAlbum.id) ? 'Queued / Downloading' : 'Download entire album to phone for offline playback')}
 								>
-									{#if selectedAlbum && offlineStorage.isDownloading && offlineStorage.currentDownloadLabel.includes(selectedAlbum.title)}
+									{#if selectedAlbum && offlineStorage.isAlbumDownloading(selectedAlbum.id)}
+										{@const prog = offlineStorage.getAlbumDownloadProgress(selectedAlbum.id, selectedAlbum.tracks.length)}
 										<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
-										<span class="hidden sm:inline">Downloading...</span>
+										<span class="text-emerald-400 font-mono text-[11px]">
+											Downloading {prog ? `(${prog.downloaded}/${prog.total})` : ''}
+										</span>
+									{:else if selectedAlbum && offlineStorage.isAlbumQueued(selectedAlbum.id)}
+										<Clock class="w-3.5 h-3.5 text-amber-400" />
+										<span class="text-amber-300">Queued</span>
 									{:else if selectedAlbum && offlineStorage.isAlbumDownloaded(selectedAlbum.id)}
 										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
 										<span class="hidden sm:inline">Downloaded</span>
@@ -3955,18 +4217,20 @@
 												await offlineStorage.deletePlaylist(selectedPlaylist.id);
 											}
 										} else {
-											await offlineStorage.downloadPlaylist(selectedPlaylist);
+											await offlineStorage.enqueuePlaylist(selectedPlaylist);
 										}
 									}}
-									disabled={offlineStorage.isDownloading || !selectedPlaylist || selectedPlaylist.tracks.length === 0}
+									disabled={!selectedPlaylist || selectedPlaylist.tracks.length === 0}
 									class="p-1 sm:p-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1 cursor-pointer {selectedPlaylist && offlineStorage.isPlaylistDownloaded(selectedPlaylist.id)
 										? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-										: 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
+										: (selectedPlaylist && offlineStorage.downloadQueue.some(i => i.playlist?.id === selectedPlaylist?.id)
+											? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+											: 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700')}"
 									title={selectedPlaylist && offlineStorage.isPlaylistDownloaded(selectedPlaylist.id) ? 'Downloaded to phone (Tap to remove)' : 'Download playlist to phone for offline playback'}
 								>
-									{#if selectedPlaylist && offlineStorage.isDownloading && offlineStorage.currentDownloadLabel.includes(selectedPlaylist.name)}
+									{#if selectedPlaylist && offlineStorage.isDownloading && (offlineStorage.activeItem?.playlist?.id === selectedPlaylist.id || offlineStorage.downloadQueue.some(i => i.playlist?.id === selectedPlaylist?.id))}
 										<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
-										<span class="hidden sm:inline">Downloading...</span>
+										<span class="text-emerald-400 font-mono text-[11px]">Downloading...</span>
 									{:else if selectedPlaylist && offlineStorage.isPlaylistDownloaded(selectedPlaylist.id)}
 										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
 										<span class="hidden sm:inline">Downloaded</span>
@@ -4359,6 +4623,30 @@
 								>
 									<Shuffle class="w-3.5 h-3.5 text-emerald-400" />
 									<span class="hidden sm:inline">Shuffle</span>
+								</button>
+
+								<!-- Download All Artist Music Button -->
+								<button
+									type="button"
+									onclick={async () => {
+										if (!selectedArtist) return;
+										const missingCount = selectedArtist.tracks.filter((t) => !offlineStorage.isDownloaded(t.id)).length;
+										if (missingCount === 0) {
+											await alertAction(`All songs by ${selectedArtist.name} are already downloaded for offline playback!`, 'Artist Downloaded');
+											return;
+										}
+										await offlineStorage.enqueueArtist(
+											selectedArtist.name,
+											selectedArtist.albums as any,
+											selectedArtist.tracks as any
+										);
+										showDownloadsManager = true;
+									}}
+									class="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700/60 text-white font-semibold text-xs transition cursor-pointer"
+									title="Download all albums and songs by {selectedArtist.name} for offline playback"
+								>
+									<ArrowDownCircle class="w-3.5 h-3.5 text-emerald-400" />
+									<span>Download Artist</span>
 								</button>
 
 								<!-- Add All to Playlist -->
@@ -5216,6 +5504,12 @@
 		trackTitle={playlistModalTitle}
 		onClose={() => (showPlaylistModal = false)}
 		onAdded={handlePlaylistAdded}
+	/>
+
+	<!-- Global Downloads Manager Modal -->
+	<DownloadsManagerModal
+		isOpen={showDownloadsManager}
+		onClose={() => (showDownloadsManager = false)}
 	/>
 
 	<!-- Create Playlist Modal -->
