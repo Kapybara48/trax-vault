@@ -1132,7 +1132,7 @@ This document preserves persistent context, architectural conventions, recent ch
       - Merged "Add Track" and "Edit Album" into a unified modal with clean tab switching (`Album Info` vs `+ Add Track`).
       - Removed redundant "Add to Playlist" button from `/album/[id]` hero action bar and track rows (playlists are reserved for the Player view).
 
-80. **Native Android App (`cz.kapyhub.traxvault`) & Forgejo CI/CD Release Pipeline (v1.7.49)**:
+80. **Native Android App (`cz.kapyhub.traxvault`) & Forgejo CI/CD Release Pipeline (v1.7.50)**:
     - **Native Android Client (`android/`)**:
       - Pure Kotlin AndroidX WebKit app (`cz.kapyhub.traxvault`) targeting SDK 34 (Android 14) with min SDK 26 (Android 8.0).
       - Pure edge-to-edge immersion with `#0a0a0a` status and navigation bar styling, eliminating browser chrome and URL bar collapsing.

@@ -66,9 +66,9 @@
 			if ((window as any).TraxNative || navigator.userAgent.includes('TraxVaultAndroid')) {
 				isNativeAndroidApp = true;
 				try {
-					androidAppVersion = (window as any).TraxNative?.getVersion() || '1.7.49';
+					androidAppVersion = (window as any).TraxNative?.getVersion() || '1.7.50';
 				} catch {
-					androidAppVersion = '1.7.49';
+					androidAppVersion = '1.7.50';
 				}
 			}
 		}

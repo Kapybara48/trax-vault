@@ -125,7 +125,7 @@ class MainActivity : AppCompatActivity() {
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.49"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.50"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
@@ -344,7 +344,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.49"
+            return "1.7.50"
         }
 
         @JavascriptInterface

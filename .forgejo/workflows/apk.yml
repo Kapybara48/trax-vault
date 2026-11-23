@@ -33,18 +33,15 @@ jobs:
 
       - name: Build Android APK
         run: |
-          echo "Building Android builder container..."
+          echo "Building Android APK inside Docker..."
+          export DOCKER_BUILDKIT=1
           docker build -t trax-vault-android-builder:latest -f android/Dockerfile.build android
 
-          echo "Compiling Android APK with Gradle..."
-          docker run --rm \
-            -v "$PWD":/workspace \
-            -w /workspace/android \
-            -e ANDROID_SDK_ROOT="/opt/android-sdk" \
-            trax-vault-android-builder:latest \
-            gradle assembleDebug --no-daemon --stacktrace
+          echo "Extracting compiled APK from Docker image..."
+          CONTAINER_ID=$(docker create trax-vault-android-builder:latest)
+          docker cp "${CONTAINER_ID}:/app/app/build/outputs/apk/debug/app-debug.apk" trax-vault.apk
+          docker rm "${CONTAINER_ID}" >/dev/null
 
-          cp android/app/build/outputs/apk/debug/app-debug.apk trax-vault.apk
           echo "APK generated successfully:"
           ls -lh trax-vault.apk
 
