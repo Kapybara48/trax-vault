@@ -125,7 +125,7 @@ class MainActivity : AppCompatActivity() {
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.53"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.54"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
@@ -158,12 +158,23 @@ class MainActivity : AppCompatActivity() {
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
+                    // If network fails, attempt cache-first fallback to load offline PWA shell and songs
+                    if (view?.settings?.cacheMode != WebSettings.LOAD_CACHE_ONLY) {
+                        view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                        val targetUrl = request.url?.toString() ?: getServerUrl() ?: ""
+                        if (targetUrl.isNotEmpty()) {
+                            view?.loadUrl(targetUrl)
+                            return
+                        }
+                    }
                     showOfflineError(error?.description?.toString() ?: "Network connection failed")
                 }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                // Restore cache mode to default for future navigation
+                view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                 errorLayout.visibility = View.GONE
                 webView.visibility = View.VISIBLE
             }
@@ -256,6 +267,23 @@ class MainActivity : AppCompatActivity() {
                 }
             })
 
+            // Open Offline Player Button
+            addView(Button(this@MainActivity).apply {
+                text = "Play Offline Music"
+                setBackgroundColor(Color.parseColor("#065f46"))
+                setTextColor(Color.WHITE)
+                setOnClickListener {
+                    val url = getServerUrl()
+                    if (!url.isNullOrBlank()) {
+                        errorLayout.visibility = View.GONE
+                        webView.visibility = View.VISIBLE
+                        webView.settings.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                        val targetUrl = if (url.contains("/player")) url else "$url/player"
+                        webView.loadUrl(targetUrl)
+                    }
+                }
+            })
+
             // Change Server Button
             addView(Button(this@MainActivity).apply {
                 text = getString(R.string.change_server)
@@ -344,7 +372,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.53"
+            return "1.7.54"
         }
 
         @JavascriptInterface

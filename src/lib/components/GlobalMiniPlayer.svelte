@@ -60,6 +60,12 @@
 					{player.currentTrack.artist || player.currentAlbum?.artist || 'Trax Vault'}
 				</div>
 				<div class="hidden sm:flex items-center gap-1.5 mt-0.5">
+					{#if player.isCurrentTrackOffline}
+						<span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 font-bold flex items-center gap-1" title="Offline playback from device storage">
+							<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+							Offline
+						</span>
+					{/if}
 					{#if (player.currentTrack.disc_number || 1) > 1}
 						<span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-950/70 border border-amber-800/60 text-amber-400 font-bold">
 							CD {player.currentTrack.disc_number}

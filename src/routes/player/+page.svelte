@@ -51,11 +51,13 @@
 		Wrench,
 		Shield,
 		LogOut,
-		Smartphone
+		Smartphone,
+		ArrowDownCircle
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 	import { parseLrcEnhanced, type EnhancedLyricLine } from '$lib/utils.js';
+	import { offlineStorage } from '$lib/services/offline.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -116,10 +118,19 @@
 
 	// Filters & Search
 	let librarySearch = $state('');
-	let albumFilter = $state<'all' | 'lossless' | 'verified'>('all');
-	let playlistFilter = $state<'all' | 'public' | 'private'>('all');
+	let albumFilter = $state<'all' | 'lossless' | 'verified' | 'downloaded'>('all');
+	let playlistFilter = $state<'all' | 'public' | 'private' | 'downloaded'>('all');
 	let albumTrackSearch = $state('');
 	let queueSearch = $state('');
+	let isOffline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+
+	function formatBytes(bytes: number): string {
+		if (!bytes || bytes <= 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+	}
 
 	// Side Drawers
 	let showLyricsDrawer = $state(false);
@@ -127,21 +138,29 @@
 	let mobilePlayerTab = $state<'player' | 'search' | 'library' | 'studio' | 'profile' | 'tracks' | 'lyrics' | 'queue'>('player');
 	let mobilePreviousTab = $state<'search' | 'library' | 'studio' | 'profile'>('library');
 	let mobileSearchQuery = $state('');
-	let mobileLibraryTab = $state<'playlists' | 'albums' | 'artists' | 'songs'>('playlists');
+	let mobileLibraryTab = $state<'playlists' | 'albums' | 'artists' | 'songs' | 'downloaded'>('playlists');
 	let mobileLibraryLayout = $state<'list' | 'grid'>('list');
 	let mobileFullFeatures = $state(false);
 	let mobileShowNavbar = $state(false);
 
 	let mobileFilteredPlaylists = $derived.by(() => {
+		let list = playlists;
+		if (mobileLibraryTab === 'downloaded') {
+			list = list.filter((p) => offlineStorage.isPlaylistDownloaded(p.id) || p.tracks.some((t) => offlineStorage.isDownloaded(t.id)));
+		}
 		const q = mobileSearchQuery.trim().toLowerCase();
-		if (!q) return playlists;
-		return playlists.filter((p) => p.name.toLowerCase().includes(q) || (p.comment && p.comment.toLowerCase().includes(q)));
+		if (!q) return list;
+		return list.filter((p) => p.name.toLowerCase().includes(q) || (p.comment && p.comment.toLowerCase().includes(q)));
 	});
 
 	let mobileFilteredAlbums = $derived.by(() => {
+		let list = albums;
+		if (mobileLibraryTab === 'downloaded') {
+			list = list.filter((a) => offlineStorage.isAlbumDownloaded(a.id) || a.tracks.some((t) => offlineStorage.isDownloaded(t.id)));
+		}
 		const q = mobileSearchQuery.trim().toLowerCase();
-		if (!q) return albums;
-		return albums.filter((a) => a.title.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q));
+		if (!q) return list;
+		return list.filter((a) => a.title.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q));
 	});
 
 	// Synced Lyrics State
@@ -300,6 +319,24 @@
 
 		lyricsLoading = true;
 		try {
+			// Check offline storage first for immediate offline teleprompter
+			const offlineTrack = await offlineStorage.getOfflineTrack(track.id);
+			if (player.currentTrack?.id !== track.id) return;
+			if (offlineTrack) {
+				if (offlineTrack.lyrics_status === 'instrumental' || offlineTrack.lyrics_text === '♪') {
+					isInstrumentalLyrics = true;
+					instrumentalMarker = '♪';
+					lyricsLines = [{ id: 'inst-1', time: 0, endTime: null, text: instrumentalMarker }];
+					lyricsLoading = false;
+					return;
+				} else if (offlineTrack.lyrics_text) {
+					isInstrumentalLyrics = false;
+					lyricsLines = parseLrc(offlineTrack.lyrics_text);
+					lyricsLoading = false;
+					return;
+				}
+			}
+
 			const res = await fetch(`/api/tracks/${track.id}/lyrics`);
 			// Guard against stale response if user switched tracks while fetch was in flight
 			if (player.currentTrack?.id !== track.id) return;
@@ -374,6 +411,8 @@
 			list = list.filter((a) => a.checked_count === a.track_count && (a.track_count || 0) > 0);
 		} else if (albumFilter === 'lossless') {
 			list = list.filter((a) => a.tracks.some((t) => t.format === 'FLAC' || t.format === 'ALAC' || t.format === 'WAV'));
+		} else if (albumFilter === 'downloaded') {
+			list = list.filter((a) => offlineStorage.isAlbumDownloaded(a.id) || a.tracks.some((t) => offlineStorage.isDownloaded(t.id)));
 		}
 		return list;
 	});
@@ -390,6 +429,8 @@
 			list = list.filter((p) => p.is_public === 1);
 		} else if (playlistFilter === 'private') {
 			list = list.filter((p) => !p.is_public);
+		} else if (playlistFilter === 'downloaded') {
+			list = list.filter((p) => offlineStorage.isPlaylistDownloaded(p.id) || p.tracks.some((t) => offlineStorage.isDownloaded(t.id)));
 		}
 		return list;
 	});
@@ -1260,6 +1301,32 @@
 			mobileShowNavbar = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
 		} catch {}
 
+		// Listen to online / offline network status
+		const handleOnline = () => { isOffline = false; };
+		const handleOffline = () => { isOffline = true; };
+		window.addEventListener('online', handleOnline);
+		window.addEventListener('offline', handleOffline);
+
+		// Initialize offline storage and merge offline albums & playlists into catalog
+		offlineStorage.init().then(async () => {
+			const offAlbums = await offlineStorage.getAllOfflineAlbums();
+			if (offAlbums.length > 0) {
+				for (const off of offAlbums) {
+					if (!albums.some((a) => a.id === off.id)) {
+						albums.push(off);
+					}
+				}
+			}
+			const offPlaylists = await offlineStorage.getAllOfflinePlaylists();
+			if (offPlaylists.length > 0) {
+				for (const offPl of offPlaylists) {
+					if (!playlists.some((p) => p.id === offPl.id)) {
+						playlists.push(offPl);
+					}
+				}
+			}
+		}).catch(() => {});
+
 		const updateMobileSettings = () => {
 			try {
 				mobileFullFeatures = localStorage.getItem('traxvault_mobile_full_features') === 'true';
@@ -1272,6 +1339,8 @@
 		window.addEventListener('traxvault:navbar-toggle', updateMobileSettings);
 
 		return () => {
+			window.removeEventListener('online', handleOnline);
+			window.removeEventListener('offline', handleOffline);
 			window.removeEventListener('storage', updateMobileSettings);
 			window.removeEventListener('traxvault:mobile-features-toggle', updateMobileSettings);
 			window.removeEventListener('traxvault:navbar-toggle', updateMobileSettings);
@@ -1340,6 +1409,17 @@
 					Lyrics Companion Only
 				</button>
 			</div>
+		</div>
+	{/if}
+
+	<!-- Offline Mode Status Indicator -->
+	{#if isOffline}
+		<div class="mx-2 sm:mx-3 mt-2 px-3.5 py-1.5 rounded-xl bg-amber-950/80 border border-amber-600/40 flex items-center justify-between gap-2 text-xs shrink-0 shadow-lg text-amber-200">
+			<div class="flex items-center gap-2">
+				<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+				<span><strong>Offline Mode:</strong> No network connection. Playing songs stored directly on your device.</span>
+			</div>
+			<span class="text-[10px] text-amber-300/80 font-mono font-medium">{offlineStorage.downloadedTrackIds.size} downloaded</span>
 		</div>
 	{/if}
 
@@ -1954,6 +2034,83 @@
 								</button>
 							{/each}
 						</div>
+					{:else if mobileLibraryTab === 'downloaded'}
+						<!-- DOWNLOADED MUSIC TAB (Phone storage) -->
+						<div class="space-y-2">
+							<div class="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
+								<div class="flex items-center gap-2">
+									<ArrowDownCircle class="w-4 h-4 text-emerald-400" />
+									<div>
+										<div class="text-xs font-bold text-white">Downloaded to Phone</div>
+										<div class="text-[10px] text-emerald-300 font-mono">
+											{offlineStorage.downloadedTrackIds.size} songs &bull; {formatBytes(offlineStorage.offlineStorageBytes)}
+										</div>
+									</div>
+								</div>
+								{#if offlineStorage.downloadedTrackIds.size > 0}
+									<button
+										type="button"
+										onclick={async () => {
+											const confirmed = await confirmAction({
+												title: 'Clear All Downloads',
+												message: 'Are you sure you want to delete all offline downloaded songs from this device?',
+												confirmText: 'Clear All'
+											});
+											if (confirmed) {
+												await offlineStorage.clearAllOfflineMusic();
+											}
+										}}
+										class="px-2 py-1 rounded-lg bg-neutral-900 border border-neutral-700/80 text-rose-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-neutral-800"
+									>
+										<Trash2 class="w-3 h-3 text-rose-400" />
+										<span>Clear</span>
+									</button>
+								{/if}
+							</div>
+
+							{#if offlineStorage.downloadedTrackIds.size === 0}
+								<div class="p-8 text-center text-xs text-neutral-500 space-y-2">
+									<ArrowDownCircle class="w-8 h-8 text-neutral-600 mx-auto" />
+									<p>No offline songs downloaded yet.</p>
+									<p class="text-[10px] text-neutral-500">Tap the Download button on any album, playlist, or track to save it for 100% offline playback!</p>
+								</div>
+							{:else}
+								<div class="space-y-1">
+									{#each allLibraryTracks.filter((t) => offlineStorage.isDownloaded(t.id)) as track}
+										<div
+											class="w-full flex items-center gap-2.5 p-2 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/50 transition cursor-pointer text-left"
+											onclick={() => playLibrarySong(track)}
+										>
+											<div class="w-9 h-9 rounded-lg bg-neutral-900 overflow-hidden shrink-0 border border-neutral-800 flex items-center justify-center">
+												{#if track.album_cover_url}
+													<img src={track.album_cover_url} alt="Cover" class="w-full h-full object-cover" />
+												{:else}
+													<Music class="w-4 h-4 text-emerald-400" />
+												{/if}
+											</div>
+											<div class="flex-1 min-w-0">
+												<div class="text-xs font-bold text-white truncate flex items-center gap-1">
+													<span>{track.title}</span>
+													<CircleCheck class="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+												</div>
+												<div class="text-[10px] text-neutral-400 truncate">{track.artist || 'Unknown Artist'}</div>
+											</div>
+											<button
+												type="button"
+												onclick={async (e) => {
+													e.stopPropagation();
+													await offlineStorage.deleteTrack(track.id);
+												}}
+												class="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 hover:bg-rose-950/30 transition cursor-pointer"
+												title="Delete from phone"
+											>
+												<Trash2 class="w-3.5 h-3.5" />
+											</button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{/if}
 				</div>
 
@@ -1987,6 +2144,19 @@
 							class="px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer {mobileLibraryTab === 'songs' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-neutral-800/80 text-neutral-400 hover:text-white'}"
 						>
 							Songs
+						</button>
+						<button
+							type="button"
+							onclick={() => (mobileLibraryTab = 'downloaded')}
+							class="px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 {mobileLibraryTab === 'downloaded' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-neutral-800/80 text-neutral-400 hover:text-white'}"
+						>
+							<ArrowDownCircle class="w-3 h-3 text-emerald-400" />
+							<span>Downloaded</span>
+							{#if offlineStorage.downloadedTrackIds.size > 0}
+								<span class="ml-0.5 px-1 py-0.2 rounded-full text-[9px] bg-emerald-950 text-emerald-300 font-mono">
+									{offlineStorage.downloadedTrackIds.size}
+								</span>
+							{/if}
 						</button>
 					</div>
 
@@ -2500,6 +2670,7 @@
 					<div class="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pb-1 text-xs">
 						{#each [
 							{ id: 'all', label: 'All' },
+							{ id: 'downloaded', label: 'Downloaded' },
 							{ id: 'lossless', label: 'FLAC / Hi-Res' },
 							{ id: 'verified', label: 'Verified' }
 						] as chip}
@@ -2518,6 +2689,7 @@
 					<div class="flex items-center gap-1.5 mt-2.5 overflow-x-auto no-scrollbar pb-1 text-xs">
 						{#each [
 							{ id: 'all', label: 'All Playlists' },
+							{ id: 'downloaded', label: 'Downloaded' },
 							{ id: 'public', label: 'Public' },
 							{ id: 'private', label: 'Private' }
 						] as chip}
@@ -3126,6 +3298,42 @@
 									<span class="hidden sm:inline">Add</span>
 								</button>
 
+								<!-- Download Album for Offline Playback -->
+								<button
+									type="button"
+									onclick={async () => {
+										if (!selectedAlbum) return;
+										if (offlineStorage.isAlbumDownloaded(selectedAlbum.id)) {
+											const confirmed = await confirmAction({
+												title: 'Remove Offline Album',
+												message: `Remove "${selectedAlbum?.title}" and its tracks from offline downloads?`,
+												confirmText: 'Remove'
+											});
+											if (confirmed) {
+												await offlineStorage.deleteAlbum(selectedAlbum.id);
+											}
+										} else {
+											await offlineStorage.downloadAlbum(selectedAlbum);
+										}
+									}}
+									disabled={offlineStorage.isDownloading}
+									class="p-1 sm:p-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1 cursor-pointer {selectedAlbum && offlineStorage.isAlbumDownloaded(selectedAlbum.id)
+										? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+										: 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
+									title={selectedAlbum && offlineStorage.isAlbumDownloaded(selectedAlbum.id) ? 'Downloaded to phone (Tap to remove)' : 'Download entire album to phone for offline playback'}
+								>
+									{#if selectedAlbum && offlineStorage.isDownloading && offlineStorage.currentDownloadLabel.includes(selectedAlbum.title)}
+										<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
+										<span class="hidden sm:inline">Downloading...</span>
+									{:else if selectedAlbum && offlineStorage.isAlbumDownloaded(selectedAlbum.id)}
+										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+										<span class="hidden sm:inline">Downloaded</span>
+									{:else}
+										<ArrowDownCircle class="w-3.5 h-3.5 text-emerald-400" />
+										<span class="hidden sm:inline">Download</span>
+									{/if}
+								</button>
+
 								<!-- Search in Album -->
 								<div class="relative ml-auto w-32 sm:w-40 md:w-48">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -3231,6 +3439,11 @@
 									<td class="py-2 pr-3 min-w-0">
 										<div class="font-semibold truncate flex items-center gap-1.5 {isMissing ? 'text-rose-200' : isCurrent ? 'text-emerald-300' : 'text-neutral-100'}">
 											<span>{track.title}</span>
+											{#if offlineStorage.isDownloaded(track.id)}
+												<span title="Downloaded for offline playback">
+													<CircleCheck class="w-3 h-3 text-emerald-400 shrink-0 inline" />
+												</span>
+											{/if}
 											{#if isMissing}
 												<span class="rounded bg-rose-500/20 px-1.5 py-0.2 text-[9px] font-bold text-rose-300 border border-rose-500/30 shrink-0">
 													Missing
@@ -3354,10 +3567,46 @@
 													}}
 												></div>
 												<div
-													class="absolute right-0 bottom-full mb-1 z-50 w-48 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-1.5 text-xs flex flex-col gap-1 backdrop-blur-xl text-left"
+													class="absolute right-0 bottom-full mb-1 z-50 w-52 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-1.5 text-xs flex flex-col gap-1 backdrop-blur-xl text-left"
 												>
 													<div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
-														Download Audio
+														Offline & Downloads
+													</div>
+													{#if offlineStorage.isDownloaded(track.id)}
+														<button
+															type="button"
+															onclick={async (e) => {
+																e.stopPropagation();
+																activeDownloadTrackId = null;
+																await offlineStorage.deleteTrack(track.id);
+															}}
+															class="px-2 py-1.5 rounded-lg hover:bg-rose-950/40 text-rose-300 flex items-center justify-between text-left cursor-pointer"
+														>
+															<span>Remove from Phone</span>
+															<Trash2 class="w-3.5 h-3.5 text-rose-400" />
+														</button>
+													{:else}
+														<button
+															type="button"
+															onclick={async (e) => {
+																e.stopPropagation();
+																activeDownloadTrackId = null;
+																await offlineStorage.downloadTrack(track, selectedAlbum || undefined);
+															}}
+															disabled={offlineStorage.isDownloadingTrack(track.id)}
+															class="px-2 py-1.5 rounded-lg hover:bg-emerald-950/40 text-emerald-300 flex items-center justify-between text-left cursor-pointer"
+														>
+															<span>Download to Phone</span>
+															{#if offlineStorage.isDownloadingTrack(track.id)}
+																<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
+															{:else}
+																<ArrowDownCircle class="w-3.5 h-3.5 text-emerald-400" />
+															{/if}
+														</button>
+													{/if}
+													<div class="h-px bg-neutral-800/80 my-0.5"></div>
+													<div class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500">
+														Export Audio File
 													</div>
 													<a
 														href="/api/tracks/{track.id}/audio?download=true"
@@ -3513,6 +3762,42 @@
 									<span class="hidden sm:inline">Delete</span>
 								</button>
 
+								<!-- Download Playlist Offline -->
+								<button
+									type="button"
+									onclick={async () => {
+										if (!selectedPlaylist) return;
+										if (offlineStorage.isPlaylistDownloaded(selectedPlaylist.id)) {
+											const confirmed = await confirmAction({
+												title: 'Remove Offline Playlist',
+												message: `Remove "${selectedPlaylist.name}" from offline downloads?`,
+												confirmText: 'Remove'
+											});
+											if (confirmed) {
+												await offlineStorage.deletePlaylist(selectedPlaylist.id);
+											}
+										} else {
+											await offlineStorage.downloadPlaylist(selectedPlaylist);
+										}
+									}}
+									disabled={offlineStorage.isDownloading || !selectedPlaylist || selectedPlaylist.tracks.length === 0}
+									class="p-1 sm:p-1.5 rounded-xl border text-xs font-semibold transition flex items-center gap-1 cursor-pointer {selectedPlaylist && offlineStorage.isPlaylistDownloaded(selectedPlaylist.id)
+										? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+										: 'bg-neutral-800/80 border-neutral-700/70 text-neutral-300 hover:text-white hover:bg-neutral-700'}"
+									title={selectedPlaylist && offlineStorage.isPlaylistDownloaded(selectedPlaylist.id) ? 'Downloaded to phone (Tap to remove)' : 'Download playlist to phone for offline playback'}
+								>
+									{#if selectedPlaylist && offlineStorage.isDownloading && offlineStorage.currentDownloadLabel.includes(selectedPlaylist.name)}
+										<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
+										<span class="hidden sm:inline">Downloading...</span>
+									{:else if selectedPlaylist && offlineStorage.isPlaylistDownloaded(selectedPlaylist.id)}
+										<CircleCheck class="w-3.5 h-3.5 text-emerald-400" />
+										<span class="hidden sm:inline">Downloaded</span>
+									{:else}
+										<ArrowDownCircle class="w-3.5 h-3.5 text-emerald-400" />
+										<span class="hidden sm:inline">Download</span>
+									{/if}
+								</button>
+
 								<!-- Search in Playlist -->
 								<div class="relative ml-auto w-32 sm:w-40 md:w-48">
 									<Search class="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -3574,8 +3859,13 @@
 
 										<!-- Track Title & Artist -->
 										<td class="py-2 pr-3 min-w-0">
-											<div class="font-semibold truncate {isCurrent ? 'text-emerald-300' : 'text-neutral-100'}">
-												{track.title}
+											<div class="font-semibold truncate flex items-center gap-1.5 {isCurrent ? 'text-emerald-300' : 'text-neutral-100'}">
+												<span>{track.title}</span>
+												{#if offlineStorage.isDownloaded(track.id)}
+													<span title="Downloaded for offline playback">
+														<CircleCheck class="w-3 h-3 text-emerald-400 shrink-0 inline" />
+													</span>
+												{/if}
 											</div>
 											<div class="text-[10px] text-neutral-400 truncate">
 												{#if track.artist}
@@ -3686,10 +3976,46 @@
 															}}
 														></div>
 														<div
-															class="absolute right-0 bottom-full mb-1 z-50 w-48 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-1.5 text-xs flex flex-col gap-1 backdrop-blur-xl text-left font-normal"
+															class="absolute right-0 bottom-full mb-1 z-50 w-52 rounded-xl bg-neutral-900 border border-neutral-700/80 shadow-2xl p-1.5 text-xs flex flex-col gap-1 backdrop-blur-xl text-left font-normal"
 														>
 															<div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
-																Download Audio
+																Offline & Downloads
+															</div>
+															{#if offlineStorage.isDownloaded(track.id)}
+																<button
+																	type="button"
+																	onclick={async (e) => {
+																		e.stopPropagation();
+																		activeDownloadTrackId = null;
+																		await offlineStorage.deleteTrack(track.id);
+																	}}
+																	class="px-2 py-1.5 rounded-lg hover:bg-rose-950/40 text-rose-300 flex items-center justify-between text-left cursor-pointer"
+																>
+																	<span>Remove from Phone</span>
+																	<Trash2 class="w-3.5 h-3.5 text-rose-400" />
+																</button>
+															{:else}
+																<button
+																	type="button"
+																	onclick={async (e) => {
+																		e.stopPropagation();
+																		activeDownloadTrackId = null;
+																		await offlineStorage.downloadTrack(track);
+																	}}
+																	disabled={offlineStorage.isDownloadingTrack(track.id)}
+																	class="px-2 py-1.5 rounded-lg hover:bg-emerald-950/40 text-emerald-300 flex items-center justify-between text-left cursor-pointer"
+																>
+																	<span>Download to Phone</span>
+																	{#if offlineStorage.isDownloadingTrack(track.id)}
+																		<RefreshCw class="w-3.5 h-3.5 animate-spin text-emerald-400" />
+																	{:else}
+																		<ArrowDownCircle class="w-3.5 h-3.5 text-emerald-400" />
+																	{/if}
+																</button>
+															{/if}
+															<div class="h-px bg-neutral-800/80 my-0.5"></div>
+															<div class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-neutral-500">
+																Export Audio File
 															</div>
 															<a
 																href="/api/tracks/{track.id}/audio?download=true"
@@ -4310,6 +4636,13 @@
 						{player.currentTrack.artist || player.currentAlbum?.artist || 'Unknown Artist'}
 					</div>
 					<div class="hidden xs:flex sm:flex items-center gap-1.5 mt-0.5 text-[9px] font-mono relative">
+						{#if player.isCurrentTrackOffline}
+							<span class="text-emerald-400 font-semibold bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-700/60 flex items-center gap-0.5" title="Playing directly from local phone storage (0 data used)">
+								<CircleCheck class="w-2.5 h-2.5" />
+								<span>Offline</span>
+							</span>
+							<span class="text-neutral-500">&bull;</span>
+						{/if}
 						{#if (player.currentTrack.disc_number || 1) > 1}
 							<span class="text-amber-400 font-semibold bg-amber-950/60 px-1 rounded border border-amber-800/50">CD {player.currentTrack.disc_number}</span>
 							<span class="text-neutral-500">&bull;</span>

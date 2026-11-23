@@ -1,4 +1,5 @@
 import type { Track, Album } from '$lib/types/index.js';
+import { offlineStorage } from '$lib/services/offline.svelte.js';
 
 export interface PlayerAlbum extends Album {
 	tracks: Track[];
@@ -102,6 +103,7 @@ class GlobalPlayer {
 
 	// Streaming & Transcoding Quality Settings ('original' | '320' | '192' | '128')
 	streamingQuality = $state<'original' | '320' | '192' | '128'>('original');
+	isCurrentTrackOffline = $state<boolean>(false);
 
 	private audioEl: HTMLAudioElement | null = null;
 	private lastSavedSessionTime = 0;
@@ -628,6 +630,9 @@ class GlobalPlayer {
 
 	private isAudioSrcCurrent(trackId: number): boolean {
 		if (!this.audioEl || !this.audioEl.src) return false;
+		if (this.audioEl.src.startsWith('blob:')) {
+			return this.loadedAudioTrackId === trackId;
+		}
 		const expected = this.getAudioUrl(trackId);
 		try {
 			const currentUrl = new URL(this.audioEl.src, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
@@ -636,6 +641,20 @@ class GlobalPlayer {
 		} catch {
 			return this.audioEl.src.includes(expected);
 		}
+	}
+
+	async loadAudioSourceForTrack(track: Track): Promise<string> {
+		try {
+			const offlineTrack = await offlineStorage.getOfflineTrack(track.id);
+			if (offlineTrack && offlineTrack.audio_blob) {
+				this.isCurrentTrackOffline = true;
+				return offlineStorage.getBlobUrlForTrack(offlineTrack);
+			}
+		} catch (err) {
+			console.warn('[Player] Error querying offline storage:', err);
+		}
+		this.isCurrentTrackOffline = false;
+		return this.getAudioUrl(track.id);
 	}
 
 	setStreamingQuality(quality: 'original' | '320' | '192' | '128') {
@@ -674,8 +693,14 @@ class GlobalPlayer {
 
 		if (needsSrcLoad) {
 			this.loadedAudioTrackId = track.id;
-			this.audioEl.src = this.getAudioUrl(track.id);
-			this.audioEl.currentTime = Math.max(0, targetPositionSec);
+			this.loadAudioSourceForTrack(track).then((src) => {
+				if (!this.audioEl) return;
+				this.audioEl.src = src;
+				this.audioEl.currentTime = Math.max(0, targetPositionSec);
+				if (shouldPlay) {
+					this.audioEl.play().catch(() => {});
+				}
+			});
 		} else {
 			const drift = Math.abs(this.audioEl.currentTime - targetPositionSec);
 			if (forceSeek || drift > 0.35) {
@@ -1281,17 +1306,20 @@ class GlobalPlayer {
 
 		if (this.audioEl && this.localAudioEnabled) {
 			this.loadedAudioTrackId = track.id;
-			this.audioEl.src = this.getAudioUrl(track.id);
-			this.audioEl
-				.play()
-				.then(() => {
-					this.audioUnlockRequired = false;
-					this.isPlaying = true;
-				})
-				.catch((err) => {
-					console.warn('Playback error:', err);
-					this.isPlaying = false;
-				});
+			this.loadAudioSourceForTrack(track).then((src) => {
+				if (!this.audioEl) return;
+				this.audioEl.src = src;
+				this.audioEl
+					.play()
+					.then(() => {
+						this.audioUnlockRequired = false;
+						this.isPlaying = true;
+					})
+					.catch((err) => {
+						console.warn('Playback error:', err);
+						this.isPlaying = false;
+					});
+			});
 		} else {
 			// Companion Mode remote control: set isPlaying=true and broadcast to active speaker device
 			this.isPlaying = true;
@@ -1352,8 +1380,25 @@ class GlobalPlayer {
 		if (this.localAudioEnabled && this.audioEl) {
 			if (!this.isAudioSrcCurrent(this.currentTrack.id)) {
 				this.loadedAudioTrackId = this.currentTrack.id;
-				this.audioEl.src = this.getAudioUrl(this.currentTrack.id);
-				this.audioEl.currentTime = Math.max(0, this.currentTime);
+				this.loadAudioSourceForTrack(this.currentTrack).then((src) => {
+					if (!this.audioEl) return;
+					this.audioEl.src = src;
+					this.audioEl.currentTime = Math.max(0, this.currentTime);
+					this.audioEl
+						.play()
+						.then(() => {
+							this.audioUnlockRequired = false;
+							this.isPlaying = true;
+							this.updatePlaybackState('playing');
+							this.broadcastPlaybackState(true);
+						})
+						.catch((e) => {
+							console.warn('Play error:', e);
+							this.isPlaying = false;
+							this.updatePlaybackState('paused');
+						});
+				});
+				return;
 			}
 			this.audioEl
 				.play()

@@ -31,9 +31,11 @@
 		ChevronLeft,
 		Wrench,
 		Zap,
-		Download
+		Download,
+		ArrowDownCircle
 	} from '@lucide/svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
+	import { offlineStorage } from '$lib/services/offline.svelte.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -78,6 +80,8 @@
 			showMobileFullFeaturesSetting = localStorage.getItem('traxvault_mobile_full_features') === 'true';
 		} catch {}
 
+		offlineStorage.refreshStats().catch(() => {});
+
 		const update = () => {
 			try {
 				showMobileNavbarSetting = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
@@ -110,6 +114,14 @@
 			localStorage.setItem('traxvault_mobile_full_features', val ? 'true' : 'false');
 			window.dispatchEvent(new Event('traxvault:mobile-features-toggle'));
 		} catch {}
+	}
+
+	function formatBytes(bytes: number): string {
+		if (!bytes || bytes <= 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 	}
 
 	// Subsonic State
@@ -954,6 +966,74 @@
 							{/if}
 						</div>
 					</div>
+
+					<!-- Offline Storage & Downloads Card -->
+					<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl space-y-4">
+						<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-5">
+							<div class="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-950/80 border border-emerald-600/40 text-emerald-400">
+								<ArrowDownCircle class="h-5 w-5" />
+							</div>
+							<div>
+								<h2 class="text-base font-bold text-white">Offline Music & Storage</h2>
+								<p class="text-xs text-neutral-400">Manage downloaded songs and audio files stored directly on this device</p>
+							</div>
+						</div>
+
+						<!-- Storage Meter -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex flex-wrap items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="text-xs font-semibold text-white">Device Offline Storage Used</div>
+								<div class="text-[11px] text-neutral-400 max-w-xl leading-relaxed">
+									Audio files, synchronized teleprompter lyrics, and album covers are cached in device storage for 100% offline playback with zero mobile data.
+								</div>
+							</div>
+							<div class="flex items-center gap-3">
+								<div class="text-right">
+									<div class="text-sm font-bold text-emerald-400 font-mono">{formatBytes(offlineStorage.offlineStorageBytes)}</div>
+									<div class="text-[10px] text-neutral-500 font-mono">{offlineStorage.downloadedTrackIds.size} songs</div>
+								</div>
+								{#if offlineStorage.downloadedTrackIds.size > 0}
+									<button
+										type="button"
+										onclick={async () => {
+											const confirmed = await confirmAction({
+												title: 'Clear Offline Storage',
+												message: 'Delete all downloaded songs from this device? This will free up storage immediately.',
+												confirmText: 'Clear All'
+											});
+											if (confirmed) {
+												await offlineStorage.clearAllOfflineMusic();
+											}
+										}}
+										class="px-2.5 py-1.5 rounded-md bg-rose-950/40 hover:bg-rose-950/80 text-rose-300 border border-rose-800/40 text-xs font-medium transition cursor-pointer flex items-center gap-1.5"
+									>
+										<Trash2 class="w-3.5 h-3.5" />
+										<span>Clear Storage</span>
+									</button>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Download Quality Selector -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex flex-wrap items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="text-xs font-semibold text-white">Preferred Download Audio Quality</div>
+								<div class="text-[11px] text-neutral-400 max-w-xl leading-relaxed">
+									Choose quality for future offline downloads. Space Saver mode (128k MP3) saves up to 85% phone storage.
+								</div>
+							</div>
+							<select
+								value={offlineStorage.downloadQuality}
+								onchange={(e) => offlineStorage.setDownloadQuality((e.target as HTMLSelectElement).value as any)}
+								class="px-3 py-1.5 rounded-md bg-neutral-900 border border-neutral-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+							>
+								<option value="original">Original Lossless (FLAC/Source)</option>
+								<option value="320">320 kbps MP3 (High Fidelity)</option>
+								<option value="192">192 kbps MP3 (Balanced)</option>
+								<option value="128">128 kbps MP3 (Space Saver)</option>
+							</select>
+						</div>
+					</div>
 				</div>
 
 			<!-- TAB 3: SUBSONIC & STREAMING -->
@@ -1245,6 +1325,74 @@
 									<span>Download APK</span>
 								</a>
 							{/if}
+						</div>
+					</div>
+
+					<!-- Offline Storage & Downloads Card -->
+					<div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 backdrop-blur-xl shadow-xl space-y-4">
+						<div class="flex items-center gap-3 border-b border-neutral-800/80 pb-5">
+							<div class="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-950/80 border border-emerald-600/40 text-emerald-400">
+								<ArrowDownCircle class="h-5 w-5" />
+							</div>
+							<div>
+								<h2 class="text-base font-bold text-white">Offline Music & Storage</h2>
+								<p class="text-xs text-neutral-400">Manage downloaded songs and audio files stored directly on this device</p>
+							</div>
+						</div>
+
+						<!-- Storage Meter -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex flex-wrap items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="text-xs font-semibold text-white">Device Offline Storage Used</div>
+								<div class="text-[11px] text-neutral-400 max-w-xl leading-relaxed">
+									Audio files, synchronized teleprompter lyrics, and album covers are cached in device storage for 100% offline playback with zero mobile data.
+								</div>
+							</div>
+							<div class="flex items-center gap-3">
+								<div class="text-right">
+									<div class="text-sm font-bold text-emerald-400 font-mono">{formatBytes(offlineStorage.offlineStorageBytes)}</div>
+									<div class="text-[10px] text-neutral-500 font-mono">{offlineStorage.downloadedTrackIds.size} songs</div>
+								</div>
+								{#if offlineStorage.downloadedTrackIds.size > 0}
+									<button
+										type="button"
+										onclick={async () => {
+											const confirmed = await confirmAction({
+												title: 'Clear Offline Storage',
+												message: 'Delete all downloaded songs from this device? This will free up storage immediately.',
+												confirmText: 'Clear All'
+											});
+											if (confirmed) {
+												await offlineStorage.clearAllOfflineMusic();
+											}
+										}}
+										class="px-2.5 py-1.5 rounded-md bg-rose-950/40 hover:bg-rose-950/80 text-rose-300 border border-rose-800/40 text-xs font-medium transition cursor-pointer flex items-center gap-1.5"
+									>
+										<Trash2 class="w-3.5 h-3.5" />
+										<span>Clear Storage</span>
+									</button>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Download Quality Selector -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex flex-wrap items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="text-xs font-semibold text-white">Preferred Download Audio Quality</div>
+								<div class="text-[11px] text-neutral-400 max-w-xl leading-relaxed">
+									Choose quality for future offline downloads. Space Saver mode (128k MP3) saves up to 85% phone storage.
+								</div>
+							</div>
+							<select
+								value={offlineStorage.downloadQuality}
+								onchange={(e) => offlineStorage.setDownloadQuality((e.target as HTMLSelectElement).value as any)}
+								class="px-3 py-1.5 rounded-md bg-neutral-900 border border-neutral-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+							>
+								<option value="original">Original Lossless (FLAC/Source)</option>
+								<option value="320">320 kbps MP3 (High Fidelity)</option>
+								<option value="192">192 kbps MP3 (Balanced)</option>
+								<option value="128">128 kbps MP3 (Space Saver)</option>
+							</select>
 						</div>
 					</div>
 				</div>

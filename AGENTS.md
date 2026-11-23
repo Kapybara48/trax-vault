@@ -1151,6 +1151,34 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added endpoint `GET /api/apk` serving `trax-vault.apk` directly over HTTP.
       - Updated `/settings` Mobile Navigation card to display connected native client status or provide a 1-click APK download link.
 
+81. **Offline Music Storage, PWA App Shell, & Airplane Mode Playback (v1.7.54)**:
+    - **IndexedDB Offline Storage Manager (`src/lib/services/offline.svelte.ts`)**:
+      - Implemented high-capacity browser IndexedDB storage (`traxvault_offline_v1`) managing `tracks`, `albums`, and `playlists` stores.
+      - Stores audio binary Blobs, synchronized `.lrc` companion lyrics, cover artwork Blobs, and song metadata directly on client devices.
+      - Reactive Svelte 5 state: `downloadedTrackIds`, `downloadedAlbumIds`, `downloadedPlaylistIds`, `offlineStorageBytes`, `isDownloading`, and `downloadProgress`.
+      - Quality transcoding selector (`original`, `320k`, `192k`, `128k`) supporting storage-saving downloads.
+    - **SvelteKit Modern Service Worker PWA Shell (`src/service-worker.ts`)**:
+      - Automatically pre-caches HTML/CSS/JS client bundles (`immutable`, `assets`, `prerendered` via modern `$app/manifest`).
+      - Enables offline navigation fallback serving cached `/player` app shell with zero network connection or in airplane mode.
+      - Selectively bypasses streaming audio endpoints and SSE events so audio is seamlessly handled by IndexedDB Blobs.
+    - **Player Audio Integration (`src/lib/services/player.svelte.ts`)**:
+      - Added `loadAudioSourceForTrack()`: checks IndexedDB for local audio blobs before requesting remote HTTP streams.
+      - Plays directly via `URL.createObjectURL(audioBlob)` with instant seeking, zero network data usage, and automatic blob URL revoking.
+      - Added reactive `isCurrentTrackOffline` state across studio player, mobile player, and `GlobalMiniPlayer.svelte`.
+    - **Offline Teleprompter Synced Lyrics (`src/routes/player/+page.svelte`)**:
+      - Cached lyrics in IndexedDB load instantly offline; checks local cache before attempting network `fetch()`, enabling full teleprompter karaoke scrolling with no internet.
+    - **Audiophile Player UI Enhancements (`/player`)**:
+      - Added "Downloaded" filter chip to Library Albums & Playlists.
+      - Added dedicated "Downloaded" tab to mobile library switcher with live storage meter (`X songs • Y MB`), list view, and individual song deletion.
+      - Added "Download Album" and "Download Playlist" action bar buttons with live download progress indicators.
+      - Added green downloaded indicator badge on track rows and offline download/remove options in the track download popover.
+      - Added discreet "Offline Mode" status banner when device has no network connectivity.
+    - **Settings Storage Management (`/settings`)**:
+      - Added "Offline Music & Storage" management card displaying disk usage, song count, preferred download quality picker, and "Clear All Offline Downloads" action.
+    - **Native Android Cache-First Fallback (`MainActivity.kt`)**:
+      - Updated WebView client to attempt `LOAD_CACHE_ONLY` before triggering the offline connection error screen, loading the PWA shell seamlessly when disconnected.
+      - Added "Play Offline Music" direct action button to the offline error screen.
+
 ---
 
 ## 4. Workflows & Verification
