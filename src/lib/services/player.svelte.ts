@@ -1225,6 +1225,7 @@ class GlobalPlayer {
 
 	private setupMediaSession() {
 		if (typeof window !== 'undefined') {
+			(window as any).player = this;
 			(window as any).__traxLockScreenAction = (action: string, param?: any) => {
 				switch (action) {
 					case 'togglePlay':

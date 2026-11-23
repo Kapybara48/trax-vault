@@ -1240,6 +1240,17 @@ This document preserves persistent context, architectural conventions, recent ch
       - Implemented `MediaActionListener` in `MainActivity.kt` forwarding lock screen actions (Play/Pause, Next, Previous, Seek) to `window.__traxLockScreenAction(...)`.
       - In `src/lib/services/player.svelte.ts`, hooked real-time playback state updates (`onplay`, `onpause`, `onseek`, `ontimeupdate`) to dispatch into the native bridge.
 
+86. **Clean Task Removal & Recents Swipe Playback Termination (v1.7.59)**:
+    - **Service Termination on Recent Apps Swipe (`MediaPlaybackService.kt`)**:
+      - Implemented `onTaskRemoved(rootIntent: Intent?)`: Android does not call `onDestroy()` on running foreground services when the user swipes an app away from the Recent Apps / App Switcher. Implementing `onTaskRemoved()` immediately calls `stopPlaybackService()`.
+      - Updated `stopPlaybackService()` to explicitly call `nm?.cancel(NOTIFICATION_ID)`, `mediaSession.release()`, `stopForeground(STOP_FOREGROUND_REMOVE)`, and `stopSelf()`, ensuring the lock screen notification player is instantly dismissed and the service is freed.
+    - **App Destroy Audio Cleanup (`MainActivity.kt`)**:
+      - In `onDestroy()`, proactively stops `MediaPlaybackService`, evaluates `window.player ? window.player.pause() : false` to immediately cease audio output, loads `about:blank`, and destroys the WebView instance.
+      - In `handleExitDoubleBack()`, stops `MediaPlaybackService` before calling `finish()`.
+    - **Global Player Window Export (`src/lib/services/player.svelte.ts`)**:
+      - Exported player instance to `(window as any).player` during initialization so native Android lifecycle callbacks can cleanly pause audio synchronously.
+      - Preserves continuous background playback when returning to the Home screen, while guaranteeing audio and notifications cleanly stop whenever the app is closed or dismissed.
+
 ---
 
 ## 4. Workflows & Verification

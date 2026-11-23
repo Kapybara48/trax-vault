@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.58"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.59"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
@@ -345,6 +345,9 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
             private fun handleExitDoubleBack() {
                 val currentTime = System.currentTimeMillis()
                 if (currentTime - backPressedTime < 2000) {
+                    try {
+                        stopService(Intent(this@MainActivity, MediaPlaybackService::class.java))
+                    } catch (_: Exception) {}
                     finish()
                 } else {
                     backPressedTime = currentTime
@@ -532,6 +535,15 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
         if (MediaPlaybackService.actionListener === this) {
             MediaPlaybackService.actionListener = null
         }
+        try {
+            stopService(Intent(this, MediaPlaybackService::class.java))
+        } catch (_: Exception) {}
+        try {
+            webView.evaluateJavascript("window.player ? window.player.pause() : false", null)
+            webView.loadUrl("about:blank")
+            webView.stopLoading()
+            webView.destroy()
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 
@@ -585,7 +597,7 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
         @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.58"
+            return "1.7.59"
         }
 
         @JavascriptInterface

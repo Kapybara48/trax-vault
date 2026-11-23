@@ -314,10 +314,19 @@ class MediaPlaybackService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        stopPlaybackService()
+    }
+
     private fun stopPlaybackService() {
         try {
             mediaSession.isActive = false
             mediaSession.release()
+        } catch (_: Exception) {}
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(NOTIFICATION_ID)
         } catch (_: Exception) {}
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -330,6 +339,11 @@ class MediaPlaybackService : Service() {
             mediaSession.isActive = false
             mediaSession.release()
         } catch (_: Exception) {}
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(NOTIFICATION_ID)
+        } catch (_: Exception) {}
+        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
