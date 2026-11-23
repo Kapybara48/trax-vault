@@ -60,7 +60,7 @@
 <!-- Persistent Global HTML5 Audio Element -->
 <audio bind:this={audioElement} preload="metadata" class="hidden"></audio>
 
-<div class="bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white {isPlayerPage ? 'h-screen h-[100dvh] overflow-hidden' : 'min-h-screen'}">
+<div class="bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white {isPlayerPage ? 'fixed inset-0 h-[100svh] overflow-hidden' : 'min-h-screen'}">
 	{#if !isAuthPage}
 		<Navbar
 			issuesCount={data.stats?.total_needs_attention || 0}

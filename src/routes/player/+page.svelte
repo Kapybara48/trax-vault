@@ -46,7 +46,12 @@
 		Download,
 		ChevronLeft,
 		ChevronDown,
-		Grid
+		Grid,
+		Settings,
+		Wrench,
+		Shield,
+		LogOut,
+		Smartphone
 	} from '@lucide/svelte';
 	import AddToPlaylistModal from '$lib/components/AddToPlaylistModal.svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -119,11 +124,13 @@
 	// Side Drawers
 	let showLyricsDrawer = $state(false);
 	let showQueueDrawer = $state(false);
-	let mobilePlayerTab = $state<'player' | 'search' | 'library' | 'tracks' | 'lyrics' | 'queue'>('player');
-	let mobilePreviousTab = $state<'search' | 'library'>('library');
+	let mobilePlayerTab = $state<'player' | 'search' | 'library' | 'studio' | 'profile' | 'tracks' | 'lyrics' | 'queue'>('player');
+	let mobilePreviousTab = $state<'search' | 'library' | 'studio' | 'profile'>('library');
 	let mobileSearchQuery = $state('');
 	let mobileLibraryTab = $state<'playlists' | 'albums' | 'artists' | 'songs'>('playlists');
 	let mobileLibraryLayout = $state<'list' | 'grid'>('list');
+	let mobileFullFeatures = $state(false);
+	let mobileShowNavbar = $state(false);
 
 	let mobileFilteredPlaylists = $derived.by(() => {
 		const q = mobileSearchQuery.trim().toLowerCase();
@@ -1247,7 +1254,61 @@
 				mobilePlayerTab = 'player';
 			}
 		}
+
+		try {
+			mobileFullFeatures = localStorage.getItem('traxvault_mobile_full_features') === 'true';
+			mobileShowNavbar = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
+		} catch {}
+
+		const updateMobileSettings = () => {
+			try {
+				mobileFullFeatures = localStorage.getItem('traxvault_mobile_full_features') === 'true';
+				mobileShowNavbar = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
+			} catch {}
+		};
+
+		window.addEventListener('storage', updateMobileSettings);
+		window.addEventListener('traxvault:mobile-features-toggle', updateMobileSettings);
+		window.addEventListener('traxvault:navbar-toggle', updateMobileSettings);
+
+		return () => {
+			window.removeEventListener('storage', updateMobileSettings);
+			window.removeEventListener('traxvault:mobile-features-toggle', updateMobileSettings);
+			window.removeEventListener('traxvault:navbar-toggle', updateMobileSettings);
+		};
 	});
+
+	function toggleMobileFullFeatures(enabled: boolean) {
+		mobileFullFeatures = enabled;
+		try {
+			localStorage.setItem('traxvault_mobile_full_features', enabled ? 'true' : 'false');
+			window.dispatchEvent(new Event('traxvault:mobile-features-toggle'));
+		} catch {}
+	}
+
+	function toggleMobileShowNavbar(enabled: boolean) {
+		mobileShowNavbar = enabled;
+		try {
+			localStorage.setItem('traxvault_show_mobile_navbar', enabled ? 'true' : 'false');
+			window.dispatchEvent(new Event('traxvault:navbar-toggle'));
+		} catch {}
+	}
+
+	async function handleMobileLogout() {
+		const confirmed = await confirmAction({
+			title: 'Sign Out',
+			message: 'Are you sure you want to log out of Trax Vault?',
+			confirmText: 'Sign Out'
+		});
+		if (!confirmed) return;
+
+		try {
+			await fetch('/api/auth/logout', { method: 'POST' });
+			window.location.href = '/login';
+		} catch (err: any) {
+			await alertAction(err.message || 'Logout failed', 'Error');
+		}
+	}
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
@@ -1286,7 +1347,7 @@
 	<div class="flex-1 flex overflow-hidden min-h-0 p-1.5 sm:p-3 gap-1.5 sm:gap-3">
 		<!-- DEDICATED FULL-SCREEN MOBILE NOW PLAYING (Phones < md) -->
 		{#if mobilePlayerTab === 'player'}
-			<section class="flex md:hidden order-1 flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto min-h-0 p-4 sm:p-6 shadow-xl justify-between">
+			<section class="flex md:hidden order-1 flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto overscroll-contain min-h-0 p-4 sm:p-6 shadow-xl justify-between">
 				<!-- Top Collapse Header -->
 				<div class="flex items-center justify-between w-full max-w-sm mx-auto pb-1 shrink-0">
 					<button
@@ -1649,7 +1710,7 @@
 				</div>
 
 				<!-- Scrollable Search Results: Playlists list, then Albums grid -->
-				<div class="flex-1 overflow-y-auto min-h-0 p-3 space-y-5">
+				<div class="flex-1 overflow-y-auto min-h-0 overscroll-contain p-3 space-y-5">
 					<!-- Section 1: Playlists -->
 					<div>
 						<div class="flex items-center justify-between mb-2">
@@ -1750,7 +1811,7 @@
 				</div>
 
 				<!-- Scrollable Content -->
-				<div class="flex-1 overflow-y-auto min-h-0 p-3 space-y-2">
+				<div class="flex-1 overflow-y-auto min-h-0 overscroll-contain p-3 space-y-2">
 					{#if mobileLibraryTab === 'playlists'}
 						<!-- PLAYLISTS (One below another) -->
 						{#if mobileLibraryLayout === 'list'}
@@ -1952,6 +2013,395 @@
 							<span>List</span>
 						{/if}
 					</button>
+				</div>
+			</section>
+		{/if}
+
+		<!-- DEDICATED MOBILE PROFILE & USER SETTINGS VIEW -->
+		{#if mobilePlayerTab === 'profile'}
+			<section class="flex md:hidden flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 shadow-xl">
+				<!-- Header -->
+				<div class="p-3.5 pb-2.5 border-b border-neutral-800/60 flex items-center justify-between shrink-0">
+					<div class="flex items-center gap-2">
+						<div class="w-7 h-7 rounded-lg bg-emerald-950/80 border border-emerald-600/40 flex items-center justify-center text-emerald-400">
+							<User class="w-4 h-4" />
+						</div>
+						<div>
+							<h2 class="text-sm font-bold text-white">Profile & Preferences</h2>
+							<p class="text-[10px] text-neutral-400">Mobile experience & vault settings</p>
+						</div>
+					</div>
+					<button
+						type="button"
+						onclick={() => (mobilePlayerTab = mobilePreviousTab === 'profile' ? 'library' : mobilePreviousTab)}
+						class="p-1.5 text-neutral-400 hover:text-white rounded-lg cursor-pointer"
+						title="Close Profile"
+					>
+						<X class="w-4 h-4" />
+					</button>
+				</div>
+
+				<!-- Scrollable Content -->
+				<div class="flex-1 overflow-y-auto min-h-0 overscroll-contain p-3 space-y-3.5">
+					<!-- User Card -->
+					<div class="p-4 rounded-xl bg-neutral-950/70 border border-neutral-800/80 flex items-center justify-between gap-3 shadow-md">
+						<div class="flex items-center gap-3 min-w-0">
+							<div class="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 text-white font-black text-lg flex items-center justify-center border-2 border-emerald-500/40 shadow-lg shadow-emerald-950/50 shrink-0">
+								{(data.user?.username || 'U')[0].toUpperCase()}
+							</div>
+							<div class="min-w-0">
+								<div class="text-sm font-bold text-white truncate flex items-center gap-1.5">
+									<span>{data.user?.username || 'Guest / Synthetic Admin'}</span>
+								</div>
+								<div class="flex items-center gap-2 mt-0.5">
+									<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider {data.user?.role === 'admin' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-neutral-800 text-neutral-400 border border-neutral-700'}">
+										{data.user?.role || 'Admin'}
+									</span>
+									{#if data.authDisabled}
+										<span class="text-[10px] text-amber-400">Auth Bypassed</span>
+									{/if}
+								</div>
+							</div>
+						</div>
+						<a
+							href="/settings"
+							class="p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition cursor-pointer shrink-0"
+							title="Open Full Settings"
+						>
+							<Settings class="w-4 h-4" />
+						</a>
+					</div>
+
+					<!-- Mobile Experience Mode Card (Requested by user) -->
+					<div class="p-4 rounded-xl bg-neutral-950/70 border border-neutral-800/80 space-y-3 shadow-md">
+						<div class="flex items-center gap-2 border-b border-neutral-800/60 pb-2.5">
+							<Wrench class="w-4 h-4 text-emerald-400" />
+							<div>
+								<div class="text-xs font-bold text-white">Mobile Feature Suite</div>
+								<div class="text-[10px] text-neutral-400">Listening mode vs full editing suite</div>
+							</div>
+						</div>
+
+						<div class="flex items-start justify-between gap-3 pt-1">
+							<div class="space-y-0.5 min-w-0">
+								<div class="text-xs font-semibold text-white flex items-center gap-1.5">
+									<span>Enable Full Editing Features</span>
+									{#if mobileFullFeatures}
+										<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/25 text-emerald-300 border border-emerald-500/30">Active</span>
+									{/if}
+								</div>
+								<p class="text-[11px] text-neutral-400 leading-relaxed">
+									By default, Trax Vault on mobile is streamlined purely for listening. Turn this on to unlock all curation and editing tools (The Fixer, MusicBrainz Tagger, LRC Maker, Scanner, and Vault album catalog) on phone screens.
+								</p>
+							</div>
+							<label class="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+								<input
+									type="checkbox"
+									checked={mobileFullFeatures}
+									onchange={(e) => toggleMobileFullFeatures((e.target as HTMLInputElement).checked)}
+									class="sr-only peer"
+								/>
+								<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+							</label>
+						</div>
+
+						{#if mobileFullFeatures}
+							<!-- Vault Editing Suite Launchers -->
+							<div class="pt-2 border-t border-neutral-800/60 space-y-2">
+								<div class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Quick Studio Launchers</div>
+								<div class="grid grid-cols-2 gap-2">
+									<a
+										href="/issues"
+										class="p-2.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800/90 border border-neutral-800 flex items-center gap-2.5 transition text-left"
+									>
+										<div class="w-7 h-7 rounded-md bg-amber-950/80 border border-amber-600/40 text-amber-400 flex items-center justify-center shrink-0">
+											<AlertTriangle class="w-3.5 h-3.5" />
+										</div>
+										<div class="min-w-0">
+											<div class="text-xs font-bold text-white truncate">The Fixer</div>
+											<div class="text-[10px] text-neutral-400 truncate">Fix bad audio & lyrics</div>
+										</div>
+									</a>
+
+									<a
+										href="/tagger"
+										class="p-2.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800/90 border border-neutral-800 flex items-center gap-2.5 transition text-left"
+									>
+										<div class="w-7 h-7 rounded-md bg-purple-950/80 border border-purple-500/40 text-purple-400 flex items-center justify-center shrink-0">
+											<Music class="w-3.5 h-3.5" />
+										</div>
+										<div class="min-w-0">
+											<div class="text-xs font-bold text-white truncate">Tagger Studio</div>
+											<div class="text-[10px] text-neutral-400 truncate">MusicBrainz matching</div>
+										</div>
+									</a>
+
+									<a
+										href="/lrc-maker"
+										class="p-2.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800/90 border border-neutral-800 flex items-center gap-2.5 transition text-left"
+									>
+										<div class="w-7 h-7 rounded-md bg-blue-950/80 border border-blue-500/40 text-blue-400 flex items-center justify-center shrink-0">
+											<Mic class="w-3.5 h-3.5" />
+										</div>
+										<div class="min-w-0">
+											<div class="text-xs font-bold text-white truncate">LRC Maker</div>
+											<div class="text-[10px] text-neutral-400 truncate">Sync karaoke lyrics</div>
+										</div>
+									</a>
+
+									<a
+										href="/scan"
+										class="p-2.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800/90 border border-neutral-800 flex items-center gap-2.5 transition text-left"
+									>
+										<div class="w-7 h-7 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+											<RefreshCw class="w-3.5 h-3.5" />
+										</div>
+										<div class="min-w-0">
+											<div class="text-xs font-bold text-white truncate">Scanner</div>
+											<div class="text-[10px] text-neutral-400 truncate">Rescan disk files</div>
+										</div>
+									</a>
+
+									<a
+										href="/"
+										class="col-span-2 p-2.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800/90 border border-neutral-800 flex items-center gap-2.5 transition text-left"
+									>
+										<div class="w-7 h-7 rounded-md bg-teal-950/80 border border-teal-500/40 text-teal-400 flex items-center justify-center shrink-0">
+											<Disc3 class="w-3.5 h-3.5" />
+										</div>
+										<div class="min-w-0">
+											<div class="text-xs font-bold text-white truncate">Full Vault Catalog</div>
+											<div class="text-[10px] text-neutral-400 truncate">Browse all albums with fixer rules & track replacements</div>
+										</div>
+									</a>
+								</div>
+							</div>
+
+							<!-- Top Header Switch -->
+							<div class="flex items-center justify-between gap-3 pt-2 border-t border-neutral-800/60">
+								<div class="space-y-0.5">
+									<div class="text-xs font-semibold text-white">Show Top Navbar</div>
+									<div class="text-[10px] text-neutral-400">Show desktop top header on mobile</div>
+								</div>
+								<label class="relative inline-flex items-center cursor-pointer shrink-0">
+									<input
+										type="checkbox"
+										checked={mobileShowNavbar}
+										onchange={(e) => toggleMobileShowNavbar((e.target as HTMLInputElement).checked)}
+										class="sr-only peer"
+									/>
+									<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+								</label>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Streaming Quality Preferences -->
+					<div class="p-4 rounded-xl bg-neutral-950/70 border border-neutral-800/80 space-y-3 shadow-md">
+						<div class="flex items-center gap-2 border-b border-neutral-800/60 pb-2.5">
+							<Radio class="w-4 h-4 text-emerald-400" />
+							<div>
+								<div class="text-xs font-bold text-white">Streaming Audio Quality</div>
+								<div class="text-[10px] text-neutral-400">Bitrate & transcoding mode</div>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-2 gap-2">
+							<button
+								type="button"
+								onclick={() => player.setStreamingQuality('original')}
+								class="p-2.5 rounded-lg border text-left transition cursor-pointer {player.streamingQuality === 'original' ? 'bg-emerald-950/60 border-emerald-500/60 text-white' : 'bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:text-white'}"
+							>
+								<div class="text-xs font-bold {player.streamingQuality === 'original' ? 'text-emerald-300' : 'text-neutral-300'}">Original Lossless</div>
+								<div class="text-[10px] opacity-75">Direct FLAC / Bit-perfect</div>
+							</button>
+
+							<button
+								type="button"
+								onclick={() => player.setStreamingQuality('320')}
+								class="p-2.5 rounded-lg border text-left transition cursor-pointer {player.streamingQuality === '320' ? 'bg-emerald-950/60 border-emerald-500/60 text-white' : 'bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:text-white'}"
+							>
+								<div class="text-xs font-bold {player.streamingQuality === '320' ? 'text-emerald-300' : 'text-neutral-300'}">High (320 kbps)</div>
+								<div class="text-[10px] opacity-75">MP3 Transcode</div>
+							</button>
+
+							<button
+								type="button"
+								onclick={() => player.setStreamingQuality('192')}
+								class="p-2.5 rounded-lg border text-left transition cursor-pointer {player.streamingQuality === '192' ? 'bg-emerald-950/60 border-emerald-500/60 text-white' : 'bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:text-white'}"
+							>
+								<div class="text-xs font-bold {player.streamingQuality === '192' ? 'text-emerald-300' : 'text-neutral-300'}">Standard (192 kbps)</div>
+								<div class="text-[10px] opacity-75">Balanced data usage</div>
+							</button>
+
+							<button
+								type="button"
+								onclick={() => player.setStreamingQuality('128')}
+								class="p-2.5 rounded-lg border text-left transition cursor-pointer {player.streamingQuality === '128' ? 'bg-emerald-950/60 border-emerald-500/60 text-white' : 'bg-neutral-900/60 border-neutral-800 text-neutral-400 hover:text-white'}"
+							>
+								<div class="text-xs font-bold {player.streamingQuality === '128' ? 'text-emerald-300' : 'text-neutral-300'}">Data Saver (128 kbps)</div>
+								<div class="text-[10px] opacity-75">Low bandwidth</div>
+							</button>
+						</div>
+					</div>
+
+					<!-- Links & Shortcuts -->
+					<div class="p-2 rounded-xl bg-neutral-950/70 border border-neutral-800/80 space-y-1 shadow-md">
+						<a
+							href="/settings"
+							class="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-neutral-800/60 text-xs font-semibold text-neutral-300 hover:text-white transition"
+						>
+							<div class="flex items-center gap-2.5">
+								<Shield class="w-4 h-4 text-emerald-400" />
+								<span>Account & Password Settings</span>
+							</div>
+							<ExternalLink class="w-3.5 h-3.5 text-neutral-500" />
+						</a>
+
+						<a
+							href="/settings?tab=subsonic"
+							class="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-neutral-800/60 text-xs font-semibold text-neutral-300 hover:text-white transition"
+						>
+							<div class="flex items-center gap-2.5">
+								<Radio class="w-4 h-4 text-purple-400" />
+								<span>Subsonic & Mobile Apps (Symfonium/Feishin)</span>
+							</div>
+							<ExternalLink class="w-3.5 h-3.5 text-neutral-500" />
+						</a>
+
+						<button
+							type="button"
+							onclick={() => player.openSyncModal(player.activeRoom?.type === 'shared' ? 'rooms' : 'devices')}
+							class="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-neutral-800/60 text-xs font-semibold text-neutral-300 hover:text-white transition cursor-pointer"
+						>
+							<div class="flex items-center gap-2.5">
+								<Users class="w-4 h-4 text-emerald-400" />
+								<span>Multi-Device Sync & Listen Together</span>
+							</div>
+							<span class="text-[10px] text-emerald-400 font-mono font-bold">
+								{player.activeRoom ? `#${player.activeRoom.code}` : 'Off'}
+							</span>
+						</button>
+					</div>
+
+					{#if !data.authDisabled}
+						<button
+							type="button"
+							onclick={handleMobileLogout}
+							class="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-800/50 text-red-300 font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2"
+						>
+							<LogOut class="w-4 h-4" />
+							<span>Sign Out</span>
+						</button>
+					{/if}
+				</div>
+			</section>
+		{/if}
+
+		<!-- DEDICATED MOBILE STUDIO VIEW (When Full Editing Suite is Enabled) -->
+		{#if mobilePlayerTab === 'studio' && mobileFullFeatures}
+			<section class="flex md:hidden flex-1 bg-neutral-900/70 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-hidden min-h-0 shadow-xl">
+				<!-- Header -->
+				<div class="p-3.5 pb-2.5 border-b border-neutral-800/60 flex items-center justify-between shrink-0">
+					<div class="flex items-center gap-2">
+						<div class="w-7 h-7 rounded-lg bg-emerald-950/80 border border-emerald-600/40 flex items-center justify-center text-emerald-400">
+							<Wrench class="w-4 h-4" />
+						</div>
+						<div>
+							<h2 class="text-sm font-bold text-white">Trax Vault Studio</h2>
+							<p class="text-[10px] text-neutral-400">Curation, tagging & lyrics editing</p>
+						</div>
+					</div>
+					<button
+						type="button"
+						onclick={() => (mobilePlayerTab = mobilePreviousTab === 'studio' ? 'library' : mobilePreviousTab)}
+						class="p-1.5 text-neutral-400 hover:text-white rounded-lg cursor-pointer"
+						title="Close Studio"
+					>
+						<X class="w-4 h-4" />
+					</button>
+				</div>
+
+				<!-- Scrollable Content -->
+				<div class="flex-1 overflow-y-auto min-h-0 overscroll-contain p-3 space-y-3">
+					<div class="p-3.5 rounded-xl bg-neutral-950/70 border border-neutral-800/80 space-y-1">
+						<div class="text-xs font-bold text-white">Library Curation & Editing Suite</div>
+						<div class="text-[11px] text-neutral-400 leading-relaxed">
+							All powerful desktop editing features are accessible right on your phone. Tap any tool below to launch:
+						</div>
+					</div>
+
+					<div class="space-y-2">
+						<a
+							href="/issues"
+							class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition group text-left"
+						>
+							<div class="w-10 h-10 rounded-lg bg-amber-950/80 border border-amber-600/40 text-amber-400 flex items-center justify-center shrink-0">
+								<AlertTriangle class="w-5 h-5" />
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="text-xs font-bold text-white group-hover:text-amber-400 transition">The Fixer</div>
+								<div class="text-[11px] text-neutral-400">Audit audio quality, missing lyrics & explicit flags</div>
+							</div>
+							<ExternalLink class="w-4 h-4 text-neutral-500 group-hover:text-amber-400 transition shrink-0" />
+						</a>
+
+						<a
+							href="/tagger"
+							class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition group text-left"
+						>
+							<div class="w-10 h-10 rounded-lg bg-purple-950/80 border border-purple-500/40 text-purple-400 flex items-center justify-center shrink-0">
+								<Music class="w-5 h-5" />
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="text-xs font-bold text-white group-hover:text-purple-400 transition">MusicBrainz Tagger Studio</div>
+								<div class="text-[11px] text-neutral-400">Match releases and embed high-res tags & cover art</div>
+							</div>
+							<ExternalLink class="w-4 h-4 text-neutral-500 group-hover:text-purple-400 transition shrink-0" />
+						</a>
+
+						<a
+							href="/lrc-maker"
+							class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition group text-left"
+						>
+							<div class="w-10 h-10 rounded-lg bg-blue-950/80 border border-blue-500/40 text-blue-400 flex items-center justify-center shrink-0">
+								<Mic class="w-5 h-5" />
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="text-xs font-bold text-white group-hover:text-blue-400 transition">LRC Maker Studio</div>
+								<div class="text-[11px] text-neutral-400">Record and time-sync karaoke lyrics line by line</div>
+							</div>
+							<ExternalLink class="w-4 h-4 text-neutral-500 group-hover:text-blue-400 transition shrink-0" />
+						</a>
+
+						<a
+							href="/scan"
+							class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition group text-left"
+						>
+							<div class="w-10 h-10 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+								<RefreshCw class="w-5 h-5" />
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="text-xs font-bold text-white group-hover:text-emerald-400 transition">Library Scanner</div>
+								<div class="text-[11px] text-neutral-400">Rescan disk files and index newly added music</div>
+							</div>
+							<ExternalLink class="w-4 h-4 text-neutral-500 group-hover:text-emerald-400 transition shrink-0" />
+						</a>
+
+						<a
+							href="/"
+							class="w-full flex items-center gap-3 p-3 rounded-xl bg-neutral-950/60 hover:bg-neutral-800/60 border border-neutral-800/60 transition group text-left"
+						>
+							<div class="w-10 h-10 rounded-lg bg-teal-950/80 border border-teal-500/40 text-teal-400 flex items-center justify-center shrink-0">
+								<Disc3 class="w-5 h-5" />
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="text-xs font-bold text-white group-hover:text-teal-400 transition">Vault Catalog & Albums</div>
+								<div class="text-[11px] text-neutral-400">Full album grid, fixer rules, and track replacements</div>
+							</div>
+							<ExternalLink class="w-4 h-4 text-neutral-500 group-hover:text-teal-400 transition shrink-0" />
+						</a>
+					</div>
 				</div>
 			</section>
 		{/if}
@@ -2438,7 +2888,7 @@
 				<!-- Lyrics Scrollable Body Container -->
 				<div class="relative flex-1 min-h-0 flex flex-col">
 					<div
-						class="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col min-h-0"
+						class="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 flex flex-col min-h-0"
 						onwheel={() => {
 							userScrolledLyrics = true;
 						}}
@@ -2539,7 +2989,7 @@
 		{/if}
 
 		<!-- SONGS & HERO PANEL: Main Viewport (Center when lyrics closed, Right when lyrics open) -->
-		<main class="{mobilePlayerTab === 'tracks' ? 'flex' : 'hidden'} md:flex {showLyricsDrawer ? 'order-3 flex-1 min-w-0 md:min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto md:overflow-hidden min-h-0 shadow-xl transition-all duration-200">
+		<main class="{mobilePlayerTab === 'tracks' ? 'flex' : 'hidden'} md:flex {showLyricsDrawer ? 'order-3 flex-1 min-w-0 md:min-w-[320px] lg:min-w-[380px] lg:max-w-[480px] xl:max-w-[540px]' : 'order-2 flex-1 min-w-0'} bg-neutral-900/60 backdrop-blur-xl border border-neutral-800/70 rounded-2xl flex-col overflow-y-auto overscroll-contain md:overflow-hidden min-h-0 shadow-xl transition-all duration-200">
 			<!-- Mobile Back Navigation Button (To Library or Search) -->
 			<div class="md:hidden flex items-center justify-between p-2.5 pb-1 border-b border-neutral-800/40 shrink-0">
 				<button
@@ -3775,7 +4225,7 @@
 				</div>
 
 				<!-- Drawer Scrollable Body -->
-				<div class="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
+				<div class="flex-1 overflow-y-auto overscroll-contain p-4 flex flex-col min-h-0">
 					<div class="space-y-2">
 						<span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-2">
 							Now Playing
@@ -4207,10 +4657,10 @@
 	{/if}
 
 	<!-- MOBILE BOTTOM NAVBAR (Fixed at bottom on phones < md) -->
-	<nav class="md:hidden h-14 bg-neutral-950/95 backdrop-blur-2xl border-t border-neutral-800/80 px-6 flex items-center justify-between shrink-0 z-30">
+	<nav class="md:hidden h-[calc(3.5rem+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] bg-neutral-950/95 backdrop-blur-2xl border-t border-neutral-800/80 px-2 sm:px-4 flex items-center justify-between shrink-0 z-30">
 		<button
 			type="button"
-			onclick={() => { mobilePlayerTab = 'search'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			onclick={() => { mobilePreviousTab = 'search'; mobilePlayerTab = 'search'; showLyricsDrawer = false; showQueueDrawer = false; }}
 			class="flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer flex-1 {mobilePlayerTab === 'search' ? 'text-emerald-400 font-bold' : 'text-neutral-400 hover:text-white'}"
 		>
 			<Search class="w-4 h-4" />
@@ -4219,7 +4669,7 @@
 
 		<button
 			type="button"
-			onclick={() => { mobilePlayerTab = 'library'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			onclick={() => { mobilePreviousTab = 'library'; mobilePlayerTab = 'library'; showLyricsDrawer = false; showQueueDrawer = false; }}
 			class="flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer flex-1 {mobilePlayerTab === 'library' || mobilePlayerTab === 'tracks' ? 'text-emerald-400 font-bold' : 'text-neutral-400 hover:text-white'}"
 		>
 			<Library class="w-4 h-4" />
@@ -4236,6 +4686,26 @@
 		>
 			<Plus class="w-4 h-4" />
 			<span class="text-[10px]">Create</span>
+		</button>
+
+		{#if mobileFullFeatures}
+			<button
+				type="button"
+				onclick={() => { mobilePreviousTab = 'studio'; mobilePlayerTab = 'studio'; showLyricsDrawer = false; showQueueDrawer = false; }}
+				class="flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer flex-1 {mobilePlayerTab === 'studio' ? 'text-emerald-400 font-bold' : 'text-neutral-400 hover:text-white'}"
+			>
+				<Wrench class="w-4 h-4" />
+				<span class="text-[10px]">Studio</span>
+			</button>
+		{/if}
+
+		<button
+			type="button"
+			onclick={() => { mobilePreviousTab = 'profile'; mobilePlayerTab = 'profile'; showLyricsDrawer = false; showQueueDrawer = false; }}
+			class="flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer flex-1 {mobilePlayerTab === 'profile' ? 'text-emerald-400 font-bold' : 'text-neutral-400 hover:text-white'}"
+		>
+			<User class="w-4 h-4" />
+			<span class="text-[10px]">Profile</span>
 		</button>
 	</nav>
 

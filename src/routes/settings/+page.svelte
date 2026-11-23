@@ -28,6 +28,8 @@
 		X,
 		ShieldAlert,
 		ChevronDown,
+		ChevronLeft,
+		Wrench,
 		Zap
 	} from '@lucide/svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
@@ -54,11 +56,30 @@
 
 	// Mobile UI Preferences
 	let showMobileNavbarSetting = $state(false);
+	let showMobileFullFeaturesSetting = $state(false);
 
 	onMount(() => {
 		try {
 			showMobileNavbarSetting = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
+			showMobileFullFeaturesSetting = localStorage.getItem('traxvault_mobile_full_features') === 'true';
 		} catch {}
+
+		const update = () => {
+			try {
+				showMobileNavbarSetting = localStorage.getItem('traxvault_show_mobile_navbar') === 'true';
+				showMobileFullFeaturesSetting = localStorage.getItem('traxvault_mobile_full_features') === 'true';
+			} catch {}
+		};
+
+		window.addEventListener('storage', update);
+		window.addEventListener('traxvault:navbar-toggle', update);
+		window.addEventListener('traxvault:mobile-features-toggle', update);
+
+		return () => {
+			window.removeEventListener('storage', update);
+			window.removeEventListener('traxvault:navbar-toggle', update);
+			window.removeEventListener('traxvault:mobile-features-toggle', update);
+		};
 	});
 
 	function handleToggleMobileNavbar(val: boolean) {
@@ -66,6 +87,14 @@
 		try {
 			localStorage.setItem('traxvault_show_mobile_navbar', val ? 'true' : 'false');
 			window.dispatchEvent(new Event('traxvault:navbar-toggle'));
+		} catch {}
+	}
+
+	function handleToggleMobileFullFeatures(val: boolean) {
+		showMobileFullFeaturesSetting = val;
+		try {
+			localStorage.setItem('traxvault_mobile_full_features', val ? 'true' : 'false');
+			window.dispatchEvent(new Event('traxvault:mobile-features-toggle'));
 		} catch {}
 	}
 
@@ -315,6 +344,15 @@
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+	<!-- Mobile Back to Player Shortcut -->
+	<a
+		href="/player"
+		class="md:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition mb-4 shadow-sm"
+	>
+		<ChevronLeft class="w-4 h-4" />
+		<span>Back to Player</span>
+	</a>
+
 	<!-- Page Header -->
 	<div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 		<div class="flex items-center gap-3">
@@ -818,15 +856,40 @@
 							</div>
 							<div>
 								<h2 class="text-base font-bold text-white">Mobile Interface & Navigation</h2>
-								<p class="text-xs text-neutral-400">Customize the layout and navigation behavior on phone screens</p>
+								<p class="text-xs text-neutral-400">Customize the layout and feature suite on phone screens</p>
 							</div>
 						</div>
 
+						<!-- Full Editing Tools Switch -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="flex items-center gap-2">
+									<div class="text-xs font-semibold text-white">Enable Full Editing & Studio Features</div>
+									{#if showMobileFullFeaturesSetting}
+										<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Active</span>
+									{/if}
+								</div>
+								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
+									By default, Trax Vault on mobile is streamlined purely for listening (player, playlists, library). Turn this on to access all editing tools (The Fixer, MusicBrainz Tagger, LRC Maker Studio, Library Scanner, and Vault album editing) on phone screens.
+								</div>
+							</div>
+							<label class="relative inline-flex items-center cursor-pointer shrink-0">
+								<input
+									type="checkbox"
+									checked={showMobileFullFeaturesSetting}
+									onchange={(e) => handleToggleMobileFullFeatures((e.target as HTMLInputElement).checked)}
+									class="sr-only peer"
+								/>
+								<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+							</label>
+						</div>
+
+						<!-- Top Header Switch -->
 						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
 							<div class="space-y-0.5">
 								<div class="text-xs font-semibold text-white">Show Top Navbar on Mobile</div>
 								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
-									By default, the top navbar is hidden on phone screens for an app-like experience with bottom navigation. Enable this if you prefer the standard top header on mobile.
+									Display the desktop top header on mobile screens. When turned off, Trax Vault uses bottom navigation for an app-like experience.
 								</div>
 							</div>
 							<label class="relative inline-flex items-center cursor-pointer shrink-0">
@@ -1050,13 +1113,39 @@
 					<div class="pt-5 border-t border-neutral-800/80 space-y-3">
 						<div class="flex items-center gap-2">
 							<Smartphone class="w-4 h-4 text-emerald-400" />
-							<span class="text-xs font-bold text-white uppercase tracking-wider">Mobile Interface</span>
+							<span class="text-xs font-bold text-white uppercase tracking-wider">Mobile Interface & Feature Suite</span>
 						</div>
+
+						<!-- Full Editing Tools Switch -->
+						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
+							<div class="space-y-0.5">
+								<div class="flex items-center gap-2">
+									<div class="text-xs font-semibold text-white">Enable Full Editing & Studio Features</div>
+									{#if showMobileFullFeaturesSetting}
+										<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Active</span>
+									{/if}
+								</div>
+								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
+									By default, Trax Vault on mobile is streamlined purely for listening. Turn this on to access all editing tools (The Fixer, MusicBrainz Tagger, LRC Maker Studio, Library Scanner, and Vault album editing) on phone screens.
+								</div>
+							</div>
+							<label class="relative inline-flex items-center cursor-pointer shrink-0">
+								<input
+									type="checkbox"
+									checked={showMobileFullFeaturesSetting}
+									onchange={(e) => handleToggleMobileFullFeatures((e.target as HTMLInputElement).checked)}
+									class="sr-only peer"
+								/>
+								<div class="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+							</label>
+						</div>
+
+						<!-- Top Header Switch -->
 						<div class="p-4 rounded-lg bg-neutral-950/60 border border-neutral-800/70 flex items-center justify-between gap-4">
 							<div class="space-y-0.5">
 								<div class="text-xs font-semibold text-white">Show Top Navbar on Mobile</div>
 								<div class="text-[11px] text-neutral-400 leading-relaxed max-w-xl">
-									By default, the top navbar is hidden on phone screens for an app-like experience with bottom navigation. Enable this if you prefer the standard top header on mobile.
+									Display the desktop top header on mobile screens. When turned off, Trax Vault uses bottom navigation for an app-like experience.
 								</div>
 							</div>
 							<label class="relative inline-flex items-center cursor-pointer shrink-0">
