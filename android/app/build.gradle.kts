@@ -11,8 +11,8 @@ android {
         applicationId = "cz.kapyhub.traxvault"
         minSdk = 26
         targetSdk = 34
-        versionCode = 100760
-        versionName = "1.7.60"
+        versionCode = 100761
+        versionName = "1.7.61"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

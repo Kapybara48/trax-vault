@@ -36,6 +36,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONTokener
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -71,6 +72,8 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
     private var backPressedTime: Long = 0
 
     private val offlineShellFileName = "player_offline_cache.html"
+    private val offlineDataFileName = "player_offline_data.json"
+    private val fallbackSvelteKitData = """{"type":"data","nodes":[null,{"type":"data","data":{"albums":[],"playlists":[],"artists":[],"initialAlbumId":null,"initialTrackId":null,"initialPlaylistId":null,"initialArtist":null,"initialView":"albums"}}]}"""
 
     private fun isNetworkConnected(): Boolean {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
@@ -88,6 +91,10 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
         return File(filesDir, offlineShellFileName)
     }
 
+    private fun getOfflineDataFile(): File {
+        return File(filesDir, offlineDataFileName)
+    }
+
     private fun saveOfflineShell(htmlContent: String) {
         if (htmlContent.isBlank() || htmlContent.length < 500) return
         Thread {
@@ -100,22 +107,16 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
         }.start()
     }
 
-    private fun loadOfflineShellDirectly(): Boolean {
-        val file = getOfflineShellFile()
-        if (file.exists() && file.length() > 500) {
+    private fun saveOfflineData(jsonContent: String) {
+        if (jsonContent.isBlank() || jsonContent.length < 20) return
+        Thread {
             try {
-                val html = file.readText(Charsets.UTF_8)
-                val serverUrl = getServerUrl() ?: "https://traxvault.local"
-                val baseUrl = if (serverUrl.contains("/player")) serverUrl else "$serverUrl/player"
-                runOnUiThread {
-                    errorLayout.visibility = View.GONE
-                    webView.visibility = View.VISIBLE
-                    webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", baseUrl)
+                val file = getOfflineDataFile()
+                FileOutputStream(file).use { out ->
+                    out.write(jsonContent.toByteArray(Charsets.UTF_8))
                 }
-                return true
             } catch (_: Exception) {}
-        }
-        return false
+        }.start()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -190,7 +191,7 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.60"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.61"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
@@ -232,7 +233,23 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
-                // If main frame navigation to player occurs while offline, serve persistent offline shell
+
+                // If offline, serve cached SvelteKit data endpoints
+                if (!isNetworkConnected() && url.contains("/__data.json")) {
+                    val dataFile = getOfflineDataFile()
+                    if (dataFile.exists() && dataFile.length() > 20) {
+                        try {
+                            return WebResourceResponse("application/json", "UTF-8", FileInputStream(dataFile))
+                        } catch (_: Exception) {}
+                    }
+                    return WebResourceResponse(
+                        "application/json",
+                        "UTF-8",
+                        ByteArrayInputStream(fallbackSvelteKitData.toByteArray(Charsets.UTF_8))
+                    )
+                }
+
+                // If offline and navigating to player, serve persistent clean offline shell
                 if (request.isForMainFrame && (url.contains("/player") || url.endsWith("/"))) {
                     if (!isNetworkConnected()) {
                         val file = getOfflineShellFile()
@@ -249,8 +266,9 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
-                    // If network fails, boot directly from the persistent offline shell
-                    if (loadOfflineShellDirectly()) {
+                    if (!isNetworkConnected() && view?.settings?.cacheMode != WebSettings.LOAD_CACHE_ONLY && getOfflineShellFile().exists()) {
+                        view?.settings?.cacheMode = WebSettings.LOAD_CACHE_ONLY
+                        view?.reload()
                         return
                     }
                     showOfflineError(error?.description?.toString() ?: "Network connection failed")
@@ -259,21 +277,41 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                // Restore cache mode to default for future navigation
-                view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                 if (url?.contains("/player") == true) {
                     // Clear intermediate login/redirect history so back gesture never leaves the player to /login
                     view?.clearHistory()
 
-                    // Cache rendered HTML shell for offline launch
-                    view?.evaluateJavascript("document.documentElement.outerHTML") { result ->
-                        if (result != null && result != "null" && result.length > 500) {
-                            try {
-                                val html = JSONTokener(result).nextValue() as? String ?: result
-                                saveOfflineShell(html)
-                            } catch (_: Exception) {
-                                saveOfflineShell(result)
-                            }
+                    // If connected, asynchronously fetch and save clean pre-hydration /player HTML and data JSON for offline boot
+                    if (isNetworkConnected()) {
+                        val currentServer = getServerUrl()
+                        if (!currentServer.isNullOrBlank()) {
+                            val playerUrl = if (currentServer.contains("/player")) currentServer else "$currentServer/player"
+                            Thread {
+                                try {
+                                    val cookie = CookieManager.getInstance().getCookie(playerUrl)
+                                    val conn = java.net.URL(playerUrl).openConnection() as java.net.HttpURLConnection
+                                    conn.connectTimeout = 5000
+                                    conn.readTimeout = 5000
+                                    if (!cookie.isNullOrEmpty()) conn.setRequestProperty("Cookie", cookie)
+                                    if (conn.responseCode == 200) {
+                                        val html = conn.inputStream.bufferedReader().use { it.readText() }
+                                        saveOfflineShell(html)
+                                    }
+                                } catch (_: Exception) {}
+
+                                try {
+                                    val dataUrl = if (playerUrl.endsWith("/")) "${playerUrl}__data.json" else "$playerUrl/__data.json"
+                                    val cookie = CookieManager.getInstance().getCookie(dataUrl)
+                                    val conn = java.net.URL(dataUrl).openConnection() as java.net.HttpURLConnection
+                                    conn.connectTimeout = 5000
+                                    conn.readTimeout = 5000
+                                    if (!cookie.isNullOrEmpty()) conn.setRequestProperty("Cookie", cookie)
+                                    if (conn.responseCode == 200) {
+                                        val json = conn.inputStream.bufferedReader().use { it.readText() }
+                                        saveOfflineData(json)
+                                    }
+                                } catch (_: Exception) {}
+                            }.start()
                         }
                     }
                 }
@@ -408,16 +446,15 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
                 setBackgroundColor(Color.parseColor("#065f46"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
-                    if (!loadOfflineShellDirectly()) {
-                        val url = getServerUrl()
-                        if (!url.isNullOrBlank()) {
-                            errorLayout.visibility = View.GONE
-                            webView.visibility = View.VISIBLE
-                            val targetUrl = if (url.contains("/player")) url else "$url/player"
-                            webView.loadUrl(targetUrl)
-                        } else {
-                            Toast.makeText(this@MainActivity, "No offline shell found. Connect once online to download music.", Toast.LENGTH_LONG).show()
-                        }
+                    val url = getServerUrl()
+                    if (!url.isNullOrBlank()) {
+                        errorLayout.visibility = View.GONE
+                        webView.visibility = View.VISIBLE
+                        webView.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                        val targetUrl = if (url.contains("/player")) url else "$url/player"
+                        webView.loadUrl(targetUrl)
+                    } else {
+                        Toast.makeText(this@MainActivity, "No server URL set. Connect once online to configure server.", Toast.LENGTH_LONG).show()
                     }
                 }
             })
@@ -483,9 +520,10 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
         errorLayout.visibility = View.GONE
         webView.visibility = View.VISIBLE
 
-        // If offline on app launch and cached shell exists, boot directly into offline player
-        if (!isNetworkConnected() && loadOfflineShellDirectly()) {
-            return
+        if (!isNetworkConnected()) {
+            webView.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+        } else {
+            webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
         }
 
         webView.loadUrl(targetUrl)
@@ -597,7 +635,7 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
         @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.60"
+            return "1.7.61"
         }
 
         @JavascriptInterface

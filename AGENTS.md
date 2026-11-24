@@ -1273,6 +1273,20 @@ This document preserves persistent context, architectural conventions, recent ch
       - Added 1-tap download buttons to: Desktop Sidebar album rows, Mobile Library album list and grid, and Mobile Search album grid.
       - Displays live status at a glance: `<CircleCheck>` (downloaded), `<Clock>` (queued), `<RefreshCw>` (downloading), or `<ArrowDownCircle>` (tap to queue without opening the album).
       - Album detail hero download button upgraded to live progress without disabling.
+88. **Zero-Blackscreen Offline Cold Boot & SvelteKit Data Fallback (v1.7.61)**:
+    - **Root Cause of Offline Black Screen**:
+      - `loadDataWithBaseURL` creates a synthetic/opaque document context where Chromium completely disables Service Workers and disk HTTP cache. When the shell HTML references `<script type="module" src="/_app/immutable/...">` or CSS, the browser cannot fetch them without Wi-Fi, freezing on a blank black screen.
+      - During client hydration, SvelteKit's router requests `/__data.json` from the origin. If this request throws an unhandled network error, SvelteKit crashes before mounting the player components.
+    - **Real-Origin Boot & Cache Mode (`MainActivity.kt`)**:
+      - Removed `loadDataWithBaseURL` and replaced with real server origin `loadUrl(targetUrl)`.
+      - When offline (`!isNetworkConnected()`), dynamically configures `webView.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK`. This tells Chromium to serve cached HTML, JavaScript modules, and CSS from disk without attempting failing network calls, preserving origin permissions for Service Worker and IndexedDB (`traxvault_offline_v1`).
+      - On app launch while online, asynchronously downloads and persists clean pre-hydration `/player` HTML and `__data.json` so fresh shells are always available.
+    - **Native SvelteKit Data Proxy (`MainActivity.kt` & `service-worker.ts`)**:
+      - In `MainActivity.kt`'s `shouldInterceptRequest`, intercepted `/__data.json` requests while offline and served locally cached data JSON or a synthetic valid SvelteKit data payload (`{"type":"data","nodes":[null,{"type":"data","data":{"albums":[],"playlists":[],"artists":[],"initialView":"albums"}}]}`).
+      - In `src/service-worker.ts`, added runtime caching of `/__data.json` and offline fallback response with matching synthetic SvelteKit data structure, preventing SvelteKit routing errors across both native and PWA browsers.
+    - **Instant Offline Rendering (`src/routes/player/+page.svelte`)**:
+      - Added check for `!navigator.onLine` on mount to set `isOffline = true`.
+      - Enhanced offline load callback to select the first downloaded album/playlist from IndexedDB if no album was selected, ensuring immediate rendering of offline music.
 
 ---
 

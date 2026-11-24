@@ -82,15 +82,58 @@ self.addEventListener('fetch', (event: any) => {
 				const response = await fetch(event.request);
 				if (response.status === 200) {
 					// Cache player page and navigation responses for offline opening
-					if (event.request.mode === 'navigate' || url.pathname === '/player') {
+					if (event.request.mode === 'navigate' || url.pathname === '/player' || url.pathname === '/') {
 						cache.put('/player', response.clone());
 						cache.put(event.request, response.clone());
+					}
+					// Cache SvelteKit data endpoints
+					if (url.pathname.endsWith('/__data.json')) {
+						cache.put(event.request, response.clone());
+						if (url.pathname.includes('/player')) {
+							cache.put('/player/__data.json', response.clone());
+						}
 					}
 				}
 				return response;
 			} catch (err) {
-				// 3. Offline fallback for document navigation
-				if (event.request.mode === 'navigate' || url.pathname === '/player') {
+				// 3. Offline fallback for SvelteKit data requests
+				if (url.pathname.endsWith('/__data.json')) {
+					const cachedData =
+						(await cache.match(event.request, { ignoreSearch: true })) ||
+						(await cache.match('/player/__data.json', { ignoreSearch: true }));
+					if (cachedData) {
+						return cachedData;
+					}
+					// Provide synthetic SvelteKit data response so client routing never crashes offline
+					return new Response(
+						JSON.stringify({
+							type: 'data',
+							nodes: [
+								null,
+								{
+									type: 'data',
+									data: {
+										albums: [],
+										playlists: [],
+										artists: [],
+										initialAlbumId: null,
+										initialTrackId: null,
+										initialPlaylistId: null,
+										initialArtist: null,
+										initialView: 'albums'
+									}
+								}
+							]
+						}),
+						{
+							status: 200,
+							headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+						}
+					);
+				}
+
+				// 4. Offline fallback for document navigation
+				if (event.request.mode === 'navigate' || url.pathname.startsWith('/player') || url.pathname === '/') {
 					const offlinePlayer =
 						(await cache.match(event.request, { ignoreSearch: true })) ||
 						(await cache.match('/player', { ignoreSearch: true })) ||

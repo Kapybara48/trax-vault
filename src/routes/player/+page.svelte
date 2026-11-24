@@ -1497,6 +1497,9 @@
 		} catch {}
 
 		// Listen to online / offline network status
+		if (typeof navigator !== 'undefined' && !navigator.onLine) {
+			isOffline = true;
+		}
 		const handleOnline = () => { isOffline = false; };
 		const handleOffline = () => { isOffline = true; };
 		window.addEventListener('online', handleOnline);
@@ -1511,6 +1514,10 @@
 						albums.push(off);
 					}
 				}
+				albums = [...albums];
+				if (!selectedAlbum && albums.length > 0 && selectedType === 'album') {
+					selectAlbum(albums[0]);
+				}
 			}
 			const offPlaylists = await offlineStorage.getAllOfflinePlaylists();
 			if (offPlaylists.length > 0) {
@@ -1519,6 +1526,7 @@
 						playlists.push(offPl);
 					}
 				}
+				playlists = [...playlists];
 			}
 		}).catch(() => {});
 
