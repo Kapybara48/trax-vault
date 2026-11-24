@@ -1600,6 +1600,41 @@
 			await alertAction(err.message || 'Logout failed', 'Error');
 		}
 	}
+
+	let isReloading = $state(false);
+
+	async function forceReloadApp() {
+		if (isReloading) return;
+		isReloading = true;
+		try {
+			if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+				const registrations = await navigator.serviceWorker.getRegistrations();
+				for (const registration of registrations) {
+					await registration.unregister();
+				}
+			}
+			if (typeof caches !== 'undefined') {
+				const keys = await caches.keys();
+				for (const key of keys) {
+					await caches.delete(key);
+				}
+			}
+			try {
+				sessionStorage.clear();
+			} catch {}
+
+			if (typeof (window as any).TraxNative?.reloadApp === 'function') {
+				(window as any).TraxNative.reloadApp(true);
+				return;
+			}
+
+			const url = new URL(window.location.href);
+			url.searchParams.set('_tv_reload', Date.now().toString());
+			window.location.replace(url.toString());
+		} catch {
+			window.location.reload();
+		}
+	}
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
@@ -2840,6 +2875,20 @@
 							<span class="text-[10px] text-emerald-400 font-mono font-bold">
 								{player.activeRoom ? `#${player.activeRoom.code}` : 'Off'}
 							</span>
+						</button>
+
+						<button
+							type="button"
+							onclick={forceReloadApp}
+							disabled={isReloading}
+							class="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-neutral-800/60 text-xs font-semibold text-neutral-300 hover:text-white transition cursor-pointer disabled:opacity-50"
+							title="Force reload latest version and purge cached bundles"
+						>
+							<div class="flex items-center gap-2.5">
+								<RefreshCw class="w-4 h-4 text-emerald-400 {isReloading ? 'animate-spin' : ''}" />
+								<span>{isReloading ? 'Reloading...' : 'Force Reload Latest Version'}</span>
+							</div>
+							<span class="text-[10px] text-neutral-500 font-mono">Purge Cache</span>
 						</button>
 					</div>
 

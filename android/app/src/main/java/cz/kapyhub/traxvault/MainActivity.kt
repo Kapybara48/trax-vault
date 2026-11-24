@@ -191,7 +191,7 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
         // Append custom user-agent flag for native app detection
         val defaultUserAgent = settings.userAgentString
-        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.61"
+        settings.userAgentString = "$defaultUserAgent TraxVaultAndroid/1.7.62"
 
         // Cookie management
         val cookieManager = CookieManager.getInstance()
@@ -277,6 +277,10 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                // Restore cache mode to default for subsequent normal browsing if connected
+                if (isNetworkConnected()) {
+                    view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
+                }
                 if (url?.contains("/player") == true) {
                     // Clear intermediate login/redirect history so back gesture never leaves the player to /login
                     view?.clearHistory()
@@ -634,8 +638,46 @@ class MainActivity : AppCompatActivity(), MediaPlaybackService.MediaActionListen
         }
 
         @JavascriptInterface
+        fun navigateToPlayer() {
+            runOnUiThread {
+                val server = getServerUrl()
+                val targetUrl = if (!server.isNullOrBlank()) {
+                    if (server.contains("/player")) server else "$server/player"
+                } else {
+                    val currentUrl = webView.url ?: ""
+                    if (currentUrl.isNotEmpty()) {
+                        val base = currentUrl.substringBefore("/settings")
+                        "$base/player"
+                    } else "/player"
+                }
+                errorLayout.visibility = View.GONE
+                webView.visibility = View.VISIBLE
+                webView.loadUrl(targetUrl)
+            }
+        }
+
+        @JavascriptInterface
+        fun reloadApp(bypassCache: Boolean) {
+            runOnUiThread {
+                if (bypassCache) {
+                    webView.clearCache(true)
+                    webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+                }
+                val currentUrl = webView.url
+                if (!currentUrl.isNullOrBlank()) {
+                    webView.loadUrl(currentUrl)
+                } else {
+                    val server = getServerUrl()
+                    if (!server.isNullOrBlank()) {
+                        loadServerUrl(server)
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun getVersion(): String {
-            return "1.7.61"
+            return "1.7.62"
         }
 
         @JavascriptInterface

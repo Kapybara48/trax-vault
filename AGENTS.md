@@ -1287,6 +1287,17 @@ This document preserves persistent context, architectural conventions, recent ch
     - **Instant Offline Rendering (`src/routes/player/+page.svelte`)**:
       - Added check for `!navigator.onLine` on mount to set `isOffline = true`.
       - Enhanced offline load callback to select the first downloaded album/playlist from IndexedDB if no album was selected, ensuring immediate rendering of offline music.
+89. **Force Reload, Cache Purging, & Guaranteed Player Navigation (v1.7.62)**:
+    - **Reliable Settings Navigation (`navigateToPlayer`)**:
+      - Replaced plain `<a href="/player">` with `handleBackToPlayer()` calling native `TraxNative.navigateToPlayer()` on Android or `window.location.href = '/player'` on web.
+      - Bypasses SvelteKit's asynchronous client router data fetches (`/__data.json`) which previously hung or failed silently on slow/unstable network connections, ensuring instantaneous return to the player.
+    - **Force Reload & Cache Purge Engine (`forceReloadApp`)**:
+      - Added in-app Force Reload action across Settings (top header action, Native App card, and System Info card) and Player (user profile view).
+      - Automatically unregisters all active Service Workers, deletes stale CacheStorage bundles, clears session storage, and invokes `TraxNative.reloadApp(bypassCache = true)`.
+      - Android native `reloadApp` clears WebView cache on disk (`webView.clearCache(true)`) and sets `LOAD_NO_CACHE` to force full network fetch of latest client assets, restoring `LOAD_DEFAULT` upon load completion.
+    - **Dual Version Diagnostics in Settings**:
+      - Differentiated **Server Container Version** (`v{data.versionInfo.appVersion}`) from **Native Android App Version** (`v{androidAppVersion}`).
+      - Added clear explanations so users know whether their server Docker container or their Android client APK needs updating.
 
 ---
 

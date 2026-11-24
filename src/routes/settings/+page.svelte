@@ -32,7 +32,8 @@
 		Wrench,
 		Zap,
 		Download,
-		ArrowDownCircle
+		ArrowDownCircle,
+		RefreshCw
 	} from '@lucide/svelte';
 	import { confirmAction, alertAction } from '$lib/services/dialog.svelte.js';
 	import { offlineStorage } from '$lib/services/offline.svelte.js';
@@ -62,15 +63,68 @@
 	let showMobileFullFeaturesSetting = $state(false);
 	let isNativeAndroidApp = $state(false);
 	let androidAppVersion = $state<string | null>(null);
+	let isReloading = $state(false);
+
+	function handleBackToPlayer() {
+		if (typeof (window as any).TraxNative?.navigateToPlayer === 'function') {
+			(window as any).TraxNative.navigateToPlayer();
+			return;
+		}
+		if (window.history.length > 1 && document.referrer.includes('/player')) {
+			window.history.back();
+		} else {
+			window.location.href = '/player';
+		}
+	}
+
+	async function forceReloadApp() {
+		if (isReloading) return;
+		isReloading = true;
+		try {
+			// 1. Unregister any service workers to purge cached bundles
+			if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+				const registrations = await navigator.serviceWorker.getRegistrations();
+				for (const registration of registrations) {
+					await registration.unregister();
+				}
+			}
+
+			// 2. Clear all cache storages (preserving offline IndexedDB audio)
+			if (typeof caches !== 'undefined') {
+				const keys = await caches.keys();
+				for (const key of keys) {
+					await caches.delete(key);
+				}
+			}
+
+			// 3. Clear session storage
+			try {
+				sessionStorage.clear();
+			} catch {}
+
+			// 4. Native Android App: invoke native cache wipe and reload
+			if (typeof (window as any).TraxNative?.reloadApp === 'function') {
+				(window as any).TraxNative.reloadApp(true);
+				return;
+			}
+
+			// 5. Browser / PWA hard reload
+			const url = new URL(window.location.href);
+			url.searchParams.set('_tv_reload', Date.now().toString());
+			window.location.replace(url.toString());
+		} catch {
+			window.location.reload();
+		}
+	}
 
 	onMount(() => {
 		if (typeof window !== 'undefined') {
 			if ((window as any).TraxNative || navigator.userAgent.includes('TraxVaultAndroid')) {
 				isNativeAndroidApp = true;
 				try {
-					androidAppVersion = (window as any).TraxNative?.getVersion() || '1.7.53';
+					androidAppVersion = (window as any).TraxNative?.getVersion() || '1.7.62';
 				} catch {
-					androidAppVersion = '1.7.53';
+					androidAppVersion = '1.7.62';
 				}
 			}
 		}
@@ -370,14 +424,28 @@
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-	<!-- Mobile Back to Player Shortcut -->
-	<a
-		href="/player"
-		class="md:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition mb-4 shadow-sm"
-	>
-		<ChevronLeft class="w-4 h-4" />
-		<span>Back to Player</span>
-	</a>
+	<!-- Top Navigation & Utility Actions -->
+	<div class="flex items-center justify-between gap-3 mb-5">
+		<button
+			type="button"
+			onclick={handleBackToPlayer}
+			class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-xs font-semibold text-emerald-400 hover:text-emerald-300 hover:border-emerald-700/60 active:scale-95 transition shadow-sm cursor-pointer"
+		>
+			<ChevronLeft class="w-4 h-4" />
+			<span>Back to Player</span>
+		</button>
+
+		<button
+			type="button"
+			onclick={forceReloadApp}
+			disabled={isReloading}
+			class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-xs font-semibold text-neutral-300 hover:text-white hover:border-neutral-700 active:scale-95 transition shadow-sm cursor-pointer disabled:opacity-50"
+			title="Force reload latest version and purge cached bundles"
+		>
+			<RefreshCw class="w-3.5 h-3.5 {isReloading ? 'animate-spin text-emerald-400' : 'text-neutral-400'}" />
+			<span>{isReloading ? 'Reloading...' : 'Force Reload App'}</span>
+		</button>
+	</div>
 
 	<!-- Page Header -->
 	<div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -947,13 +1015,25 @@
 								</div>
 							</div>
 							{#if isNativeAndroidApp}
-								<button
-									type="button"
-									onclick={() => (window as any).TraxNative?.changeServerUrl()}
-									class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-emerald-400 border border-emerald-500/30 transition shrink-0"
-								>
-									Server URL
-								</button>
+								<div class="flex items-center gap-2 shrink-0">
+									<button
+										type="button"
+										onclick={forceReloadApp}
+										disabled={isReloading}
+										class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-300 hover:text-white border border-neutral-700 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+										title="Force reload latest version and purge cached bundles"
+									>
+										<RefreshCw class="w-3.5 h-3.5 {isReloading ? 'animate-spin text-emerald-400' : ''}" />
+										<span>{isReloading ? 'Reloading...' : 'Force Reload'}</span>
+									</button>
+									<button
+										type="button"
+										onclick={() => (window as any).TraxNative?.changeServerUrl()}
+										class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-emerald-400 border border-emerald-500/30 transition shrink-0 cursor-pointer"
+									>
+										Server URL
+									</button>
+								</div>
 							{:else}
 								<a
 									href="/api/apk"
@@ -1201,14 +1281,38 @@
 					</div>
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-						<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-1">
-							<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block">Application Version</span>
-							<div class="flex items-center gap-2 font-mono">
-								<span class="rounded-md bg-emerald-950/80 border border-emerald-600/40 px-2 py-0.5 text-xs font-bold text-emerald-300">
-									v{data.versionInfo.appVersion}
-								</span>
-								<span class="text-[11px] text-neutral-400">schema {data.versionInfo.schemaVersion}</span>
+						<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-2">
+							<div class="flex items-center justify-between gap-2">
+								<span class="text-[11px] font-medium text-neutral-500 uppercase tracking-wider block">Application Version</span>
+								<button
+									type="button"
+									onclick={forceReloadApp}
+									disabled={isReloading}
+									class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50 cursor-pointer"
+									title="Purge cached bundles and reload newest version"
+								>
+									<RefreshCw class="w-3 h-3 {isReloading ? 'animate-spin' : ''}" />
+									<span>{isReloading ? 'Reloading...' : 'Force Reload'}</span>
+								</button>
 							</div>
+							<div class="space-y-1">
+								<div class="flex items-center gap-2 font-mono">
+									<span class="rounded-md bg-emerald-950/80 border border-emerald-600/40 px-2 py-0.5 text-xs font-bold text-emerald-300">
+										Server: v{data.versionInfo.appVersion}
+									</span>
+									<span class="text-[11px] text-neutral-400">schema {data.versionInfo.schemaVersion}</span>
+								</div>
+								{#if isNativeAndroidApp && androidAppVersion}
+									<div class="flex items-center gap-2 font-mono text-[11px]">
+										<span class="rounded-md bg-blue-950/80 border border-blue-600/40 px-2 py-0.5 font-bold text-blue-300">
+											App Client: v{androidAppVersion}
+										</span>
+									</div>
+								{/if}
+							</div>
+							<p class="text-[10px] text-neutral-400 leading-normal">
+								Server container is v{data.versionInfo.appVersion}. {#if isNativeAndroidApp}Installed Android APK is v{androidAppVersion}. {/if}Tap Force Reload to clear cached code and load newest version.
+							</p>
 						</div>
 
 						<div class="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-800/70 space-y-1">
@@ -1308,13 +1412,25 @@
 								</div>
 							</div>
 							{#if isNativeAndroidApp}
-								<button
-									type="button"
-									onclick={() => (window as any).TraxNative?.changeServerUrl()}
-									class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-emerald-400 border border-emerald-500/30 transition shrink-0"
-								>
-									Server URL
-								</button>
+								<div class="flex items-center gap-2 shrink-0">
+									<button
+										type="button"
+										onclick={forceReloadApp}
+										disabled={isReloading}
+										class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-300 hover:text-white border border-neutral-700 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+										title="Force reload latest version and purge cached bundles"
+									>
+										<RefreshCw class="w-3.5 h-3.5 {isReloading ? 'animate-spin text-emerald-400' : ''}" />
+										<span>{isReloading ? 'Reloading...' : 'Force Reload'}</span>
+									</button>
+									<button
+										type="button"
+										onclick={() => (window as any).TraxNative?.changeServerUrl()}
+										class="px-3 py-1.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-emerald-400 border border-emerald-500/30 transition shrink-0 cursor-pointer"
+									>
+										Server URL
+									</button>
+								</div>
 							{:else}
 								<a
 									href="/api/apk"
